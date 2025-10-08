@@ -1,0 +1,42 @@
+@psbt=cHNidP8BAP04AQIAAAADfyuSbMfGqYkiHUWRcZ7qMV6ZqPI+j4xgv2WszVP6Wf4BAAAAAP////+2zjVEP30u8hDdbEvarXlUVNT85xHcREzBleIKoDnZvgEAAAAA/////7bONUQ/fS7yEN1sS9qteVRU1PznEdxETMGV4gqgOdm+BAAAAAD/////BQAAAAAAAAAAFmpdExYDAMW4M+ELvJsBAdeKAuACCgIiAgAAAAAAACJRILWS7n/ejyQ/jomjga7wRgurzv4V7OVRFpZ80vAb0KMCIgIAAAAAAAAiUSC1ku5/3o8kP46Jo4Gu8EYLq87+FezlURaWfNLwG9CjAiICAAAAAAAAFgAUtDeyG104fHmPzoxwa8f5SBPYlwq8KAAAAAAAABYAFIETBw+MIvvvkPQarOiTmTKOt9khAAAAAAABAR8iAgAAAAAAABYAFLQ3shtdOHx5j86McGvH+UgT2JcKAAEBKyICAAAAAAAAIlEgtZLuf96PJD+OiaOBrvBGC6vO/hXs5VEWlnzS8BvQowIBCEIBQB+zk+mdoRX/Gm8hXoqexZvWrsj4JEzNT2sHj+9ctYXVWub6172o0DQWHnRjxV8a6PnDY0Tua75ciMSWL01Uu18AAQEfIDQAAAAAAAAWABSBEwcPjCL775D0Gqzok5kyjrfZIQEIbAJIMEUCIQCWtxUAxfMuXfEMcxqOCGemvvp5suNyeTDPrxX860vbfwIgAh8L546JxsQ8aQ7HKRUw8464/121W5JDTwl4EoYYgTMBIQIx3Da5yi2VqMr19qSVXDIK3V6e7WijkCGap0KMweGB7AAAAAAAAA==
+@address=bc1pkkfwul773ujrlr5f5wq6auzxpw4uals4anj4z95k0nf0qx7s5vpq4nrtw7
+@runeAmount=1000
+@returnRuneId=LIQ
+@host=https://ic0.app/api
+@canisterId=34r2u-nqaaa-aaaaj-qnova-cai
+{{
+  const IDL = require('@dfinity/candid').IDL
+  exports.sign = (psbt, address, runeAmount, returnRuneId) => {
+    const args = [
+      IDL.Vec(IDL.Nat8), // deposit_psbt
+      IDL.Text, // source_address
+      IDL.Nat64, // rune_amount
+      IDL.Text, // return_rune_id
+    ];
+
+    const encoder = IDL.encode(args, [
+      Array.from(Uint8Array.from(atob(psbt), (c) => c.charCodeAt(0))),
+      address,
+      BigInt(runeAmount),
+      returnRuneId,
+    ]);
+
+    debugger;
+
+    return Array.from(encoder)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+}}
+
+###
+# @name signPSBT
+POST /v2/canister/{{canisterId}}/call
+Content-Type: application/json
+{
+  "request_type": "call",
+  "sender": "2vxsx-fae",
+  "canister_id": "{{canisterId}}",
+  "method_name": "process_rune_swap",
+  "arg": "{{sign(psbt, address, runeAmount, returnRuneId)}}"
+}

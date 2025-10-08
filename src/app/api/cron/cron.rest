@@ -1,0 +1,30 @@
+@host=http://localhost:3000
+###
+# @name poolBalance
+GET /api/cron/pool_balance
+Authorization: Bearer {{CRON_SECRET}}
+
+###
+# @name tokenHolders
+GET /api/cron/token_holders
+Authorization: Bearer {{CRON_SECRET}}
+
+###
+# @name stakeMonitor
+GET /api/cron/monitor/stake
+Authorization: Bearer {{CRON_SECRET}}
+
+###
+# @name unstakeMonitor
+GET /api/cron/monitor/stake
+Authorization: Bearer {{CRON_SECRET}}
+
+###
+# @name withdrawMonitor
+GET /api/cron/monitor/withdraw
+Authorization: Bearer {{CRON_SECRET}}
+
+###
+# @name exchangeRatePusher
+GET /api/cron/exchange_rate_pusher
+Authorization: Bearer {{CRON_SECRET}}

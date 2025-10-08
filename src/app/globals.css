@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-background: black;
+  --color-foreground: hsl(var(--foreground));
+  --color-card: #090909;
+  --color-card-border-from: hsl(0 0% 22%);
+  --color-card-border-to: hsl(0 0% 8%);
+  --color-border: #3f3938;
+  --color-primary-from: #f97316;
+  --color-primary-to: #ea580c;
+  --color-secondary-from: #f2f2f2;
+  --color-secondary-to: #ffffff;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 20 14.3% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14.3% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14.3% 4.1%;
+    --primary: 24.6 95% 53.1%;
+    /* #f97316 */
+    --primary-foreground: 60 9.1% 97.8%;
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 24 9.8% 10%;
+    --muted: 60 4.8% 95.9%;
+    --muted-foreground: 25 5.3% 44.7%;
+    --accent: 60 4.8% 95.9%;
+    --accent-foreground: 24 9.8% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 20 5.9% 90%;
+    --input: 20 5.9% 90%;
+    --ring: 24.6 95% 53.1%;
+    --radius: 0.75rem;
+    --rowCard: rgba(245, 245, 244, 0.82);
+    --rowCardSelected: rgb(236, 236, 234);
+    --rowCardBorder: rgba(229, 229, 227, 0.82);
+    --rowCardBorderHover: rgba(212, 212, 212, 0.82);
+    --rowCardDropShadow: rgba(33, 35, 38, 0.1);
+    --color-1: 15 100% 63%; /* Warm red-orange */
+    --color-2: 25 100% 63%; /* Orange */
+    --color-3: 30 100% 63%; /* Pure orange */
+    --color-4: 35 100% 63%; /* Light orange */
+    --color-5: 50 100% 63%;
+    /* Legal content theme tokens (light) */
+    --legal-text: hsl(var(--foreground) / 0.87);
+    --legal-muted: hsl(var(--foreground) / 0.6);
+    --legal-strong: hsl(var(--foreground) / 0.95);
+    --legal-body: hsl(var(--foreground) / 0.84);
+    --legal-border: hsl(var(--foreground) / 0.08);
+  }
+
+  .dark {
+    --background: 20 14.3% 4.1%;
+    --foreground: 60 9.1% 97.8%;
+    --card: 20 14.3% 4.1%;
+    --card-foreground: 60 9.1% 97.8%;
+    --popover: 20 14.3% 4.1%;
+    --popover-foreground: 60 9.1% 97.8%;
+    --primary: 20.5 90.2% 48.2%;
+    --primary-foreground: 60 9.1% 97.8%;
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+    --muted: 12 6.5% 15.1%;
+    --muted-foreground: 24 5.4% 63.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 60 9.1% 97.8%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 12 6.5% 15.1%;
+    --input: 12 6.5% 15.1%;
+    --ring: 20.5 90.2% 48.2%;
+    --rowCard: rgba(41, 37, 36, 0.5);
+    --rowCardSelected: rgb(41, 37, 36, 0.9);
+    --rowCardBorder: rgba(41, 37, 36, 0.9);
+    --rowCardBorderHover: rgba(54, 48, 46, 0.9);
+    --rowCardDropShadow: rgba(65, 65, 65, 0.47);
+    /* Legal content theme tokens (dark) */
+    --legal-text: hsl(var(--foreground) / 0.92);
+    --legal-muted: hsl(var(--foreground) / 0.6);
+    --legal-strong: hsl(var(--foreground) / 0.95);
+    --legal-body: hsl(var(--foreground) / 0.84);
+    --legal-border: hsl(var(--foreground) / 0.12);
+  }
+}
+
+html {
+  letter-spacing: normal;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+.space-y-4::-webkit-scrollbar {
+  width: 3px;
+}
+
+.space-y-4::-webkit-scrollbar-track {
+  background: transparent; /* Track color */
+}
+
+.space-y-4::-webkit-scrollbar-thumb {
+  background: #888; /* Handle color */
+  border-radius: 10px; /* Rounded corners for the scrollbar thumb */
+}
+
+.space-y-4::-webkit-scrollbar-thumb:hover {
+  background: #555; /* Handle color on hover */
+}
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+  }
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+  scrollbar-width: none; /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+
+.hide-input-arrows::-webkit-inner-spin-button,
+.hide-input-arrows::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hide-input-arrows {
+  -moz-appearance: textfield;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Lightweight typography for legal docs without the typography plugin */
+.legal {
+  color: var(--legal-text, rgba(0, 0, 0, 0.87));
+}
+.legal h1 {
+  font-size: 1.875rem; /* text-3xl */
+  line-height: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+}
+.legal .updated {
+  color: var(--legal-muted, rgba(0, 0, 0, 0.6));
+  font-size: 0.875rem;
+  margin-bottom: 1.25rem;
+}
+.legal h2 {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--legal-border, rgba(0, 0, 0, 0.08));
+  font-size: 1.25rem; /* text-xl */
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+.legal h3 {
+  margin-top: 1.25rem;
+  font-size: 1.125rem; /* text-lg */
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--legal-strong, rgba(0, 0, 0, 0.95));
+}
+.legal p {
+  margin-top: 0.75rem;
+  line-height: 1.8;
+  color: var(--legal-body, rgba(0, 0, 0, 0.84));
+}
+.legal ul,
+.legal ol {
+  margin-top: 0.5rem;
+  padding-left: 1.25rem;
+}
+.legal ol {
+  list-style: decimal;
+}
+.legal ul {
+  list-style: disc;
+}
+.legal li {
+  margin-top: 0.35rem;
+}
+
+.legal hr {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 0;
+  border-top: 1px solid var(--legal-border, rgba(0, 0, 0, 0.08));
+}
+
+@keyframes drive {
+  0% {
+    transform: translateX(130px);
+  }
+  40% {
+    transform: translateX(-30px);
+  }
+  100% {
+    transform: translateX(-30px);
+  }
+}
+
+.animate-drive {
+  animation: drive 3s ease-in infinite;
+  bottom: 4px;
+}
+
+.desktop-only {
+  @media (hover: hover) and (pointer: fine) {
+    display: block;
+  }
+  display: none;
+}

@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+# Run formatting on staged files, then lint, tests, and build. Abort commit if any step fails.
+npx --no-install lint-staged && npm run lint && npm test && npm run build 

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/exchange_rate_pusher",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/token_holders",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/monitor/stake",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/monitor/withdraw",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/monitor/unstake",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

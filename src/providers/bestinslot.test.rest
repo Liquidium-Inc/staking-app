@@ -1,0 +1,106 @@
+@host={{BEST_IN_SLOT_URL.replace(/\/$/, '')}}
+@rune_id = {{NEXT_PUBLIC_TOKEN_ID}}
+@address = {{USER_ADDRESS}}
+@staked_id = {{NEXT_PUBLIC_STAKED_ID}}
+
+###
+# @name getRuneTicker
+GET /v3/runes/ticker_info
+    ?rune_id={{rune_id}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+###
+# @name getStakedRuneTicker
+GET /v3/runes/ticker_info
+    ?rune_id={{staked_id}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+
+###
+# @name getSingleRunes
+GET /v3/runes/wallet_valid_outputs_single_rune
+    ?rune_id={{rune_id}}
+    &address={{address}}
+    &sort_by=output
+    &order=asc
+    &offset=0
+    &count=20
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+###
+# @name getWalletBalances
+GET /v3/runes/wallet_balances
+    ?address={{CANISTER_ADDRESS}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+
+###
+# @name getTokenHolders
+GET /v3/runes/holders
+    ?rune_id={{rune_id}}
+    &sort_by=balance
+    &order=desc
+    &offset=0
+    &count=5000
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+?? body data exists
+?? body data isArray
+?? body data.length == 100
+?? body block_height isNumber 
+
+
+###
+# @name getMempoolRunicUTXOs
+GET /v3/mempool/runic_utxos_of_wallet
+    ?wallet_addr={{address}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+###
+# @name getMempoolCardinalUTXOs
+GET /v3/mempool/cardinal_utxos_of_wallet
+    ?wallet_addr={{address}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+
+###
+# @name getRunesActivity
+GET /v3/runes/wallet_activity
+    ?address={{address}}
+    &sort_by=ts
+    &order=desc
+    &offset=0
+    &count=100
+    &runes_filter_only_wallet=true
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+
+###
+# @name getRunesOutputs
+POST /v3/runes/batch_output_info
+Content-Type: application/json
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+{
+    "queries": [
+        "f7f30971555f4dfd82bd376d19eec4f5364a01e9e648a63fc843c0610f1c6a03:3",
+        "ae2e52efbc92cf7afbb1ddcd0f6219fca54ae87c8f798142723d3709ec040862:2",
+        "c3ea975f6464dc79e760e6d47f012937161ced42d1db927b7cab144f26a286af:3",
+        "c9c3223d30cf79e234480828f50e8c5b54c8fe41fee8b6334275640ebf350762:1",
+        "c9c3223d30cf79e234480828f50e8c5b54c8fe41fee8b6334275640ebf350762:2",
+        "c9c3223d30cf79e234480828f50e8c5b54c8fe41fee8b6334275640ebf350762:3",
+        "bf049275373707550453410e26d1555cf3bb34ed57464b96647ccf486200c0e8:1",
+        "6044bfed17ed13e82852563f2eea6c2ee1f7f5823ca042dca3be019d61247a93:3"
+    ]
+}
+
+GET /v3/runes/output_info
+    ?output=c9c3223d30cf79e234480828f50e8c5b54c8fe41fee8b6334275640ebf350762:3
+x-api-key: {{BEST_IN_SLOT_TOKEN}}
+
+
+###
+# @name faucet
+
+GET /v3/wallet/testnet_faucet?address={{USER_ADDRESS}}
+x-api-key: {{BEST_IN_SLOT_TOKEN}}

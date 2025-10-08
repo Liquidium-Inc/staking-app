@@ -1,0 +1,11 @@
+node_modules/
+build/
+dist/
+.next/
+coverage/
+# Exclude Claude workflow files and metadata from formatting
+.github/workflows/claude.yml
+.github/workflows/claude-code-review.yml
+.cursor/
+CLAUDE.md
+AGENTS.md
