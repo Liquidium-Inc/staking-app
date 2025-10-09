@@ -1,4 +1,5 @@
 'use client';
+
 import {
   useLaserEyes,
   SUPPORTED_WALLETS,
@@ -7,6 +8,7 @@ import {
   LaserEyesContextType,
 } from '@omnisat/lasereyes-react';
 import { X } from 'lucide-react';
+import Link from 'next/link';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { Button } from '@ui/button';
@@ -102,6 +104,17 @@ export const LoginButton = () => {
             );
           })}
         </div>
+        <p className="mt-4 text-xs text-white/60">
+          By connecting a wallet, you agree to Liquidium{' '}
+          <Link href="/terms" className="underline transition-opacity hover:opacity-80">
+            Terms of Service
+          </Link>{' '}
+          and consent to its{' '}
+          <Link href="/privacy" className="underline transition-opacity hover:opacity-80">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </DrawerContent>
     </Drawer>
   );
