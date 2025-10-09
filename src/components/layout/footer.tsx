@@ -31,7 +31,7 @@ const footerLinks = [
   },
   {
     label: 'GitHub',
-    href: 'https://github.com/Liquidium-Inc/liquidium-staking',
+    href: 'https://github.com/Liquidium-Inc/staking-app',
     external: true,
   },
   {

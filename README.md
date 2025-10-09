@@ -8,6 +8,8 @@ A full-stack protocol for staking runes on Bitcoin, developed by Rather Labs and
 
 Liquidium Staking is a protocol that enables users to stake runes on Bitcoin, earning yield and participating in a decentralized staking pool. The project leverages Next.js (App Router), React, React Query, Drizzle ORM, PostgreSQL, and Redis (for distributed UTXO locks, not cache). It integrates with Internet Computer canisters for exchange rate data, mempool.space for Bitcoin blockchain data, Ordiscan and Best In Slot for rune market information, and the Liquidium internal API for rune-aware UTXO data.
 
+The core staking logic runs in the canister smart contract maintained at https://github.com/Liquidium-Inc/staking-canister/.
+
 ---
 
 ## Main Features
