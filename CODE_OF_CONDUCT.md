@@ -22,8 +22,8 @@ community include:
 - Giving and gracefully accepting constructive feedback
 - Accepting responsibility and apologizing to those affected by our mistakes,
   and learning from the experience
-- Focusing on what is best not just for us as individuals, but for the
-  overall community
+- Focusing on what is best not just for us as individuals, but for the overall
+  community
 
 Examples of unacceptable behavior include:
 
@@ -60,8 +60,8 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-report@liquidium.org.
-All complaints will be reviewed and investigated promptly and fairly.
+report@liquidium.org. All complaints will be reviewed and investigated promptly
+and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.

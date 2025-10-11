@@ -17,6 +17,16 @@ const mock = vi.hoisted(() => {
   };
 });
 
+const requireSessionMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    id: 1,
+    address: 'addr',
+    tokenHash: 'hash',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    lastActiveAt: new Date(),
+  }),
+);
+
 vi.mock('@/db', () => ({
   db: {
     stake: mock.stake,
@@ -32,12 +42,24 @@ vi.mock('@/services/broadcast', async (importOriginal) => {
   };
 });
 
+vi.mock('@/server/auth/session', () => ({
+  requireSession: requireSessionMock,
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
+
 describe('POST', () => {
   const userPsbt = new bitcoin.Psbt().toBase64();
   const canisterPsbt = new bitcoin.Psbt().toBase64();
 
   afterEach(() => {
     vi.clearAllMocks();
+    requireSessionMock.mockResolvedValue({
+      id: 1,
+      address: 'addr',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastActiveAt: new Date(),
+    });
   });
 
   it('returns 400 if body is invalid', async () => {
@@ -55,6 +77,7 @@ describe('POST', () => {
     mock.stake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     const buildResult = { txid: 'test-txid', fee: '1000', feeRate: 5 };
@@ -74,6 +97,7 @@ describe('POST', () => {
     mock.stake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     mock.broadcast.mockRejectedValue(new BroadcastService.InvalidExchangeRate());
@@ -94,6 +118,7 @@ describe('POST', () => {
     mock.stake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     mock.broadcast.mockRejectedValueOnce(new Error('fail'));
