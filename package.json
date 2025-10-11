@@ -12,7 +12,8 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "test": "vitest",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "secretlint": "secretlint \"**/*\" --maskSecrets"
   },
   "prettier": {
     "semi": true,
@@ -105,6 +106,10 @@
     "@eslint/js": "^9.28.0",
     "@mdx-js/react": "^3.0.1",
     "@next/mdx": "^15.3.3",
+    "@secretlint/secretlint-rule-aws": "^11.2.5",
+    "@secretlint/secretlint-rule-gcp": "^11.2.5",
+    "@secretlint/secretlint-rule-npm": "^11.2.5",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.2.5",
     "@tailwindcss/postcss": "^4.1.8",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -130,6 +135,7 @@
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.12",
     "secp256k1": "^5.0.1",
+    "secretlint": "^11.2.5",
     "tailwindcss": "^4.1.8",
     "tsx": "^4.19.4",
     "typescript": "^5",
@@ -145,6 +151,7 @@
     "esbuild": "^0.25.4"
   },
   "lint-staged": {
-    "**/*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
+    "**/*.{js,jsx,ts,tsx,json,css,md}": "prettier --write",
+    "**/*": "secretlint --maskSecrets"
   }
 }
