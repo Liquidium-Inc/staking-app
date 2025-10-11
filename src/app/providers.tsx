@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
+import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
 import { config } from '@/config/public';
 
 const network = config.network === 'testnet4' ? TESTNET4 : MAINNET;
@@ -31,9 +32,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       {process.env.NODE_ENV !== 'production' && <ReactQueryDevtools />}
       <AnalyticsConsentProvider>
         <LaserEyesProvider config={{ network }}>
-          <UnisatAddressGuard />
-          {children}
-          <CookieConsentBanner />
+          <WalletAuthProvider>
+            <UnisatAddressGuard />
+            {children}
+            <CookieConsentBanner />
+          </WalletAuthProvider>
         </LaserEyesProvider>
       </AnalyticsConsentProvider>
     </QueryClientProvider>

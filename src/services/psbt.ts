@@ -273,11 +273,16 @@ export class PSBTService {
       .map((x, i) => ({ index: i, address: x.address }))
       .filter((x) => [source.address, payer.address].includes(x.address));
 
-    logger.debug('Prepared PSBT inputs for signing', {
-      inputsToSign: toSign.length,
-      payerInputs: toSign.filter((x) => x.address === payer.address).length,
-      sourceInputs: toSign.filter((x) => x.address === source.address).length,
-    });
+    console.log(
+      (
+        psbt.clone().data.globalMap.unsignedTx as unknown as {
+          tx: { ins: Array<{ hash: Buffer; index: number }> };
+        }
+      ).tx.ins.map(
+        (item: { hash: Buffer; index: number }) =>
+          `${Buffer.from(item.hash.reverse()).toString('hex')}:${item.index}`,
+      ),
+    );
 
     return {
       feeRate,

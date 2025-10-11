@@ -16,6 +16,10 @@ const nextConfig = {
   productionBrowserSourceMaps: process.env.GENERATE_SOURCEMAPS === 'true',
   // Enable MDX pages alongside TS/JS
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
+  eslint: {
+    // Ensure Next looks under the src/ directory for lintable files
+    dirs: ['src'],
+  },
   experimental: {
     // Enable Rust-based MDX compiler for Turbopack
     mdxRs: true,

@@ -17,6 +17,32 @@ const mock = vi.hoisted(() => {
   };
 });
 
+const sessionModule = vi.hoisted(() => {
+  class UnauthorizedError extends Error {}
+
+  const requireSession = vi.fn().mockResolvedValue({
+    id: 1,
+    address: 'addr',
+    tokenHash: 'hash',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    lastActiveAt: new Date(),
+  });
+
+  return {
+    module: {
+      requireSession,
+      UnauthorizedError,
+    },
+    mocks: {
+      requireSession,
+      UnauthorizedError,
+    },
+  };
+});
+
+const { requireSession: requireSessionMock, UnauthorizedError: UnauthorizedErrorMock } =
+  sessionModule.mocks;
+
 vi.mock('@/db', () => ({
   db: {
     unstake: mock.unstake,
@@ -32,12 +58,21 @@ vi.mock('@/services/broadcast', async (importOriginal) => {
   };
 });
 
+vi.mock('@/server/auth/session', () => sessionModule.module);
+
 describe('POST', () => {
   const userPsbt = new bitcoin.Psbt().toBase64();
   const canisterPsbt = new bitcoin.Psbt().toBase64();
 
   afterEach(() => {
     vi.clearAllMocks();
+    requireSessionMock.mockResolvedValue({
+      id: 1,
+      address: 'addr',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastActiveAt: new Date(),
+    });
   });
 
   it('returns 400 if body is invalid', async () => {
@@ -55,6 +90,7 @@ describe('POST', () => {
     mock.unstake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     const buildResult = { txid: 'test-txid', fee: '1000', feeRate: 5 };
@@ -67,6 +103,48 @@ describe('POST', () => {
     expect(mock.unstake.update).toHaveBeenCalledWith([1], { txid: 'test-txid' });
   });
 
+  it('returns 401 when session address does not match unstake entry', async () => {
+    const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+
+    requireSessionMock.mockResolvedValueOnce({
+      id: 2,
+      address: 'different',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastActiveAt: new Date(),
+    });
+
+    mock.unstake.getByTxid.mockResolvedValue({
+      id: 1,
+      psbt: canisterPsbt,
+      address: 'addr',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+    expect(mock.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 when requireSession throws UnauthorizedError', async () => {
+    const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+
+    requireSessionMock.mockRejectedValueOnce(new UnauthorizedErrorMock('Unauthorized'));
+
+    mock.unstake.getByTxid.mockResolvedValue({
+      id: 1,
+      psbt: canisterPsbt,
+      address: 'addr',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+    expect(mock.unstake.getByTxid).not.toHaveBeenCalled();
+  });
+
   it('should forward the BroadcastService.Error', async () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
@@ -74,6 +152,7 @@ describe('POST', () => {
     mock.unstake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     mock.broadcast.mockRejectedValue(new BroadcastService.InvalidExchangeRate());
@@ -94,6 +173,7 @@ describe('POST', () => {
     mock.unstake.getByTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
+      address: 'addr',
     });
 
     mock.broadcast.mockRejectedValueOnce(new Error('fail'));

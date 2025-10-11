@@ -53,6 +53,12 @@ const initializeConfig = () => {
     token: z.string(),
   });
 
+  const email = z.object({
+    resendApiKey: z.string().min(1, 'Resend API key is required'),
+    fromEmail: z.string().email('Valid from email is required'),
+    baseUrl: z.string().url().default('http://localhost:3000'),
+  });
+
   const configSchema = z.object({
     env: z.enum(['development', 'production', 'test']).default('development'),
     network: z.enum(['mainnet', 'testnet4']).default('mainnet'),
@@ -65,6 +71,7 @@ const initializeConfig = () => {
     liquidium,
     ordiscan,
     canister,
+    email,
   });
 
   const { success, data, error } = configSchema.safeParse({
@@ -101,6 +108,11 @@ const initializeConfig = () => {
     ordiscan: {
       token: process.env.ORDISCAN_API_TOKEN,
       url: process.env.ORDISCAN_API_URL,
+    },
+    email: {
+      resendApiKey: process.env.RESEND_API_KEY,
+      fromEmail: process.env.FROM_EMAIL,
+      baseUrl: process.env.BASE_URL,
     },
     canister:
       process.env.CANISTER_MOCK + '' === 'true'
