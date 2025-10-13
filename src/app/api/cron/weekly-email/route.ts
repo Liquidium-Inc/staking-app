@@ -15,6 +15,16 @@ import { runeProvider } from '@/providers/rune-provider';
 
 export const maxDuration = 300; // 5 minutes
 
+// Helper function to mask email addresses in logs for privacy
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return '***@***';
+  if (local.length <= 2) {
+    return `${local[0] ?? '*'}***@${domain}`;
+  }
+  return `${local[0]}***${local.slice(-1)}@${domain}`;
+}
+
 // Helper function to fetch rune price with Ordiscan primary, BIS fallback
 async function getRunePriceInSats(runeName: string, runeId: string): Promise<number | null> {
   if (!runeName?.trim() || !runeId?.trim()) {
@@ -89,13 +99,13 @@ function calculateEarningsFromActivity(
 
   const values = activity
     .filter((tx) => tx.block_height >= sevenDaysAgoBlock && tx.rune_id === publicConfig.sRune.id)
-    .map((tx) => ({
-      value:
-        multiplier[tx.event_type as keyof typeof multiplier] *
-        Number(tx.amount) *
-        10 ** -tx.decimals,
-      block: tx.block_height,
-    }))
+    .map((tx) => {
+      const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
+      return {
+        value: mult * Number(tx.amount) * 10 ** -tx.decimals,
+        block: tx.block_height,
+      };
+    })
     .reverse();
 
   const rateValues = [
@@ -275,10 +285,10 @@ async function processUserEmail(
     const result = await emailService.sendEmail(user.email, emailTemplate);
 
     if (result.success) {
-      logger.info(`Weekly email sent to ${user.email}`);
+      logger.info(`Weekly email sent to ${maskEmail(user.email)}`);
       return { success: true, skipped: false };
     } else {
-      logger.error(`Failed to send weekly email to ${user.email}:`, result.error);
+      logger.error(`Failed to send weekly email to ${maskEmail(user.email)}:`, result.error);
       return { success: false, skipped: true };
     }
   } catch (error) {
