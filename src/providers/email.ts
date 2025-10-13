@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { nanoid } from 'nanoid';
-import { Resend } from 'resend';
+import mailjet from 'node-mailjet';
 
 import { config } from '@/config/config';
 import { db } from '@/db';
 import { logger } from '@/lib/logger';
 
-const resend = new Resend(config.email.resendApiKey);
+const mailjetClient = mailjet.apiConnect(config.email.mailjetApiKey, config.email.mailjetApiSecret);
 
 const EMAIL_FOOTER_LOGO_FILENAME = 'isologo.png';
 const EMAIL_FOOTER_LOGO_CONTENT_ID = 'liquidium-isologo';
@@ -167,22 +167,40 @@ export interface EmailTemplate {
 export const emailService = {
   async sendEmail(to: string, template: EmailTemplate) {
     try {
-      const { data, error } = await resend.emails.send({
-        from: config.email.fromEmail,
-        to: [to],
-        subject: template.subject,
-        html: template.html,
-        text: template.text,
-        attachments: template.attachments,
+      const mailjetAttachments = template.attachments?.map((attachment) => ({
+        ContentType: attachment.contentType,
+        Filename: attachment.filename,
+        Base64Content: attachment.content,
+        ContentID: attachment.contentId,
+      }));
+
+      const response = await mailjetClient.post('send', { version: 'v3.1' }).request({
+        Messages: [
+          {
+            From: {
+              Email: config.email.fromEmail,
+              Name: 'Liquidium',
+            },
+            To: [
+              {
+                Email: to,
+              },
+            ],
+            Subject: template.subject,
+            TextPart: template.text,
+            HTMLPart: template.html,
+            InlinedAttachments: mailjetAttachments,
+          },
+        ],
       });
 
-      if (error) {
-        logger.error('Failed to send email', { to, error });
-        return { success: false, error };
+      if (response.response.status !== 200) {
+        logger.error('Failed to send email', { to, status: response.response.status });
+        return { success: false, error: response.body };
       }
 
-      logger.info('Email sent successfully', { to, data });
-      return { success: true, data };
+      logger.info('Email sent successfully', { to, data: response.body });
+      return { success: true, data: response.body };
     } catch (error) {
       logger.error('Error sending email', { to, error });
       return { success: false, error };

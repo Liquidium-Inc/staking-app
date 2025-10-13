@@ -91,7 +91,7 @@
     "react-hook-form": "^7.57.0",
     "react-hot-toast": "^2.5.2",
     "recharts": "^2.15.3",
-    "resend": "^6.1.2",
+    "node-mailjet": "^6.0.8",
     "runelib": "^1.0.7",
     "sats-connect": "^3.5.0",
     "sonner": "^2.0.5",
