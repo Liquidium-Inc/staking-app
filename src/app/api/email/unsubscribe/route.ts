@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const getQuerySchema = z.object({
   address: z.string().min(1, 'Address is required'),
   token: z.string().min(1, 'Token is required'),

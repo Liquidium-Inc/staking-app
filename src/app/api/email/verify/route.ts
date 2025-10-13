@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const querySchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });

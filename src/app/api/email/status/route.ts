@@ -5,6 +5,9 @@ import { db } from '@/db';
 import { logger } from '@/lib/logger';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const querySchema = z.object({
   address: z.string().min(1, 'Address is required'),
 });
