@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { db } from '@/db';
+import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 export async function GET(req: NextRequest) {
@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/?error=missing_parameters', req.url));
     }
 
-    const verificationToken = await db.emailSubscription.getVerificationToken(token);
+    const verificationToken = await db.emailSubscription.getVerificationToken(
+      token,
+      EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+    );
 
     if (!verificationToken) {
       return NextResponse.redirect(new URL('/?error=invalid_token', req.url));
@@ -29,6 +32,9 @@ export async function GET(req: NextRequest) {
     }
 
     await db.emailSubscription.unsubscribe(verificationToken.address);
+
+    // Best-effort cleanup of the used unsubscribe token
+    await db.emailSubscription.deleteVerificationToken(token);
 
     // Redirect to success page
     return NextResponse.redirect(new URL('/?email_unsubscribed=true', req.url));
@@ -52,7 +58,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (token) {
-      const verificationToken = await db.emailSubscription.getVerificationToken(token);
+      const verificationToken = await db.emailSubscription.getVerificationToken(
+        token,
+        EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+      );
 
       if (!verificationToken) {
         return NextResponse.json(
@@ -85,6 +94,11 @@ export async function POST(req: NextRequest) {
 
     // Unsubscribe by address
     await db.emailSubscription.unsubscribe(address);
+
+    // If a token was provided and valid, best-effort cleanup after success
+    if (token) {
+      await db.emailSubscription.deleteVerificationToken(token);
+    }
 
     return NextResponse.json({
       success: true,

@@ -1,17 +1,22 @@
-import { desc, eq, lt } from 'drizzle-orm';
+import { desc, eq, lt, and } from 'drizzle-orm';
 
 import { sql } from './client';
 import { emailSubscriptions, emailVerifications } from './schema';
+
+export const EMAIL_TOKEN_PURPOSE = {
+  VERIFY: 'verify',
+  UNSUBSCRIBE: 'unsubscribe',
+} as const;
+
+export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSE)[keyof typeof EMAIL_TOKEN_PURPOSE];
 
 async function insert(address: string, email: string) {
   return await sql
     .insert(emailSubscriptions)
     .values({ address, email })
     .onConflictDoUpdate({
-      target: [emailSubscriptions.address, emailSubscriptions.email],
-      set: {
-        email,
-      },
+      target: emailSubscriptions.address,
+      set: { email, isVerified: false },
     });
 }
 
@@ -52,24 +57,25 @@ async function insertVerificationToken(
   email: string,
   token: string,
   expiresAt: Date,
+  purpose: EmailTokenPurpose,
 ) {
-  return await sql.insert(emailVerifications).values({ address, email, token, expiresAt });
+  return await sql.insert(emailVerifications).values({ address, email, token, expiresAt, purpose });
 }
 
-async function getVerificationToken(token: string) {
+async function getVerificationToken(token: string, purpose: EmailTokenPurpose) {
   const [result] = await sql
     .select()
     .from(emailVerifications)
-    .where(eq(emailVerifications.token, token))
+    .where(and(eq(emailVerifications.token, token), eq(emailVerifications.purpose, purpose)))
     .limit(1);
   return result;
 }
 
-async function getLatestTokenForAddress(address: string) {
+async function getLatestTokenForAddress(address: string, purpose: EmailTokenPurpose) {
   const [result] = await sql
     .select()
     .from(emailVerifications)
-    .where(eq(emailVerifications.address, address))
+    .where(and(eq(emailVerifications.address, address), eq(emailVerifications.purpose, purpose)))
     .orderBy(desc(emailVerifications.createdAt))
     .limit(1);
 

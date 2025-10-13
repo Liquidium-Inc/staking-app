@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { db } from '@/db';
+import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { logger } from '@/lib/logger';
 import { emailService } from '@/providers/email';
 import { redis } from '@/providers/redis';
@@ -91,7 +91,13 @@ export async function POST(req: NextRequest) {
 
     const token = nanoid(32);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await db.emailSubscription.insertVerificationToken(address, email, token, expiresAt);
+    await db.emailSubscription.insertVerificationToken(
+      address,
+      email,
+      token,
+      expiresAt,
+      EMAIL_TOKEN_PURPOSE.VERIFY,
+    );
 
     // Send verification email
     const template = emailService.generateVerificationEmail(token);

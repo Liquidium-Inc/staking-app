@@ -11,7 +11,7 @@ vi.mock('./client', () => ({
 }));
 
 import { sql } from './client';
-import { emailSubscription } from './emailSubscription.service';
+import { emailSubscription, EMAIL_TOKEN_PURPOSE } from './emailSubscription.service';
 
 // Import the mocked module
 
@@ -133,6 +133,7 @@ describe('emailSubscription service', () => {
         'test@example.com',
         token,
         expiresAt,
+        EMAIL_TOKEN_PURPOSE.VERIFY,
       );
       expect(result).toBeDefined();
       expect(mockSql.insert).toHaveBeenCalled();
@@ -140,21 +141,119 @@ describe('emailSubscription service', () => {
   });
 
   describe('getVerificationToken', () => {
-    it('should get a verification token', async () => {
+    it('should get a verification token with purpose', async () => {
       const mockSelect = vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi
-              .fn()
-              .mockResolvedValue([{ id: 1, email: 'test@example.com', token: 'test-token' }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: 1,
+                email: 'test@example.com',
+                token: 'test-token',
+                purpose: EMAIL_TOKEN_PURPOSE.VERIFY,
+              },
+            ]),
           }),
         }),
       });
       mockSql.select = mockSelect;
 
-      const result = await emailSubscription.getVerificationToken('test-token');
+      const result = await emailSubscription.getVerificationToken(
+        'test-token',
+        EMAIL_TOKEN_PURPOSE.VERIFY,
+      );
       expect(result).toBeDefined();
       expect(result?.token).toBe('test-token');
+      expect(result?.purpose).toBe(EMAIL_TOKEN_PURPOSE.VERIFY);
+      expect(mockSql.select).toHaveBeenCalled();
+    });
+
+    it('should get an unsubscribe token with purpose', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                id: 1,
+                email: 'test@example.com',
+                token: 'test-token',
+                purpose: EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+              },
+            ]),
+          }),
+        }),
+      });
+      mockSql.select = mockSelect;
+
+      const result = await emailSubscription.getVerificationToken(
+        'test-token',
+        EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+      );
+      expect(result).toBeDefined();
+      expect(result?.token).toBe('test-token');
+      expect(result?.purpose).toBe(EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE);
+      expect(mockSql.select).toHaveBeenCalled();
+    });
+  });
+
+  describe('getLatestTokenForAddress', () => {
+    it('should get the latest verification token for an address', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: 1,
+                  address: 'test-address',
+                  email: 'test@example.com',
+                  token: 'test-token',
+                  purpose: EMAIL_TOKEN_PURPOSE.VERIFY,
+                },
+              ]),
+            }),
+          }),
+        }),
+      });
+      mockSql.select = mockSelect;
+
+      const result = await emailSubscription.getLatestTokenForAddress(
+        'test-address',
+        EMAIL_TOKEN_PURPOSE.VERIFY,
+      );
+      expect(result).toBeDefined();
+      expect(result?.token).toBe('test-token');
+      expect(result?.purpose).toBe(EMAIL_TOKEN_PURPOSE.VERIFY);
+      expect(mockSql.select).toHaveBeenCalled();
+    });
+
+    it('should get the latest unsubscribe token for an address', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: 1,
+                  address: 'test-address',
+                  email: 'test@example.com',
+                  token: 'test-token',
+                  purpose: EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+                },
+              ]),
+            }),
+          }),
+        }),
+      });
+      mockSql.select = mockSelect;
+
+      const result = await emailSubscription.getLatestTokenForAddress(
+        'test-address',
+        EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+      );
+      expect(result).toBeDefined();
+      expect(result?.token).toBe('test-token');
+      expect(result?.purpose).toBe(EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE);
       expect(mockSql.select).toHaveBeenCalled();
     });
   });
