@@ -1,9 +1,11 @@
 'use client';
 import { useLaserEyes } from '@omnisat/lasereyes-react';
+import { BitcoinNetworkType } from '@orangecrypto/orange-connect';
 import { useEffect, useState } from 'react';
 import { request } from 'sats-connect';
 
 import { Button } from '@/components/ui/button';
+import { config as publicConfig } from '@/config/public';
 
 export default function SignerPage() {
   const { address, paymentAddress } = useLaserEyes();
@@ -37,7 +39,15 @@ export default function SignerPage() {
       destinationAddress,
       feeRate: 8,
       refundAddress: paymentAddress,
-      //network: BitcoinNetworkType.Testnet4,
+      // Basic required fields per sats-connect/types
+      network:
+        publicConfig.network === 'testnet4'
+          ? BitcoinNetworkType.Testnet4
+          : BitcoinNetworkType.Mainnet,
+      delegateInscriptionId: undefined,
+      appServiceFee: undefined,
+      appServiceFeeAddress: undefined,
+      inscriptionDetails: undefined,
     });
     console.log(response);
   };
