@@ -28,11 +28,11 @@ async function getByEmail(email: string) {
   return await sql.select().from(emailSubscriptions).where(eq(emailSubscriptions.email, email));
 }
 
-async function verifyEmail(email: string) {
+async function verifyEmail(address: string, email: string) {
   return await sql
     .update(emailSubscriptions)
     .set({ isVerified: true })
-    .where(eq(emailSubscriptions.email, email));
+    .where(and(eq(emailSubscriptions.address, address), eq(emailSubscriptions.email, email)));
 }
 
 async function unsubscribe(address: string) {

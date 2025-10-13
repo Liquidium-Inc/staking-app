@@ -1,17 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
+const getQuerySchema = z.object({
+  address: z.string().min(1, 'Address is required'),
+  token: z.string().min(1, 'Token is required'),
+});
+
+const postBodySchema = z.object({
+  address: z.string().min(1, 'Address is required'),
+  token: z.string().optional(),
+});
+
+const successResponseSchema = z.object({
+  success: z.literal(true),
+  message: z.string(),
+});
+
+const errorResponseSchema = z.object({
+  success: z.literal(false),
+  error: z.string(),
+});
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const address = searchParams.get('address');
-    const token = searchParams.get('token');
+    const queryResult = getQuerySchema.safeParse(Object.fromEntries(searchParams));
 
-    if (!address || !token) {
-      return NextResponse.redirect(new URL('/?error=missing_parameters', req.url));
+    if (!queryResult.success) {
+      return NextResponse.redirect(
+        new URL(
+          `/?error=${encodeURIComponent(queryResult.error.errors[0]?.message ?? 'Invalid parameters')}`,
+          req.url,
+        ),
+      );
     }
+
+    const { address, token } = queryResult.data;
 
     const verificationToken = await db.emailSubscription.getVerificationToken(
       token,
@@ -45,17 +72,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { address, token } = await req.json();
+    const body = await req.json();
+    const bodyResult = postBodySchema.safeParse(body);
 
-    if (!address) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Address is required',
-        },
-        { status: 400 },
-      );
+    if (!bodyResult.success) {
+      const response = errorResponseSchema.parse({
+        success: false,
+        error: bodyResult.error.errors[0]?.message ?? 'Invalid request body',
+      });
+      return NextResponse.json(response, { status: 400 });
     }
+
+    const { address, token } = bodyResult.data;
 
     if (token) {
       const verificationToken = await db.emailSubscription.getVerificationToken(
@@ -64,31 +92,38 @@ export async function POST(req: NextRequest) {
       );
 
       if (!verificationToken) {
-        return NextResponse.json(
-          { success: false, error: 'Invalid unsubscribe token' },
-          { status: 400 },
-        );
+        const response = errorResponseSchema.parse({
+          success: false,
+          error: 'Invalid unsubscribe token',
+        });
+        return NextResponse.json(response, { status: 400 });
       }
 
       if (verificationToken.address.toLowerCase() !== address.toLowerCase()) {
-        return NextResponse.json(
-          { success: false, error: 'Token does not match address' },
-          { status: 403 },
-        );
+        const response = errorResponseSchema.parse({
+          success: false,
+          error: 'Token does not match address',
+        });
+        return NextResponse.json(response, { status: 403 });
       }
 
       if (new Date() > verificationToken.expiresAt) {
         await db.emailSubscription.deleteVerificationToken(token);
-        return NextResponse.json(
-          { success: false, error: 'Unsubscribe token expired' },
-          { status: 400 },
-        );
+        const response = errorResponseSchema.parse({
+          success: false,
+          error: 'Unsubscribe token expired',
+        });
+        return NextResponse.json(response, { status: 400 });
       }
     } else {
       const session = await requireSession(req);
 
       if (session.address.toLowerCase() !== address.toLowerCase()) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+        const response = errorResponseSchema.parse({
+          success: false,
+          error: 'Unauthorized',
+        });
+        return NextResponse.json(response, { status: 403 });
       }
     }
 
@@ -100,20 +135,24 @@ export async function POST(req: NextRequest) {
       await db.emailSubscription.deleteVerificationToken(token);
     }
 
-    return NextResponse.json({
+    const response = successResponseSchema.parse({
       success: true,
       message: 'Successfully unsubscribed from email notifications',
     });
+    return NextResponse.json(response);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
-    return NextResponse.json(
-      {
+      const response = errorResponseSchema.parse({
         success: false,
-        error: 'Internal server error',
-      },
-      { status: 500 },
-    );
+        error: 'Unauthorized',
+      });
+      return NextResponse.json(response, { status: 401 });
+    }
+
+    const response = errorResponseSchema.parse({
+      success: false,
+      error: 'Internal server error',
+    });
+    return NextResponse.json(response, { status: 500 });
   }
 }

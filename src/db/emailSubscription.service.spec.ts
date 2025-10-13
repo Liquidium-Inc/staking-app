@@ -74,7 +74,7 @@ describe('emailSubscription service', () => {
   });
 
   describe('verifyEmail', () => {
-    it('should verify an email', async () => {
+    it('should verify an email for a specific address', async () => {
       const mockUpdate = vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue({ id: 1 }),
@@ -82,7 +82,7 @@ describe('emailSubscription service', () => {
       });
       mockSql.update = mockUpdate;
 
-      const result = await emailSubscription.verifyEmail('test@example.com');
+      const result = await emailSubscription.verifyEmail('test-address', 'test@example.com');
       expect(result).toBeDefined();
       expect(mockSql.update).toHaveBeenCalled();
     });

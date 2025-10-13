@@ -110,9 +110,6 @@ function calculateEarningsFromActivity(
 // Calculate user's earnings in the last 7 days
 async function calculateUserEarnings(address: string): Promise<number> {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgoBlock = Math.floor(sevenDaysAgo.getTime() / 1000 / 60);
-
     const [{ data: activity }, historic] = await Promise.all([
       runeProvider.runes.walletActivity({
         address,
@@ -123,6 +120,12 @@ async function calculateUserEarnings(address: string): Promise<number> {
     ]);
 
     const rates = getExchangeRates(historic);
+
+    // Bitcoin averages ~144 blocks/day (10 min target), so 7 days ≈ 1008 blocks
+    const sevenDaysBlocks = 7 * 144;
+    const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
+    const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
+
     const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
 
     return earnings.total;
@@ -186,9 +189,6 @@ async function calculateTotalRewardsDistributed(
   historic: Array<{ timestamp: Date; block: number; balance: string; staked: string }>,
 ): Promise<number> {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgoBlock = Math.floor(sevenDaysAgo.getTime() / 1000 / 60);
-
     let totalRewards = new Big(0);
     const rates = getExchangeRates(historic);
 
@@ -200,6 +200,11 @@ async function calculateTotalRewardsDistributed(
           rune_id: publicConfig.sRune.id,
           count: 1000,
         });
+
+        // Bitcoin averages ~144 blocks/day (10 min target), so 7 days ≈ 1008 blocks
+        const sevenDaysBlocks = 7 * 144;
+        const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
+        const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
 
         const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
         totalRewards = totalRewards.plus(earnings.total);

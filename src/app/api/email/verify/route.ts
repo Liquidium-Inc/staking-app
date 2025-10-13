@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { logger } from '@/lib/logger';
 
+const querySchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+});
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const token = searchParams.get('token');
+    const queryResult = querySchema.safeParse(Object.fromEntries(searchParams));
 
-    if (!token) {
-      return NextResponse.redirect(new URL('/?error=missing_token', req.url));
+    if (!queryResult.success) {
+      return NextResponse.redirect(
+        new URL(
+          `/?error=${encodeURIComponent(queryResult.error.errors[0]?.message ?? 'Invalid token')}`,
+          req.url,
+        ),
+      );
     }
+
+    const { token } = queryResult.data;
 
     // Find verification token
     const verificationToken = await db.emailSubscription.getVerificationToken(
@@ -30,7 +42,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Verify the email
-    await db.emailSubscription.verifyEmail(verificationToken.email);
+    await db.emailSubscription.verifyEmail(verificationToken.address, verificationToken.email);
 
     // Delete the verification token
     await db.emailSubscription.deleteVerificationToken(token);

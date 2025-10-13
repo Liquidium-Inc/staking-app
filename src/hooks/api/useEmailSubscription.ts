@@ -25,6 +25,9 @@ export const useEmailSubscription = (address: string | undefined) => {
 
   const subscribeMutation = useMutation({
     mutationFn: async ({ email, agreeToTerms }: { email: string; agreeToTerms: boolean }) => {
+      if (!address) {
+        throw new Error('Wallet address is required to subscribe');
+      }
       const { data } = await axios.post('/api/email/subscribe', {
         address,
         email,
@@ -45,8 +48,11 @@ export const useEmailSubscription = (address: string | undefined) => {
 
   const unsubscribeMutation = useMutation({
     mutationFn: async () => {
+      if (!address) {
+        throw new Error('Wallet address is required to unsubscribe');
+      }
       const { data } = await axios.post('/api/email/unsubscribe', {
-        address: address,
+        address,
       });
       return data;
     },
