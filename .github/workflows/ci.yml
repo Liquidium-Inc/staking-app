@@ -14,7 +14,11 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm secretlint
       - run: pnpm lint
