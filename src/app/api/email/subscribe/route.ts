@@ -8,6 +8,9 @@ import { emailService } from '@/providers/email';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const RATE_LIMIT_MAX_REQUESTS = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_KEY_PREFIX = 'rate-limit:subscribe:';
