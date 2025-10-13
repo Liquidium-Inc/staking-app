@@ -5,7 +5,7 @@ import { nanoid } from 'nanoid';
 import mailjet from 'node-mailjet';
 
 import { config } from '@/config/config';
-import { db } from '@/db';
+import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { logger } from '@/lib/logger';
 
 const mailjetClient = mailjet.apiConnect(config.email.mailjetApiKey, config.email.mailjetApiSecret);
@@ -122,7 +122,7 @@ const walletAddressStyle = "color: #f97316; font-family: 'Monaco', 'Courier New'
 const footerStyle = 'border-top: 1px solid #27272a; padding-top: 24px; text-align: center;';
 const footerTextStyle = 'font-size: 14px; color: #71717a; margin: 0 0 16px;';
 const footerLinkStyle = 'color: #52525b; font-size: 12px; text-decoration: underline;';
-const EMAIL_UNSUBSCRIBE_TOKEN_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+const EMAIL_UNSUBSCRIBE_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 const metricValueStyle = (color: string) =>
   `margin: 0; font-size: 20px; font-weight: 700; color: ${color};`;
@@ -461,7 +461,10 @@ export const emailService = {
   },
 
   async getOrCreateUnsubscribeToken(address: string, email: string): Promise<string> {
-    const existingToken = await db.emailSubscription.getLatestTokenForAddress(address);
+    const existingToken = await db.emailSubscription.getLatestTokenForAddress(
+      address,
+      EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+    );
 
     if (existingToken && new Date(existingToken.expiresAt) > new Date()) {
       return existingToken.token;
@@ -470,7 +473,13 @@ export const emailService = {
     const token = nanoid(32);
     const expiresAt = new Date(Date.now() + EMAIL_UNSUBSCRIBE_TOKEN_TTL_MS);
 
-    await db.emailSubscription.insertVerificationToken(address, email, token, expiresAt);
+    await db.emailSubscription.insertVerificationToken(
+      address,
+      email,
+      token,
+      expiresAt,
+      EMAIL_TOKEN_PURPOSE.UNSUBSCRIBE,
+    );
 
     return token;
   },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { db } from '@/db';
+import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { logger } from '@/lib/logger';
 
 export async function GET(req: NextRequest) {
@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Find verification token
-    const verificationToken = await db.emailSubscription.getVerificationToken(token);
+    const verificationToken = await db.emailSubscription.getVerificationToken(
+      token,
+      EMAIL_TOKEN_PURPOSE.VERIFY,
+    );
 
     if (!verificationToken) {
       return NextResponse.redirect(new URL('/?error=invalid_token', req.url));

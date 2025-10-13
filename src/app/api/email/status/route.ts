@@ -1,41 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { db } from '@/db';
 import { logger } from '@/lib/logger';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+
+const querySchema = z.object({
+  address: z.string().min(1, 'Address is required'),
+});
+
+const responseSchema = z.object({
+  success: z.boolean(),
+  data: z
+    .object({
+      subscribed: z.boolean(),
+      email: z.string().nullable(),
+      isVerified: z.boolean(),
+    })
+    .optional(),
+  error: z.string().optional(),
+});
 
 export async function GET(req: NextRequest) {
   try {
     const session = await requireSession(req);
 
     const { searchParams } = new URL(req.url);
-    const address = searchParams.get('address');
+    const queryResult = querySchema.safeParse(Object.fromEntries(searchParams));
 
-    if (!address) {
+    if (!queryResult.success) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Address is required',
+          error: queryResult.error.errors[0]?.message ?? 'Invalid request parameters',
         },
         { status: 400 },
       );
     }
 
+    const { address } = queryResult.data;
+
     if (session.address.toLowerCase() !== address.toLowerCase()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Forbidden: You can only access your own email status',
-        },
-        { status: 403 },
-      );
+      const response = responseSchema.parse({
+        success: false,
+        error: 'Forbidden: You can only access your own email status',
+      });
+      return NextResponse.json(response, { status: 403 });
     }
 
-    // Get subscriptions for the address
+    // Get subscription for the address (unique by address)
     const subscriptions = await db.emailSubscription.getByAddress(address);
 
-    if (subscriptions.length === 0) {
-      return NextResponse.json({
+    if (!subscriptions.length) {
+      const response = responseSchema.parse({
         success: true,
         data: {
           subscribed: false,
@@ -43,14 +60,13 @@ export async function GET(req: NextRequest) {
           isVerified: false,
         },
       });
+      return NextResponse.json(response);
     }
 
-    // Return the most recent subscription
-    const latestSubscription = subscriptions.reduce((latest, current) =>
-      new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest,
-    );
+    // Single row per address expected
+    const latestSubscription = subscriptions[0];
 
-    return NextResponse.json({
+    const response = responseSchema.parse({
       success: true,
       data: {
         subscribed: true,
@@ -58,24 +74,21 @@ export async function GET(req: NextRequest) {
         isVerified: latestSubscription.isVerified,
       },
     });
+    return NextResponse.json(response);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Unauthorized: Please connect your wallet',
-        },
-        { status: 401 },
-      );
+      const response = responseSchema.parse({
+        success: false,
+        error: 'Unauthorized: Please connect your wallet',
+      });
+      return NextResponse.json(response, { status: 401 });
     }
 
     logger.error('Email status check error', { error });
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Internal server error',
-      },
-      { status: 500 },
-    );
+    const response = responseSchema.parse({
+      success: false,
+      error: 'Internal server error',
+    });
+    return NextResponse.json(response, { status: 500 });
   }
 }
