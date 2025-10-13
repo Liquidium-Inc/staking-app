@@ -223,7 +223,7 @@ export class PSBTService {
     });
     const runePsbt = new RunePSBT(network).setPayer(...utxos.payer);
 
-    const lock = (e: PSBTInput) => redis.utxo.lock(`${e.hash}:${e.index}`, source.address);
+    const lock = (e: PSBTInput) => redis.utxo.lock(`${e.hash}:${e.index}`, source.address, 180);
     const targetInputs = await this.addInputs(
       target.amount,
       utxos.target,
