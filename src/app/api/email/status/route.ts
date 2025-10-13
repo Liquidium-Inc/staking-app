@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { db } from '@/db';
 import { logger } from '@/lib/logger';
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await requireSession(req);
+
     const { searchParams } = new URL(req.url);
     const address = searchParams.get('address');
 
@@ -15,6 +18,16 @@ export async function GET(req: NextRequest) {
           error: 'Address is required',
         },
         { status: 400 },
+      );
+    }
+
+    if (session.address.toLowerCase() !== address.toLowerCase()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Forbidden: You can only access your own email status',
+        },
+        { status: 403 },
       );
     }
 
@@ -46,6 +59,16 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Unauthorized: Please connect your wallet',
+        },
+        { status: 401 },
+      );
+    }
+
     logger.error('Email status check error', { error });
     return NextResponse.json(
       {
