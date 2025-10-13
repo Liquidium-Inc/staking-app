@@ -29,6 +29,10 @@ export default function SignerPage() {
       terms: {
         amount: premine,
         cap: premine,
+        heightStart: undefined,
+        heightEnd: undefined,
+        offsetStart: undefined,
+        offsetEnd: undefined,
       },
       destinationAddress,
       feeRate: 8,
