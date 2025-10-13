@@ -6,7 +6,7 @@ A full-stack protocol for staking runes on Bitcoin, developed by Rather Labs and
 
 ## Overview
 
-Liquidium Staking is a protocol that enables users to stake runes on Bitcoin, earning yield and participating in a decentralized staking pool. The project leverages Next.js (App Router), React, React Query, Drizzle ORM, PostgreSQL, and Redis (for distributed UTXO locks, not cache). It integrates with Internet Computer canisters for exchange rate data, mempool.space for Bitcoin blockchain data, Ordiscan and Best In Slot for rune market information, and the Liquidium internal API for rune-aware UTXO data. Transactional and digest email delivery is handled via Resend.
+Liquidium Staking is a protocol that enables users to stake runes on Bitcoin, earning yield and participating in a decentralized staking pool. The project leverages Next.js (App Router), React, React Query, Drizzle ORM, PostgreSQL, and Redis (for distributed UTXO locks, not cache). It integrates with Internet Computer canisters for exchange rate data, mempool.space for Bitcoin blockchain data, Ordiscan and Best In Slot for rune market information, and the Liquidium internal API for rune-aware UTXO data. Transactional and digest email delivery is handled via Mailjet.
 
 The core staking logic runs in the canister smart contract maintained at https://github.com/Liquidium-Inc/staking-canister/.
 
@@ -18,7 +18,7 @@ The core staking logic runs in the canister smart contract maintained at https:/
 - **Serverless Backend**: All backend logic runs on Next.js API routes (serverless functions).
 - **Distributed UTXO Locking**: Uses Redis to coordinate UTXO usage and prevent ~~double-spending~~ double-assignation.
 - **Blockchain Data**: Integrates with Internet Computer canisters for exchange rates, mempool.space for Bitcoin blockchain data, and Ordiscan/Best In Slot for rune information.
-- **Email Notifications**: Provides opt-in staking email alerts and a weekly digest powered by the Resend API.
+- **Email Notifications**: Provides opt-in staking email alerts and a weekly digest powered by the Mailjet API.
 - **Portfolio & Analytics**: Users can view their staking portfolio, yields, and historical performance.
 
 ---
@@ -61,7 +61,7 @@ Copy `.env.example` to `.env` and fill in the required values:
 - `NEXT_PUBLIC_WITHDRAW_TIME` — Withdrawal lock time when the user unstake (in seconds).
 - `NEXT_PUBLIC_OVERWRITE_TOKEN_CONFIG` — Toggle for overriding on-chain token metadata with environment configuration.
 - `NEXT_PUBLIC_DEBUG_TOKEN_PRICE` / `NEXT_PUBLIC_DEBUG_BTC_PRICE` — Optional debug overrides for UI previews.
-- `RESEND_API_KEY` / `FROM_EMAIL` / `BASE_URL` — Resend credentials and default site URL for transactional and digest emails.
+- `MAILJET_API_KEY` / `MAILJET_API_SECRET` / `FROM_EMAIL` / `BASE_URL` — Mailjet credentials and default site URL for transactional and digest emails.
 - `NEXT_PUBLIC_SITE_URL` — Public-facing site URL for canonical links and redirects.
 - `NEXT_PUBLIC_POSTHOG_KEY` / `POSTHOG_API_KEY` / `POSTHOG_HOST` / `POSTHOG_SERVER_HOST` — PostHog analytics configuration.
 - `GENERATE_SOURCEMAPS` — Enables source map generation and PostHog uploads during builds.
@@ -127,7 +127,7 @@ This cron job is responsible for fetching the token holders of the staked rune a
 
 ### [Weekly email digest](src/app/api/cron/weekly-email/route.ts)
 
-Generates and sends a weekly staking digest email to subscribed addresses. It aggregates balances, recent activity, APY snapshots, and rune market data (via Ordiscan with Best In Slot fallback) before delivering through the Resend provider.
+Generates and sends a weekly staking digest email to subscribed addresses. It aggregates balances, recent activity, APY snapshots, and rune market data (via Ordiscan with Best In Slot fallback) before delivering through the Mailjet provider.
 
 ---
 

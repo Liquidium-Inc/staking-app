@@ -54,7 +54,8 @@ const initializeConfig = () => {
   });
 
   const email = z.object({
-    resendApiKey: z.string().min(1, 'Resend API key is required'),
+    mailjetApiKey: z.string().min(1, 'Mailjet API key is required'),
+    mailjetApiSecret: z.string().min(1, 'Mailjet API secret is required'),
     fromEmail: z.string().email('Valid from email is required'),
     baseUrl: z.string().url().default('http://localhost:3000'),
   });
@@ -110,7 +111,8 @@ const initializeConfig = () => {
       url: process.env.ORDISCAN_API_URL,
     },
     email: {
-      resendApiKey: process.env.RESEND_API_KEY,
+      mailjetApiKey: process.env.MAILJET_API_KEY,
+      mailjetApiSecret: process.env.MAILJET_API_SECRET,
       fromEmail: process.env.FROM_EMAIL,
       baseUrl: process.env.BASE_URL,
     },
