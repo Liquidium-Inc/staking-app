@@ -142,7 +142,8 @@ export class BroadcastService {
       (input) => `${Buffer.from(input.hash.toReversed()).toString('hex')}:${input.index}`,
     );
 
-    if (!(await redis.utxo.extend(utxos, sender))) throw new BroadcastService.TransactionExpired();
+    if (!(await redis.utxo.extend(utxos, sender, 180)))
+      throw new BroadcastService.TransactionExpired();
 
     return utxos;
   }
