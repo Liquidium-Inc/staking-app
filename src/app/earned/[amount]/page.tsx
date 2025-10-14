@@ -17,7 +17,8 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { amount } = await params;
-  const tokenAmount = Number(amount.replace(',', ''));
+  const decodedAmount = decodeURIComponent(amount);
+  const tokenAmount = Number(decodedAmount.replace(/,/g, ''));
 
   if (Number.isNaN(tokenAmount)) {
     return {
@@ -65,12 +66,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function EarnedSharePage({ params }: PageProps) {
   const { amount } = await params;
 
-  // validate amount
-  if (Number.isNaN(Number(amount))) {
+  const decodedAmount = decodeURIComponent(amount);
+  const cleanAmount = decodedAmount.replace(/,/g, '');
+  console.log(cleanAmount, 'cleanAmount');
+  const tokenAmount = Number(cleanAmount);
+
+  if (Number.isNaN(tokenAmount)) {
     redirect('/stake');
   }
-
-  const tokenAmount = Number(amount);
 
   return (
     <div className="flex items-center justify-center px-4 pt-12">
