@@ -10,13 +10,13 @@ import { getRunePrice } from '@/providers/rune-provider';
 import Image from 'next/image';
 
 interface PageProps {
-  params: {
+  params: Promise<{
     amount: string;
-  };
+  }>;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { amount } = params;
+  const { amount } = await params;
   const tokenAmount = Number(amount);
 
   if (Number.isNaN(tokenAmount)) {
