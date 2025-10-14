@@ -6,6 +6,25 @@ import { getRunePrice } from '@/providers/rune-provider';
 
 export const runtime = 'edge';
 
+async function getProtocolApy(): Promise<number> {
+  try {
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/protocol`, {
+      next: { revalidate: 600 },
+    });
+    if (!response.ok) {
+      return 0;
+    }
+    const data = await response.json();
+    return data.apy?.yearly ?? 0;
+  } catch (error) {
+    console.error('Failed to fetch protocol APY:', error);
+    return 0;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -17,9 +36,9 @@ export async function GET(request: NextRequest) {
 
     const tokenAmount = Number(amount);
 
-    // fetch current token price
-    const tokenPrice = await getRunePrice();
+    const [tokenPrice, apy] = await Promise.all([getRunePrice(), getProtocolApy()]);
     const usdValue = tokenAmount * tokenPrice;
+    const apyPercentage = (apy * 100).toFixed(1);
 
     // load fonts
     const fontBoldData = await fetch(
@@ -161,7 +180,7 @@ export async function GET(request: NextRequest) {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {formatCurrency((tokenAmount / 100) * 100, 2)}% APY
+                {formatCurrency(apyPercentage, 2)}% APY
               </div>
             </div>
 

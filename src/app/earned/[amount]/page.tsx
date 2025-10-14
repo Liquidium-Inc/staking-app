@@ -10,13 +10,13 @@ import { getRunePrice } from '@/providers/rune-provider';
 import Image from 'next/image';
 
 interface PageProps {
-  params: Promise<{
+  params: {
     amount: string;
-  }>;
+  };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { amount } = await params;
+  const { amount } = params;
   const tokenAmount = Number(amount);
 
   if (Number.isNaN(tokenAmount)) {
@@ -94,7 +94,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="opacity-50">
-                Liquidium is a sweet of decentralized lending products built on L1 Bitcoin.
+                Liquidium is a suite of decentralized lending products built on L1 Bitcoin.
               </p>
               <div className="-mb-3 flex w-full flex-col gap-2">
                 <Link
@@ -127,7 +127,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="opacity-50">
-                LIQ is the native token of the Liquidium ecosystem. Holders can vote of proposals
+                LIQ is the native token of the Liquidium ecosystem. Holders can vote on proposals
                 and earn yield by staking.
               </p>
             </CardContent>
