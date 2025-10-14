@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Coins, ExternalLink, HandCoins, TrendingUp, Wallet } from 'lucide-react';
+import { ArrowRight, ExternalLink, HandCoins, TrendingUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -68,7 +68,6 @@ export default async function EarnedSharePage({ params }: PageProps) {
 
   const decodedAmount = decodeURIComponent(amount);
   const cleanAmount = decodedAmount.replace(/,/g, '');
-  console.log(cleanAmount, 'cleanAmount');
   const tokenAmount = Number(cleanAmount);
 
   if (Number.isNaN(tokenAmount)) {
@@ -97,7 +96,8 @@ export default async function EarnedSharePage({ params }: PageProps) {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="opacity-50">
-                Liquidium is a suite of decentralized lending products built on L1 Bitcoin.
+                Liquidium is a suite of decentralized lending products with Bitcoin at it&apos;s
+                core.
               </p>
               <div className="-mb-3 flex w-full flex-col gap-2">
                 <Link
@@ -115,7 +115,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
                   rel="noopener noreferrer"
                   className="flex items-center justify-between rounded-full border border-neutral-800 px-4 py-2"
                 >
-                  <p>P2P inscription loans</p>
+                  <p>P2P Inscription and Rune loans</p>
                   <ExternalLink className="h-4 w-4" />
                 </Link>
               </div>
@@ -146,7 +146,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
             <CardContent className="">
               <p className="opacity-50">
                 30% of the Liquidium&apos;s protocols&apos; revenue is distributed to LIQ stakers
-                through token buybacks.
+                through daily token buybacks.
               </p>
             </CardContent>
           </Card>
