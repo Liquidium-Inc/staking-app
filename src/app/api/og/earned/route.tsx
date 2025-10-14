@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '16px',
-                      fontSize: 110,
+                      fontSize: 90,
                     }}
                   >
                     <span
@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
                         fontWeight: 700,
                       }}
                     >
-                      {formatCurrency(tokenAmount, 2)}
+                      {formatCurrency(tokenAmount, 1)}
                     </span>
                     <span
                       style={{
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
               <img
                 src={`${process.env.BASE_URL}/isologo.svg`}
                 alt="Liquidium"
-                width="340"
+                width="330"
                 height="90"
               />
               <div
