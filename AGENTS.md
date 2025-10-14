@@ -228,3 +228,13 @@ These are development-only tools and should not be used in production.
 - Do NOT use magic strings, use enums or constants instead if possible.
 - Do NOT add unnecessary comments to the code. Only add comments that are helpful and relevant following NextJS best practices.
 - Always add rel="noopener noreferrer" to external Links
+
+# Context7 Library IDs
+- BIP-322: acken2/bip322-js
+- Best In Slot: websites/bestinslot_xyz
+- Ordiscan: websites/ordiscan_api
+- Lasereyes: omnisat/lasereyes-mono
+- BitcoinJS: bitcoinjs/bitcoinjs-lib
+- Posthog: posthog/posthog
+- Big.JS: mikemcl/big.js
+- Recharts: recharts/recharts

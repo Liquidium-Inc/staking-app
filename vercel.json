@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/monitor/unstake",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/weekly-email",
+      "schedule": "0 9 * * 1"
     }
   ]
 }

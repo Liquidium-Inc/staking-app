@@ -274,6 +274,9 @@ export class PSBTService {
       .filter((x) => [source.address, payer.address].includes(x.address));
 
     logger.debug('Prepared PSBT inputs for signing', {
+      inputs: toSign.map(
+        (x) => `${runePsbt.inputs[x.index].hash}:${runePsbt.inputs[x.index].index}`,
+      ),
       inputsToSign: toSign.length,
       payerInputs: toSign.filter((x) => x.address === payer.address).length,
       sourceInputs: toSign.filter((x) => x.address === source.address).length,

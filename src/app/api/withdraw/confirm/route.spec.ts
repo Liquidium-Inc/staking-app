@@ -37,6 +37,16 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+const requireSessionMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    id: 1,
+    address: 'sender-address',
+    tokenHash: 'hash',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    lastActiveAt: new Date(),
+  }),
+);
+
 vi.mock('@/lib/psbt', () => ({
   RunePSBT: vi.fn().mockImplementation(() => ({
     setPayer: vi.fn().mockReturnThis(),
@@ -57,6 +67,10 @@ vi.mock('@/db', () => ({
 }));
 vi.mock('@/providers/redis', () => ({
   redis: mocks.redis,
+}));
+vi.mock('@/server/auth/session', () => ({
+  requireSession: requireSessionMock,
+  UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
 const getUser = () => {
@@ -81,6 +95,13 @@ describe('POST /api/withdraw/confirm', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    requireSessionMock.mockResolvedValue({
+      id: 1,
+      address: user.address,
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastActiveAt: new Date(),
+    });
     mocks.redis.utxo.lock.mockResolvedValue(true);
     mocks.redis.utxo.extend.mockResolvedValue(true);
     mocks.redis.utxo.free.mockResolvedValue(true);
@@ -237,7 +258,7 @@ describe('POST /api/withdraw/confirm', () => {
       },
     });
 
-    mocks.db.unstake.getByTxid.mockResolvedValue({ id: 1, txid: mockTxId });
+    mocks.db.unstake.getByTxid.mockResolvedValue({ id: 1, txid: mockTxId, address: user.address });
 
     const req = {
       json: vi.fn().mockResolvedValue({

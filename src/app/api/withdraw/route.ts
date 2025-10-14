@@ -8,6 +8,7 @@ import { RunePSBT } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
 import { runeProvider } from '@/providers/rune-provider';
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 bitcoin.initEccLib(ecc);
 
@@ -20,12 +21,18 @@ const body = z.object({
 
 export const POST = async (req: NextRequest) => {
   try {
+    const session = await requireSession(req);
+
     const { success, data, error } = body.safeParse(await req.json());
 
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
 
     const { txid, sender, payer = sender } = data;
     const { feeRate = (await mempool.fees.getFeesRecommended()).fastestFee + 1 } = data;
+
+    if (session.address.toLowerCase() !== sender.address.toLowerCase()) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const outpoints = await getPayerUTXOs(payer);
 
@@ -127,6 +134,9 @@ export const POST = async (req: NextRequest) => {
       toSign,
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     logger.error(error as Error);
     if (error instanceof Error && error.message === 'Insufficient balance') {
       return NextResponse.json({ error: 'Not enough balance to pay fees' }, { status: 400 });
