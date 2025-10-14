@@ -17,7 +17,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { amount } = await params;
-  const tokenAmount = Number(amount);
+  const tokenAmount = Number(amount.replace(',', ''));
 
   if (Number.isNaN(tokenAmount)) {
     return {
@@ -185,7 +185,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Buy LIQUIDIUM
+                Buy LIQ
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>

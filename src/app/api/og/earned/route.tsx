@@ -28,8 +28,7 @@ async function getProtocolApy(): Promise<number> {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const amount = searchParams.get('amount');
-
+    const amount = Number(searchParams.get('amount')?.replace(',', ''));
     if (!amount || Number.isNaN(Number(amount))) {
       return new Response('Invalid amount parameter', { status: 400 });
     }
