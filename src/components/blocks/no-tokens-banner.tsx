@@ -70,18 +70,19 @@ export function NoTokensBanner({
     <div className="flex items-center justify-between rounded-full border border-neutral-800 pl-3">
       <div className="text-sm">Buy LIQ and start staking</div>
       <div className="flex items-center space-x-0">
-        <Link
-          href="https://help.liquidium.fi/en/articles/11359560-liq-marketplaces"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center text-xs text-blue-400 hover:underline"
-        >
-          <Button size="sm" className="h-5 gap-1 rounded-full" variant="secondary">
+        <Button asChild size="sm" className="h-5 gap-1 rounded-full" variant="secondary">
+          <Link
+            href="https://help.liquidium.fi/en/articles/11359560-liq-marketplaces"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              capture('buy_liq_link_clicked', { location: 'no_tokens_banner' });
+            }}
+          >
             Buy LIQ
             <ExternalLink size={12} />
-          </Button>
-        </Link>
-
+          </Link>
+        </Button>
         <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label="Dismiss">
           <X size={14} />
         </Button>

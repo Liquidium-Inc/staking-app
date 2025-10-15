@@ -287,7 +287,7 @@ function StakeContent({
       </Button>
       <NoTokensBanner
         connected={connected}
-        balance={availableBalance}
+        balance={_balance}
         sBalance={sBalance}
         isBalanceLoading={isBalanceLoading}
         isSBalanceLoading={isSBalanceLoading}
