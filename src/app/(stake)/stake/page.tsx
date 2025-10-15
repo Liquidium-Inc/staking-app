@@ -6,6 +6,7 @@ import Big from 'big.js';
 import { AlertCircle, ArrowDownUp, Coins, ExternalLink, PercentCircleIcon } from 'lucide-react';
 import Link from 'next/link';
 
+import { NoTokensBanner } from '@/components/blocks/no-tokens-banner';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -33,8 +34,16 @@ export default function StakePage() {
   const { data: protocol } = useProtocol();
   const { rune, staked, exchangeRate, apy, btc } = protocol;
 
-  const { data: balance = 0 } = useBalance(address, rune.id, rune.decimals);
-  const { data: sBalance = 0 } = useBalance(address, staked.id, staked.decimals);
+  const { data: balance = 0, isLoading: isBalanceLoading } = useBalance(
+    address,
+    rune.id,
+    rune.decimals,
+  );
+  const { data: sBalance = 0, isLoading: isSBalanceLoading } = useBalance(
+    address,
+    staked.id,
+    staked.decimals,
+  );
   const { data: pendingStakes } = usePendingStakes(address);
   const { data: pendingUnstakes } = usePendingUnstakes(address);
 
@@ -95,6 +104,8 @@ export default function StakePage() {
         staked={staked}
         apy={apy}
         exchangeRate={exchangeRate}
+        isBalanceLoading={isBalanceLoading}
+        isSBalanceLoading={isSBalanceLoading}
       />
     </FeeProvider>
   );
@@ -119,6 +130,8 @@ function StakeContent({
   staked,
   apy,
   exchangeRate,
+  isBalanceLoading,
+  isSBalanceLoading,
 }: {
   source: ReturnType<typeof useSwapValues>['source'];
   target: ReturnType<typeof useSwapValues>['target'];
@@ -138,6 +151,8 @@ function StakeContent({
   staked: NonNullable<ReturnType<typeof useProtocol>['data']>['staked'];
   apy: NonNullable<ReturnType<typeof useProtocol>['data']>['apy'];
   exchangeRate: number;
+  isBalanceLoading: boolean;
+  isSBalanceLoading: boolean;
 }) {
   const { mutate, isPending } = useStakeMutation();
   const { capture } = useAnalytics();
@@ -270,6 +285,13 @@ function StakeContent({
       >
         Stake
       </Button>
+      <NoTokensBanner
+        connected={connected}
+        balance={_balance}
+        sBalance={sBalance}
+        isBalanceLoading={isBalanceLoading}
+        isSBalanceLoading={isSBalanceLoading}
+      />
 
       <Card className="flex flex-col space-y-2 border px-3 py-4 text-sm">
         {connected && (
