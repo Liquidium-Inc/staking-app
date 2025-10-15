@@ -1,0 +1,13 @@
+---
+globs: src/**/*.spec.ts,src/**/*.test.ts,src/**/*.spec.tsx,src/**/*.test.tsx
+description: Testing patterns and environments (Vitest)
+---
+
+# Testing Patterns
+
+- Use Vitest with dual environments: Node for `*.ts`, jsdom for `*.tsx`.
+- Run tests non-interactively: `pnpm test -- --run --reporter=dot`.
+- Place shared setup in [src/test-setup.ts](mdc:src/test-setup.ts); configure projects in [vite.config.js](mdc:vite.config.js).
+- Keep tests deterministic and isolated; avoid network by default.
+- Prefer unit tests for services and utilities; use API tests under `src/app/api/**` when needed.
+

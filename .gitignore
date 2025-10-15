@@ -47,3 +47,6 @@ next-env.d.ts
 
 tmp/
 .env.local
+
+# IDE
+mcp.json

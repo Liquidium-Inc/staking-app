@@ -1,0 +1,21 @@
+---
+globs: *.ts,*.tsx
+description: TypeScript and React standards for this repo
+---
+
+# TypeScript & React Standards
+
+- Prefer explicit types for exports and public APIs. Avoid `any`; minimize `unknown`.
+- Use meaningful variable and function names; avoid abbreviations.
+- Use early returns and shallow nesting where possible; avoid unnecessary try/catch.
+- Only add comments when non-obvious, architectural, or security/performance relevant.
+- Follow existing formatting; do not reformat unrelated code.
+- For UI links to external sites, always add `rel="noopener noreferrer"`.
+- In tests: use `*.{spec,test}.ts(x)` with correct environment; keep tests deterministic.
+
+## Next.js App Router
+
+- Place route handlers under `src/app/**/route.ts`.
+- Keep server-only logic in route handlers or server files; avoid leaking into client components.
+- Co-locate component styles and small utilities near usage when reasonable.
+

@@ -1,0 +1,44 @@
+---
+alwaysApply: true
+description: Core repo overview, key commands, architecture, and entry files
+---
+
+# Liquidium Staking App — Project Basics
+
+Use this as a quick orientation for navigation and common tasks.
+
+## Commands
+
+```bash
+pnpm dev    # Next.js dev (Turbopack)
+pnpm build  # Production build
+pnpm start  # Start prod server
+
+pnpm lint   # ESLint
+pnpm format # Prettier (only touched files)
+
+pnpm test -- --run --reporter=dot # Vitest (no watch)
+
+pnpm exec drizzle-kit generate # DB migrations (generate)
+pnpm exec drizzle-kit migrate  # DB migrations (apply)
+pnpm exec drizzle-kit studio   # Drizzle Studio
+```
+
+## Architecture Highlights
+
+- Next.js 15 App Router, React 19, TypeScript 5
+- PostgreSQL via Drizzle ORM
+- Redis for distributed UTXO coordination (not caching)
+- Bitcoin integration libs: bitcoinjs-lib, runelib, @magiceden-oss/runestone-lib
+- State with TanStack Query
+- Two-phase transaction pattern for stake/unstake/withdraw
+
+## Start Here
+
+- Guidelines: [AGENTS.md](mdc:AGENTS.md), [README.md](mdc:README.md)
+- Config: [src/config/config.ts](mdc:src/config/config.ts)
+- DB Schema: [src/db/schema.ts](mdc:src/db/schema.ts)
+- Critical Cron: [src/app/api/cron/exchange_rate_pusher/route.ts](mdc:src/app/api/cron/exchange_rate_pusher/route.ts)
+- Stake flow entry: [src/app/api/stake/route.ts](mdc:src/app/api/stake/route.ts)
+- PSBT helpers: [src/lib/psbt.ts](mdc:src/lib/psbt.ts)
+
