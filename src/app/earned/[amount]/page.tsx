@@ -115,7 +115,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
                   rel="noopener noreferrer"
                   className="flex items-center justify-between rounded-full border border-neutral-800 px-4 py-2"
                 >
-                  <p>P2P Inscription and Rune loans</p>
+                  <p>P2P Ordinal and Rune loans</p>
                   <ExternalLink className="h-4 w-4" />
                 </Link>
               </div>
