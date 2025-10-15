@@ -1,0 +1,18 @@
+---
+globs: src/db/**
+description: Drizzle/DB conventions used in this repo
+---
+
+# DB & Drizzle Conventions
+
+- Define schema in `src/db/schema.ts`; keep columns typed and minimal.
+- Use services in `src/db/*.service.ts` for DB operations; export them via `src/db/index.ts`.
+- Keep migrations via Drizzle Kit; do not hand-edit DB outside migrations.
+- Prefer `numeric` for token amounts and handle precision at app layer with Big.js.
+- Avoid destructive schema changes without explicit instruction.
+
+## References
+
+- Schema: [src/db/schema.ts](mdc:src/db/schema.ts)
+- Index (exports): [src/db/index.ts](mdc:src/db/index.ts)
+

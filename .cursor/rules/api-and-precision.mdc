@@ -1,0 +1,23 @@
+---
+globs: src/app/api/**,src/lib/**
+description: API design, validation, and precise arithmetic rules
+---
+
+# API & Precision Rules
+
+- Validate all inputs/outputs with Zod. Reject invalid payloads early with clear errors.
+- Two-phase transactions: create PSBT, then confirm with signed PSBT before broadcast.
+- Secure cron routes with `CRON_SECRET`; never leak internal errors to clients.
+- Use `Big.js` for all token math; never use JS floats for amounts.
+  - Rounding: `0` = roundDown for allocations; `3` = roundUp when ensuring sufficient source.
+- Use Redis locks for UTXO coordination; release on completion or timeout.
+- Prefer constants/enums over magic strings for statuses and types.
+- Log with environment-aware logger; avoid noisy debug logs in production.
+
+## Key References
+
+- Config validation: [src/config/config.ts](mdc:src/config/config.ts)
+- Exchange rate cron: [src/app/api/cron/exchange_rate_pusher/route.ts](mdc:src/app/api/cron/exchange_rate_pusher/route.ts)
+- PSBT utils: [src/lib/psbt.ts](mdc:src/lib/psbt.ts)
+- UTXO selection: [src/lib/utxo-selection.ts](mdc:src/lib/utxo-selection.ts)
+
