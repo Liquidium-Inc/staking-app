@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.15.1",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -11,7 +12,8 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "test": "vitest",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "secretlint": "secretlint \"**/*\" --maskSecrets"
   },
   "prettier": {
     "semi": true,
@@ -32,8 +34,8 @@
     "@magiceden-oss/runestone-lib": "^1.0.2",
     "@mempool/mempool.js": "^3.0.0",
     "@neondatabase/serverless": "^1.0.0",
-    "@omnisat/lasereyes-core": "^0.0.78",
-    "@omnisat/lasereyes-react": "^0.0.73",
+    "@omnisat/lasereyes-core": "^0.0.83",
+    "@omnisat/lasereyes-react": "^0.0.78",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/instrumentation-http": "^0.205.0",
     "@posthog/cli": "^0.4.6",
@@ -79,7 +81,7 @@
     "input-otp": "^1.4.2",
     "ioredis": "^5.6.1",
     "lucide-react": "^0.513.0",
-    "next": "15.3.3",
+    "next": "15.4.7",
     "next-themes": "^0.4.6",
     "posthog-js": "^1.266.0",
     "posthog-node": "^5.8.4",
@@ -104,6 +106,10 @@
     "@eslint/js": "^9.28.0",
     "@mdx-js/react": "^3.0.1",
     "@next/mdx": "^15.3.3",
+    "@secretlint/secretlint-rule-aws": "^11.2.5",
+    "@secretlint/secretlint-rule-gcp": "^11.2.5",
+    "@secretlint/secretlint-rule-npm": "^11.2.5",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.2.5",
     "@tailwindcss/postcss": "^4.1.8",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -115,7 +121,7 @@
     "@types/secp256k1": "^4.0.6",
     "@vitest/coverage-v8": "^3.2.2",
     "@vitest/ui": "^3.2.2",
-    "drizzle-kit": "^0.31.1",
+    "drizzle-kit": "^0.31.5",
     "eslint": "^9.28.0",
     "eslint-config-next": "15.3.3",
     "eslint-config-prettier": "^10.1.5",
@@ -129,21 +135,25 @@
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.12",
     "secp256k1": "^5.0.1",
+    "secretlint": "^11.2.5",
     "tailwindcss": "^4.1.8",
     "tsx": "^4.19.4",
     "typescript": "^5",
-    "vercel": "^42.3.0",
+    "vercel": "^48.2.9",
     "vite": "^7.0.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.2.2"
   },
-  "overrides": {
-    "axios": "^1.9.0",
-    "path-to-regexp": "^8.2.0",
-    "undici": "^7.10.0",
-    "esbuild": "^0.25.4"
+  "pnpm": {
+    "overrides": {
+      "axios": "^1.12.0",
+      "path-to-regexp": "^8.2.0",
+      "undici": "^7.10.0",
+      "esbuild": "^0.25.4"
+    }
   },
   "lint-staged": {
-    "**/*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
+    "**/*.{js,jsx,ts,tsx,json,css,md}": "prettier --write",
+    "**/*": "secretlint --maskSecrets"
   }
 }
