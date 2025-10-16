@@ -47,3 +47,4 @@ next-env.d.ts
 
 tmp/
 .env.local
+.cursor/mcp.json

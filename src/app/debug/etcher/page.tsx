@@ -42,7 +42,7 @@ export default function SignerPage() {
       // Basic required fields per sats-connect/types
       network:
         publicConfig.network === 'testnet4'
-          ? BitcoinNetworkType.Testnet4
+          ? BitcoinNetworkType.Testnet
           : BitcoinNetworkType.Mainnet,
       delegateInscriptionId: undefined,
       appServiceFee: undefined,

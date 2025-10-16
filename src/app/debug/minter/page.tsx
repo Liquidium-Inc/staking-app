@@ -20,7 +20,7 @@ export default function SignerPage() {
   const [runeName, setRuneName] = useState<string>(rune_name);
   const [output, setOutput] = useState<string>('');
   const networkType: BitcoinNetworkType =
-    config.network === 'testnet4' ? BitcoinNetworkType.Testnet4 : BitcoinNetworkType.Mainnet;
+    config.network === 'testnet4' ? BitcoinNetworkType.Testnet : BitcoinNetworkType.Mainnet;
 
   useEffect(() => {
     setDestinationAddress(address);
