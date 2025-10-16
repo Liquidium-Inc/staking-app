@@ -1,9 +1,8 @@
 'use client';
 import { useLaserEyes } from '@omnisat/lasereyes-react';
-import { BitcoinNetworkType } from '@orangecrypto/orange-connect';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { request } from 'sats-connect';
+import { request, BitcoinNetworkType } from 'sats-connect';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';

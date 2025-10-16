@@ -8,6 +8,7 @@ import { Area, AreaChart, XAxis, YAxis, Tooltip as RechartsTooltip } from 'recha
 import { ResponsiveContainer } from 'recharts';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
+import { ShareButton } from '@/components/share/share-button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { TokenLogo } from '@/components/ui/token';
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -136,7 +137,16 @@ export default function PortfolioPage() {
   return (
     <TooltipProvider delayDuration={100}>
       <div className="flex w-full max-w-md flex-col items-center justify-center space-y-3">
-        <Card className="w-full space-y-1">
+        <Card className="relative w-full space-y-1">
+          <div className="absolute top-3 right-11">
+            {earnings.total > 0 && (
+              <ShareButton
+                decimals={rune.decimals}
+                tokenAmount={earnings.total}
+                tokenSymbol={'LIQ'}
+              />
+            )}
+          </div>
           <CardHeader className="flex">
             <h3>Total Earned</h3>
 

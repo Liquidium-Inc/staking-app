@@ -1,5 +1,11 @@
+import Big from 'big.js';
+
+import { config } from '@/config/public';
+import { logger } from '@/lib/logger';
 import { BIS } from '@/providers/bestinslot';
 import { liquidiumApi } from '@/providers/liquidium-api';
+import { mempool } from '@/providers/mempool';
+import { ordiscan } from '@/providers/ordiscan';
 
 export interface RuneMarketData {
   price_in_sats: number;
@@ -145,3 +151,39 @@ export const {
   },
   mempool: { runicUTXOs: getMempoolRunicUTXOs, cardinalUTXOs: getMempoolCardinalUTXOs },
 } = runeProvider;
+
+export async function getRunePrice(): Promise<number> {
+  try {
+    // fetch price in sats from Ordiscan (primary) or BIS (fallback)
+    let priceSats: number | null = null;
+
+    try {
+      logger.debug(`Fetching price from Ordiscan for ${config.rune.name}`);
+      const { data: marketData } = await ordiscan.rune.market(config.rune.name);
+      if (marketData.price_in_sats && marketData.price_in_sats > 0) {
+        priceSats = marketData.price_in_sats;
+      }
+    } catch (error) {
+      logger.warn(`Ordiscan price fetch failed for ${config.rune.name}:`, error);
+    }
+
+    if (!priceSats) {
+      try {
+        const { data: rune } = await BIS.runes.ticker({ rune_id: config.rune.id });
+        priceSats = rune.avg_unit_price_in_sats ?? 0;
+      } catch (error) {
+        logger.error(`BIS price fetch also failed for ${config.rune.id}:`, error);
+        priceSats = 0;
+      }
+    }
+
+    const btcPrice = await mempool.getPrice();
+
+    const priceUsd = Big(priceSats).times(btcPrice.USD).div(100_000_000).toNumber();
+
+    return priceUsd;
+  } catch (error) {
+    logger.error('Failed to fetch rune price:', error);
+    return 0;
+  }
+}
