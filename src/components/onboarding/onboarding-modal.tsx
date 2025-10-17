@@ -257,7 +257,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'Enter') {
+      if (e.key === 'ArrowRight') {
         if (currentSlide === slides.length - 1) {
           handleComplete();
         } else {
@@ -265,8 +265,6 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
         }
       } else if (e.key === 'ArrowLeft') {
         handlePrev();
-      } else if (e.key === 'Escape') {
-        handleSkip();
       }
     };
 
