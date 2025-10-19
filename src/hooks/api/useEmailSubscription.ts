@@ -38,7 +38,7 @@ export const useEmailSubscription = (address: string | undefined) => {
     onSuccess: (data, variables) => {
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ['emailStatus', address] });
-        window.location.href = `/?email_sent=true&email=${encodeURIComponent(variables.email)}`;
+        toast.success(`Verification email sent to ${variables.email}`);
       } else {
         toast.error(data.error || 'Failed to subscribe');
       }

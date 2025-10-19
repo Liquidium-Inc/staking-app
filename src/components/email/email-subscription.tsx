@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckIcon, MailIcon } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
@@ -41,7 +41,6 @@ export const EmailSubscription = ({ address }: { address: string }) => {
   const [email, setEmail] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { capture } = useAnalytics();
 
   const { status, statusLoading, subscribe, unsubscribe, isSubscribing } =
@@ -50,14 +49,7 @@ export const EmailSubscription = ({ address }: { address: string }) => {
   const maskedAddress = formatAddressForAnalytics(address);
   const subscriptionStatus = status?.subscribed ? status : null;
   const isSubscribed = Boolean(subscriptionStatus);
-  const isSwitchChecked = isFormOpen || isSubscribed || isSubmitting;
-
-  // Reset submitting state when subscription status updates
-  useEffect(() => {
-    if (isSubmitting && isSubscribed) {
-      setIsSubmitting(false);
-    }
-  }, [isSubmitting, isSubscribed]);
+  const isSwitchChecked = isFormOpen || isSubscribed || isSubscribing;
 
   const handleSubscribe = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -74,7 +66,6 @@ export const EmailSubscription = ({ address }: { address: string }) => {
       return;
     }
 
-    setIsSubmitting(true);
     capture('email_subscribe_attempt', { address: maskedAddress });
     subscribe({ email: trimmedEmail, agreeToTerms });
     setEmail('');

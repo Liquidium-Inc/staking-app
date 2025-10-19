@@ -3,7 +3,7 @@ import { Children, Suspense } from 'react';
 
 import './globals.css';
 
-import { EmailToastNotifications } from '@/components/email/email-toast-notifications';
+import { FlashQueryToasts } from '@/components/ui/flash-query-toasts';
 import { Toaster } from '@/components/ui/sonner';
 
 import Footer from '../components/layout/footer';
@@ -46,7 +46,7 @@ export default function RootLayout({
               <Footer />
               <Toaster />
               <Suspense>
-                <EmailToastNotifications />
+                <FlashQueryToasts />
               </Suspense>
             </div>
           </div>

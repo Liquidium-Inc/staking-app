@@ -89,6 +89,18 @@ export class CanisterService {
     });
   }
 
+  async getExchangeRateDecimal() {
+    return await spanWrap(tracer, 'getExchangeRateDecimal', async () => {
+      const result = (await this.actor.get_exchange_rate()) as {
+        Ok: number | undefined;
+        Err: string;
+      };
+      if (result.Err) throw new Error(result.Err);
+      const rate = typeof result.Ok === 'number' ? result.Ok : 0;
+      return rate;
+    });
+  }
+
   async pushExchangeRate(circulating: bigint, balance: bigint) {
     return await spanWrap(tracer, 'pushExchangeRate', async () => {
       return await this.oracle.update_exchange_rate(circulating, balance);
