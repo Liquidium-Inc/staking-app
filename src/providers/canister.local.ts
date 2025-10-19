@@ -103,6 +103,14 @@ export class CanisterMockedService implements PublicMethods<CanisterService> {
     return this.getRealCanister().getExchangeRate();
   }
 
+  async getExchangeRateDecimal() {
+    // In test or mocked mode, return a stable decimal value
+    if (process.env.NODE_ENV === 'test' || config.canister.isMocked) {
+      return 1;
+    }
+    return this.getRealCanister().getExchangeRateDecimal();
+  }
+
   pushExchangeRate = async () => {
     throw new Error('Not implemented');
   };
