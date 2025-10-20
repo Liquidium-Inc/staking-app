@@ -14,15 +14,23 @@ const ERROR_MESSAGES: Record<string, string> = {
   unsubscribe_failed: 'Failed to unsubscribe. Please try again.',
 };
 
+const QUERY_PARAMS = {
+  EMAIL_VERIFIED: 'email_verified',
+  EMAIL_UNSUBSCRIBED: 'email_unsubscribed',
+  EMAIL_SENT: 'email_sent',
+  EMAIL: 'email',
+  ERROR: 'error',
+} as const;
+
 export function FlashQueryToasts() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const emailVerified = searchParams.get('email_verified') === 'true';
-    const emailUnsubscribed = searchParams.get('email_unsubscribed') === 'true';
-    const emailSent = searchParams.get('email_sent') === 'true';
-    const email = searchParams.get('email')?.trim();
-    const error = searchParams.get('error');
+    const emailVerified = searchParams.get(QUERY_PARAMS.EMAIL_VERIFIED) === 'true';
+    const emailUnsubscribed = searchParams.get(QUERY_PARAMS.EMAIL_UNSUBSCRIBED) === 'true';
+    const emailSent = searchParams.get(QUERY_PARAMS.EMAIL_SENT) === 'true';
+    const email = searchParams.get(QUERY_PARAMS.EMAIL)?.trim();
+    const error = searchParams.get(QUERY_PARAMS.ERROR);
 
     let didToast = false;
 
@@ -48,9 +56,7 @@ export function FlashQueryToasts() {
 
     if (didToast && typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      ['email_verified', 'email_unsubscribed', 'email_sent', 'email', 'error'].forEach((k) =>
-        url.searchParams.delete(k),
-      );
+      Object.values(QUERY_PARAMS).forEach((k) => url.searchParams.delete(k));
       window.history.replaceState(null, '', url.toString());
     }
   }, [searchParams]);

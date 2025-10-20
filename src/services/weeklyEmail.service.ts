@@ -66,7 +66,10 @@ function getExchangeRates(
   return historic.reduce(
     (acc, balance: { timestamp: Date; block: number; balance: string; staked: string }) => {
       const diff = BigInt(supply) - BigInt(balance.staked);
-      const rate = diff > 0 && +balance.balance > 0 ? +balance.balance / Number(diff) : 1;
+      const rate =
+        diff > 0 && Big(balance.balance).gt(0)
+          ? Big(balance.balance).div(diff.toString()).toNumber()
+          : 1;
 
       if (acc[acc.length - 1]?.rate !== rate) {
         acc.push({
@@ -104,10 +107,8 @@ function calculateEarningsFromActivity(
     .filter((tx) => tx.block_height >= sevenDaysAgoBlock && tx.rune_id === publicConfig.sRune.id)
     .map((tx) => {
       const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
-      return {
-        value: mult * Number(tx.amount) * 10 ** -tx.decimals,
-        block: tx.block_height,
-      };
+      const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult).toNumber();
+      return { value, block: tx.block_height };
     })
     .reverse();
 
@@ -246,26 +247,26 @@ async function processUserEmail(
     const { data: balance } = await runeProvider.runes.walletBalances({ address: user.address });
 
     const sLiqBalance = balance.find((b) => b.rune_id === publicConfig.sRune.id);
-    const sLiqAmount = sLiqBalance
-      ? Number(sLiqBalance.total_balance) / 10 ** publicConfig.sRune.decimals
-      : 0;
+    const sLiqAmountBig = sLiqBalance
+      ? Big(sLiqBalance.total_balance).div(Big(10).pow(publicConfig.sRune.decimals))
+      : Big(0);
 
-    if (sLiqAmount <= 0) {
+    if (sLiqAmountBig.lte(0)) {
       return { success: false, skipped: true };
     }
 
     const earnedLiq = await calculateUserEarnings(user.address);
-    const stakedValue = sLiqAmount * exchangeRate * tokenPrice;
+    const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPrice);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({
       address: user.address,
       email: user.email,
-      sLiqBalance: sLiqAmount,
+      sLiqBalance: sLiqAmountBig.toNumber(),
       earnedLiq,
       apy,
       totalRewardsDistributed,
       tokenPrice,
-      stakedValue,
+      stakedValue: stakedValueBig.toNumber(),
     });
 
     const result = await emailService.sendEmail(user.email, emailTemplate);
