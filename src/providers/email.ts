@@ -392,7 +392,7 @@ export const emailService = {
       renderMetric({
         label: 'Total Rewards Distributed',
         value: `${totalRewardsDistributed.toFixed(6)} LIQ`,
-        detail: 'past 7 days across all stakers',
+        detail: 'past 7 days across subscribers',
         valueColor: '#8b5cf6',
       }),
     );

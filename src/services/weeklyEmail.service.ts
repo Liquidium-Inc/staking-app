@@ -159,11 +159,14 @@ async function getProtocolApy(): Promise<{ yearly: number; monthly: number; dail
       Math.min(30 * 24 * 60 * 60 * 1000, totalTimeSpan),
     );
 
-    const referenceRate =
-      historicRates.findLast(({ timestamp }) => {
-        const diff = lastRate.timestamp.getTime() - timestamp.getTime();
-        return diff >= targetTimeSpan;
-      }) ?? historicRates[0];
+    let referenceRate = historicRates[0];
+    for (let i = historicRates.length - 1; i >= 0; i--) {
+      const diff = lastRate.timestamp.getTime() - historicRates[i].timestamp.getTime();
+      if (diff >= targetTimeSpan) {
+        referenceRate = historicRates[i];
+        break;
+      }
+    }
 
     const diffDays = Math.round(
       (lastRate.timestamp.getTime() - referenceRate.timestamp.getTime()) / (1000 * 60 * 60 * 24),
@@ -224,8 +227,31 @@ async function calculateTotalRewardsDistributed(
   }
 }
 
-async function getProtocolData() {
-  return await Promise.all([
+type BtcPrice = {
+  time: number;
+  USD: number;
+  EUR: number;
+  GBP: number;
+  CAD: number;
+  CHF: number;
+  AUD: number;
+  JPY: number;
+};
+
+type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
+
+async function getProtocolData(): Promise<
+  [
+    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
+    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
+    number,
+    number | null,
+    BtcPrice,
+    { yearly: number; monthly: number; daily: number },
+    HistoricBalances,
+  ]
+> {
+  const settled = await Promise.allSettled([
     BIS.runes.ticker({ rune_id: publicConfig.rune.id }),
     BIS.runes.ticker({ rune_id: publicConfig.sRune.id }),
     canister.getExchangeRateDecimal(),
@@ -234,6 +260,38 @@ async function getProtocolData() {
     getProtocolApy(),
     db.poolBalance.getHistoric(),
   ]);
+
+  type SettledResult<T> = PromiseSettledResult<T>;
+  const pick = <T>(i: number): T | undefined =>
+    (settled[i] as SettledResult<T>).status === 'fulfilled'
+      ? (settled[i] as PromiseFulfilledResult<T>).value
+      : undefined;
+
+  const defaultTicker = null;
+  const defaultRateDecimal = 1;
+  const defaultRunePriceSats: number | null = null;
+  const defaultBtcPrice: BtcPrice = {
+    time: 0,
+    USD: 0,
+    EUR: 0,
+    GBP: 0,
+    CAD: 0,
+    CHF: 0,
+    AUD: 0,
+    JPY: 0,
+  };
+  const defaultApy = { yearly: 0, monthly: 0, daily: 0 };
+  const defaultHistoric: HistoricBalances = [];
+
+  return [
+    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(0) ?? defaultTicker,
+    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(1) ?? defaultTicker,
+    pick<number>(2) ?? defaultRateDecimal,
+    pick<number | null>(3) ?? defaultRunePriceSats,
+    pick<BtcPrice>(4) ?? defaultBtcPrice,
+    pick<{ yearly: number; monthly: number; daily: number }>(5) ?? defaultApy,
+    pick<HistoricBalances>(6) ?? defaultHistoric,
+  ];
 }
 
 async function processUserEmail(

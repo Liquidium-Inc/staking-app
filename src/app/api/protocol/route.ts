@@ -119,11 +119,14 @@ export async function GET() {
           const maxTimeSpan = 30 * 24 * 60 * 60 * 1000; // 30 days
           const targetTimeSpan = Math.max(minTimeSpan, Math.min(maxTimeSpan, totalTimeSpan));
 
-          const referenceRate =
-            historicRates.findLast(({ timestamp }) => {
-              const diff = lastRate.timestamp.getTime() - timestamp.getTime();
-              return diff >= targetTimeSpan;
-            }) ?? historicRates[0];
+          let referenceRate = historicRates[0];
+          for (let i = historicRates.length - 1; i >= 0; i--) {
+            const diff = lastRate.timestamp.getTime() - historicRates[i].timestamp.getTime();
+            if (diff >= targetTimeSpan) {
+              referenceRate = historicRates[i];
+              break;
+            }
+          }
 
           return computeApy(lastRate, referenceRate);
         })()

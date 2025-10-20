@@ -29,7 +29,6 @@ export function FlashQueryToasts() {
     const emailVerified = searchParams.get(QUERY_PARAMS.EMAIL_VERIFIED) === 'true';
     const emailUnsubscribed = searchParams.get(QUERY_PARAMS.EMAIL_UNSUBSCRIBED) === 'true';
     const emailSent = searchParams.get(QUERY_PARAMS.EMAIL_SENT) === 'true';
-    const email = searchParams.get(QUERY_PARAMS.EMAIL)?.trim();
     const error = searchParams.get(QUERY_PARAMS.ERROR);
 
     let didToast = false;
@@ -45,7 +44,7 @@ export function FlashQueryToasts() {
     }
 
     if (emailSent) {
-      toast.success(email ? `Verification email sent to ${email}` : 'Verification email sent.');
+      toast.success('Verification email sent.');
       didToast = true;
     }
 
