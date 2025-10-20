@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { config } from '@/config/public';
 import { db } from '@/db';
+import { computeApyFromHistoric } from '@/lib/apy';
 import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import { BIS } from '@/providers/bestinslot';
@@ -110,32 +111,7 @@ export async function GET() {
     [] as { timestamp: Date; block: number; rate: number }[],
   );
 
-  const apy =
-    historicRates.length >= 2
-      ? (() => {
-          const lastRate = historicRates[historicRates.length - 1];
-          const totalTimeSpan = lastRate.timestamp.getTime() - historicRates[0].timestamp.getTime();
-          const minTimeSpan = 24 * 60 * 60 * 1000; // 1 day
-          const maxTimeSpan = 30 * 24 * 60 * 60 * 1000; // 30 days
-          const targetTimeSpan = Math.max(minTimeSpan, Math.min(maxTimeSpan, totalTimeSpan));
-
-          let referenceRate = historicRates[0];
-          for (let i = historicRates.length - 1; i >= 0; i--) {
-            const diff = lastRate.timestamp.getTime() - historicRates[i].timestamp.getTime();
-            if (diff >= targetTimeSpan) {
-              referenceRate = historicRates[i];
-              break;
-            }
-          }
-
-          return computeApy(lastRate, referenceRate);
-        })()
-      : (() => {
-          logger.debug('Insufficient historic data for APY calculation', {
-            historicRatesCount: historicRates.length,
-          });
-          return { yearly: 0, interval: 0 };
-        })();
+  const apy = computeApyFromHistoric(historicRates);
 
   return NextResponse.json({
     exchangeRate:
@@ -165,40 +141,8 @@ export async function GET() {
     // TODO: Only pick one value per day
     historicRates: historicRates.map((e) => pick(e, 'timestamp', 'block', 'rate')),
     canisterAddress: canister.address,
-    apy: {
-      window: apy.interval,
-      yearly: apy.yearly,
-      monthly: (1 + apy.yearly) ** (1 / 12) - 1,
-      daily: (1 + apy.yearly) ** (1 / 365) - 1,
-    },
+    apy,
   });
 }
 
-const computeApy = (
-  currentRate: { timestamp: Date; rate: number },
-  referenceRate: { timestamp: Date; rate: number },
-) => {
-  const diff = currentRate.timestamp.getTime() - referenceRate.timestamp.getTime();
-  const diffDays = Math.round(diff / (1000 * 60 * 60 * 24));
-
-  // Handle edge cases
-  if (referenceRate.rate === 0 || diffDays <= 0) {
-    logger.debug('APY calculation edge case detected', {
-      referenceRateIsZero: referenceRate.rate === 0,
-      diffDays,
-    });
-    return { yearly: 0, interval: diffDays };
-  }
-
-  const yearlyRate = (currentRate.rate / referenceRate.rate) ** (365 / diffDays) - 1;
-
-  // Handle numerical edge cases
-  if (!Number.isFinite(yearlyRate)) {
-    return { yearly: 0, interval: diffDays };
-  }
-
-  return {
-    yearly: yearlyRate,
-    interval: diffDays,
-  };
-};
+// computeApyFromHistoric centralizes APY logic (see '@/lib/apy').

@@ -2,6 +2,7 @@ import Big from 'big.js';
 
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { computeApyFromHistoric } from '@/lib/apy';
 import { computeEarnings } from '@/lib/earnings';
 import { logger } from '@/lib/logger';
 import { BIS } from '@/providers/bestinslot';
@@ -147,46 +148,7 @@ async function getProtocolApy(): Promise<{ yearly: number; monthly: number; dail
   try {
     const historic = await db.poolBalance.getHistoric();
     const historicRates = getExchangeRates(historic);
-
-    if (historicRates.length < 2) {
-      return { yearly: 0, monthly: 0, daily: 0 };
-    }
-
-    const lastRate = historicRates[historicRates.length - 1];
-    const totalTimeSpan = lastRate.timestamp.getTime() - historicRates[0].timestamp.getTime();
-    const targetTimeSpan = Math.max(
-      24 * 60 * 60 * 1000,
-      Math.min(30 * 24 * 60 * 60 * 1000, totalTimeSpan),
-    );
-
-    let referenceRate = historicRates[0];
-    for (let i = historicRates.length - 1; i >= 0; i--) {
-      const diff = lastRate.timestamp.getTime() - historicRates[i].timestamp.getTime();
-      if (diff >= targetTimeSpan) {
-        referenceRate = historicRates[i];
-        break;
-      }
-    }
-
-    const diffDays = Math.round(
-      (lastRate.timestamp.getTime() - referenceRate.timestamp.getTime()) / (1000 * 60 * 60 * 24),
-    );
-
-    if (referenceRate.rate === 0 || diffDays <= 0) {
-      return { yearly: 0, monthly: 0, daily: 0 };
-    }
-
-    const yearlyRate = (lastRate.rate / referenceRate.rate) ** (365 / diffDays) - 1;
-
-    if (!Number.isFinite(yearlyRate)) {
-      return { yearly: 0, monthly: 0, daily: 0 };
-    }
-
-    return {
-      yearly: yearlyRate,
-      monthly: (1 + yearlyRate) ** (1 / 12) - 1,
-      daily: (1 + yearlyRate) ** (1 / 365) - 1,
-    };
+    return computeApyFromHistoric(historicRates);
   } catch (error) {
     logger.error('Failed to calculate APY:', error);
     return { yearly: 0, monthly: 0, daily: 0 };
