@@ -31,7 +31,7 @@ const footerLinks = [
   },
   {
     label: 'Twitter',
-    href: 'https://x.com/LiquidiumFdn',
+    href: 'https://x.com/LiquidiumOrg',
     external: true,
   },
   {
