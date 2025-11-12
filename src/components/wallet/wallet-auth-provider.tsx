@@ -12,6 +12,8 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+import { addressesMatch } from '@/lib/address';
+
 type AuthStatus = 'idle' | 'pending' | 'authenticated' | 'error';
 
 type WalletAuthState = {
@@ -176,13 +178,13 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
       return;
     }
 
-    const normalizedAddress = address.toLowerCase();
+    const trimmedAddress = address.trim();
     const existingSession = await fetchSession();
 
     if (
       existingSession &&
       existingSession.address &&
-      existingSession.address.toLowerCase() === normalizedAddress
+      addressesMatch(existingSession.address, trimmedAddress)
     ) {
       setState({
         status: 'authenticated',

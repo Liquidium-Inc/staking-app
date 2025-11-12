@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { emailService } from '@/providers/email';
 import { redis } from '@/providers/redis';
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     const session = await requireSession(req);
 
-    if (session.address.toLowerCase() !== address.toLowerCase()) {
+    if (!addressesMatch(session.address, address)) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 

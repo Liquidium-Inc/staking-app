@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/?error=invalid_token', req.url));
     }
 
-    if (verificationToken.address.toLowerCase() !== address.toLowerCase()) {
+    if (!addressesMatch(verificationToken.address, address)) {
       return NextResponse.redirect(new URL('/?error=token_address_mismatch', req.url));
     }
 
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(response, { status: 400 });
       }
 
-      if (verificationToken.address.toLowerCase() !== address.toLowerCase()) {
+      if (!addressesMatch(verificationToken.address, address)) {
         const response = errorResponseSchema.parse({
           success: false,
           error: 'Token does not match address',
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
     } else {
       const session = await requireSession(req);
 
-      if (session.address.toLowerCase() !== address.toLowerCase()) {
+      if (!addressesMatch(session.address, address)) {
         const response = errorResponseSchema.parse({
           success: false,
           error: 'Unauthorized',

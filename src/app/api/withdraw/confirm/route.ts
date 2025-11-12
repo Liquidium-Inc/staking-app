@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { config as runtimeConfig } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import {
   BROADCAST_ERROR_CODES,
   MEMPOOL_ERROR_PATTERNS,
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const { psbt: psbtBase64, sender: senderInput } = data;
     sender = senderInput;
-    if (session.address.toLowerCase() !== senderInput.toLowerCase()) {
+    if (!addressesMatch(session.address, senderInput)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
     const senderAddress = senderInput;

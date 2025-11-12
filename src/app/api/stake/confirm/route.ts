@@ -5,6 +5,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (session.address.toLowerCase() !== stakeEntry.address.toLowerCase()) {
+    if (!addressesMatch(session.address, stakeEntry.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 

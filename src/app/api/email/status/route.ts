@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
 
     const { address } = queryResult.data;
 
-    if (session.address.toLowerCase() !== address.toLowerCase()) {
+    if (!addressesMatch(session.address, address)) {
       const response = responseSchema.parse({
         success: false,
         error: 'Forbidden: You can only access your own email status',

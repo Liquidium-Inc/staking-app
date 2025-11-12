@@ -4,7 +4,7 @@ import { trace } from '@opentelemetry/api';
 import * as bitcoin from 'bitcoinjs-lib';
 
 import { config } from '@/config/config';
-import { config as publicConfig } from '@/config/public';
+import { getBitcoinNetwork } from '@/lib/bitcoin-network';
 import { spanWrap } from '@/lib/tracing';
 
 import { idlFactory } from './__generated__/did';
@@ -22,19 +22,6 @@ interface CanisterResponse {
   debug: unknown;
   error?: string;
 }
-
-const testnet4 = {
-  messagePrefix: '\x18Bitcoin Signed Message:\n',
-  bech32: 'tb',
-  bip32: {
-    public: 0x043587cf,
-    private: 0x04358394,
-  },
-  pubKeyHash: 0x6f,
-  scriptHash: 0xc4,
-  wif: 0xef,
-} satisfies bitcoin.Network;
-
 export class CanisterService {
   private static createActor(canisterId: string, host = 'https://icp-api.io', secret?: string) {
     if (!secret) {
@@ -129,7 +116,7 @@ export interface UnstakeUtxo {
   prev_utxos: string[];
 }
 
-const network = publicConfig.network === 'testnet4' ? testnet4 : bitcoin.networks.bitcoin;
+const network = getBitcoinNetwork();
 
 export const canister = !config.canister.isMocked
   ? new CanisterService(

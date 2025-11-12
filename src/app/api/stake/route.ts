@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
@@ -40,7 +41,7 @@ export const POST = async (req: NextRequest) => {
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
     const { sender, payer = sender, amount, sAmount, feeRate } = data;
 
-    if (session.address.toLowerCase() !== sender.address.toLowerCase()) {
+    if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

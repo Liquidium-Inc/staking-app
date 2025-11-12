@@ -51,8 +51,8 @@ export async function GET(req: NextRequest) {
     await db.emailSubscription.deleteVerificationToken(token);
 
     logger.info('Email verified successfully', {
-      email: verificationToken.email,
-      token: token.substring(0, 8) + '...',
+      address: verificationToken.address,
+      tokenPrefix: token.substring(0, 8) + '...',
     });
 
     // Redirect to success page

@@ -32,7 +32,7 @@ The core staking logic runs in the canister smart contract maintained at https:/
 - `src/providers/` — Integrations with external APIs (Liquidium API, Ordiscan, Best In Slot, mempool, email, etc).
 - `src/db/` — Database schema and Drizzle ORM setup.
 - `public/` — Static assets and branding.
-- `src/scripts/` — Utility scripts for PSBT decoding, rune helpers, and local integration testing.
+- `src/scripts/` — Utility scripts for PSBT decoding, rune helpers, and local integration testing. Use `node src/scripts/create_principal.js --reveal-secret` (or set `PRINT_SECRET=true`) if you need the generated `ORACLE_PRIVATE_KEY`; the default run only prints the principal for safety.
 
 ---
 

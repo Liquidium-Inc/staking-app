@@ -3,6 +3,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { RunePSBT } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
@@ -30,7 +31,7 @@ export const POST = async (req: NextRequest) => {
     const { txid, sender, payer = sender } = data;
     const { feeRate = (await mempool.fees.getFeesRecommended()).fastestFee + 1 } = data;
 
-    if (session.address.toLowerCase() !== sender.address.toLowerCase()) {
+    if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
