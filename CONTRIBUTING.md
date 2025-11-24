@@ -5,22 +5,22 @@ Thanks for your interest in contributing to the Liquidium Staking application! T
 ## Development Environment
 
 - **Node.js**: Use Node 20 (LTS) or newer. We recommend managing versions with [`fnm`](https://github.com/Schniz/fnm) or [`nvm`](https://github.com/nvm-sh/nvm).
-- **Package manager**: The repository uses npm. Run `npm install` after cloning.
+- **Package manager**: The repository uses pnpm. Run `pnpm install` after cloning.
 - **Environment variables**: Duplicate `.env.example` to `.env` (or `.env.local`) and provide your own credentials. Never commit real secrets to the repository.
 - **Database & services**: Local development expects access to PostgreSQL, Redis, mempool.space, Ordiscan, Best In Slot, and the Liquidium Internet Computer canisters. The `.env.example` file documents the required configuration.
 
 Install dependencies and start the dev server:
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Run quality checks before submitting changes:
 
 ```bash
-npm run lint
-npm test
+pnpm lint
+pnpm test
 ```
 
 ## Workflow
@@ -38,7 +38,7 @@ npm test
 - Rely on schema validation (Zod) for runtime input validation instead of ad hoc checks.
 - Keep components small, extract shared logic into hooks, and avoid unnecessary global state.
 - Prefer server actions and server-side data fetching over client-side requests.
-- Run `npm run lint` and `npm test` before pushing.
+- Run `pnpm lint` and `pnpm test` before pushing.
 
 ## Commit & PR Guidelines
 

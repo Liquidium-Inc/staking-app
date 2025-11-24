@@ -150,16 +150,16 @@ These tools are not intended for production use, but are for protocol developmen
 Prerequisites:
 
 - Node.js 20 (LTS) or newer
-- npm 10+
+- pnpm 10+
 
 1. Install dependencies:
    ```bash
-   npm install
+   pnpm install
    ```
 2. Copy `.env.example` to `.env` and configure your environment variables.
 3. Run the development server:
    ```bash
-   npm run dev
+   pnpm dev
    ```
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 

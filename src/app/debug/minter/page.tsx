@@ -2,7 +2,7 @@
 import { useLaserEyes } from '@omnisat/lasereyes-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { request } from 'sats-connect';
+import { request, BitcoinNetworkType } from 'sats-connect';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ export default function SignerPage() {
   const [feeRate, setFeeRate] = useState<number>(6);
   const [runeName, setRuneName] = useState<string>(rune_name);
   const [output, setOutput] = useState<string>('');
+  const networkType: BitcoinNetworkType =
+    config.network === 'testnet4' ? BitcoinNetworkType.Testnet : BitcoinNetworkType.Mainnet;
 
   useEffect(() => {
     setDestinationAddress(address);
@@ -25,11 +27,14 @@ export default function SignerPage() {
 
   const mint = async () => {
     const response = await request('runes_mint', {
+      network: networkType,
       destinationAddress,
       repeats,
       refundAddress: paymentAddress,
       feeRate,
       runeName,
+      appServiceFee: undefined,
+      appServiceFeeAddress: undefined,
     });
     console.log(response);
     if (response.status === 'success') {

@@ -48,11 +48,33 @@ const mocks = vi.hoisted(() => ({
     },
   },
   mempool: { getPrice: vi.fn().mockImplementation(() => ({ USD: 100_000 })) },
+  canister: {
+    getExchangeRate: vi
+      .fn()
+      .mockImplementation(() => ({ circulating: BigInt(1000), balance: BigInt(1000) })),
+    address: 'mock-canister-address',
+  },
+  ordiscan: {
+    rune: {
+      market: vi.fn().mockImplementation(() => ({
+        data: { price_in_sats: 100 },
+      })),
+    },
+  },
+  redis: {
+    client: {
+      get: vi.fn().mockImplementation(() => null),
+      set: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('@/db', () => ({ db: mocks.db }));
 vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
 vi.mock('@/providers/mempool', () => ({ mempool: mocks.mempool }));
+vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
+vi.mock('@/providers/ordiscan', () => ({ ordiscan: mocks.ordiscan }));
+vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
 
 describe('GET', () => {
   beforeEach(() => {

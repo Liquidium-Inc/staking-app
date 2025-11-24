@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
 import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
@@ -34,6 +35,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <LaserEyesProvider config={{ network }}>
           <WalletAuthProvider>
             <UnisatAddressGuard />
+            <OnboardingTrigger />
             {children}
             <CookieConsentBanner />
           </WalletAuthProvider>

@@ -2,21 +2,21 @@
 
 ```bash
 # Development
-npm run dev              # Start development server with Turbopack
-npm run build           # Build for production
-npm start               # Start production server
+pnpm dev               # Start development server with Turbopack
+pnpm build            # Build for production
+pnpm start            # Start production server
 
 # Code Quality
-npm run lint            # Run ESLint
-npm run format          # Format code with Prettier
+pnpm lint             # Run ESLint
+pnpm format           # Format code with Prettier
 
 # Testing
-npm test                # Run Vitest tests (both Node.js and browser environments)
+pnpm test             # Run Vitest tests (both Node.js and browser environments)
 
 # Database
-npx drizzle-kit generate # Generate database migrations
-npx drizzle-kit migrate  # Run database migrations
-npx drizzle-kit studio   # Open Drizzle Studio for database management
+pnpm exec drizzle-kit generate # Generate database migrations
+pnpm exec drizzle-kit migrate  # Run database migrations
+pnpm exec drizzle-kit studio   # Open Drizzle Studio for database management
 ```
 
 ## Project Architecture
@@ -103,7 +103,7 @@ Test files should use appropriate extension based on environment needs.
 ### Test Execution (Agents)
 
 - Always run Vitest in non-watch mode so the process exits automatically.
-- Recommended command: `npm test -- --run --reporter=dot` (or `vitest run`).
+- Recommended command: `pnpm test -- --run --reporter=dot` (or `vitest run`).
 - Do not start interactive watch mode that waits for keyboard input (e.g., press `q`).
 
 ## API Security & Validation
