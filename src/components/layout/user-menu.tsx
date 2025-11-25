@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 
+import { EmailSubscription } from '@/components/email/email-subscription';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { config } from '@/config/public';
 import { useBalance } from '@/hooks/api/useBalance';
@@ -136,6 +137,9 @@ export const UserMenu = () => {
             </div>
           </div>
         </div>
+
+        {/* Email Subscription Section */}
+        {address && <EmailSubscription address={address} />}
 
         {/* Address Section */}
         <div className="flex flex-col gap-1 text-xs">

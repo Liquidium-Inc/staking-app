@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { Children } from 'react';
+import { Children, Suspense } from 'react';
 
 import './globals.css';
 
+import { FlashQueryToasts } from '@/components/ui/flash-query-toasts';
 import { Toaster } from '@/components/ui/sonner';
 
 import Footer from '../components/layout/footer';
@@ -44,6 +45,9 @@ export default function RootLayout({
               </main>
               <Footer />
               <Toaster />
+              <Suspense>
+                <FlashQueryToasts />
+              </Suspense>
             </div>
           </div>
         </Providers>

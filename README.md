@@ -6,7 +6,7 @@ A full-stack protocol for staking runes on Bitcoin, developed by Rather Labs and
 
 ## Overview
 
-Liquidium Staking is a protocol that enables users to stake runes on Bitcoin, earning yield and participating in a decentralized staking pool. The project leverages Next.js (App Router), React, React Query, Drizzle ORM, PostgreSQL, and Redis (for distributed UTXO locks, not cache). It integrates with Internet Computer canisters for exchange rate data, mempool.space for Bitcoin blockchain data, Ordiscan and Best In Slot for rune market information, and the Liquidium internal API for rune-aware UTXO data.
+Liquidium Staking is a protocol that enables users to stake runes on Bitcoin, earning yield and participating in a decentralized staking pool. The project leverages Next.js (App Router), React, React Query, Drizzle ORM, PostgreSQL, and Redis (for distributed UTXO locks, not cache). It integrates with Internet Computer canisters for exchange rate data, mempool.space for Bitcoin blockchain data, Ordiscan and Best In Slot for rune market information, and the Liquidium internal API for rune-aware UTXO data. Transactional and digest email delivery is handled via Mailjet.
 
 The core staking logic runs in the canister smart contract maintained at https://github.com/Liquidium-Inc/staking-canister/.
 
@@ -18,6 +18,7 @@ The core staking logic runs in the canister smart contract maintained at https:/
 - **Serverless Backend**: All backend logic runs on Next.js API routes (serverless functions).
 - **Distributed UTXO Locking**: Uses Redis to coordinate UTXO usage and prevent ~~double-spending~~ double-assignation.
 - **Blockchain Data**: Integrates with Internet Computer canisters for exchange rates, mempool.space for Bitcoin blockchain data, and Ordiscan/Best In Slot for rune information.
+- **Email Notifications**: Provides opt-in staking email alerts and a weekly digest powered by the Mailjet API.
 - **Portfolio & Analytics**: Users can view their staking portfolio, yields, and historical performance.
 
 ---
@@ -28,10 +29,10 @@ The core staking logic runs in the canister smart contract maintained at https:/
 - `src/app/api/` — Serverless API endpoints (see below for details).
 - `src/app/debug/` — Debugging and development tools (see below).
 - `src/config/` — Runtime configuration derived from environment variables.
-- `src/providers/` — Integrations with external APIs (Liquidium API, Ordiscan, Best In Slot, mempool, etc).
+- `src/providers/` — Integrations with external APIs (Liquidium API, Ordiscan, Best In Slot, mempool, email, etc).
 - `src/db/` — Database schema and Drizzle ORM setup.
 - `public/` — Static assets and branding.
-- `src/scripts/` — Utility scripts for PSBT decoding, rune helpers, and local integration testing.
+- `src/scripts/` — Utility scripts for PSBT decoding, rune helpers, and local integration testing. Use `node src/scripts/create_principal.js --reveal-secret` (or set `PRINT_SECRET=true`) if you need the generated `ORACLE_PRIVATE_KEY`; the default run only prints the principal for safety.
 
 ---
 
@@ -60,6 +61,7 @@ Copy `.env.example` to `.env` and fill in the required values:
 - `NEXT_PUBLIC_WITHDRAW_TIME` — Withdrawal lock time when the user unstake (in seconds).
 - `NEXT_PUBLIC_OVERWRITE_TOKEN_CONFIG` — Toggle for overriding on-chain token metadata with environment configuration.
 - `NEXT_PUBLIC_DEBUG_TOKEN_PRICE` / `NEXT_PUBLIC_DEBUG_BTC_PRICE` — Optional debug overrides for UI previews.
+- `MAILJET_API_KEY` / `MAILJET_API_SECRET` / `FROM_EMAIL` / `BASE_URL` — Mailjet credentials and default site URL for transactional and digest emails.
 - `NEXT_PUBLIC_SITE_URL` — Public-facing site URL for canonical links and redirects.
 - `NEXT_PUBLIC_POSTHOG_KEY` / `POSTHOG_API_KEY` / `POSTHOG_HOST` / `POSTHOG_SERVER_HOST` — PostHog analytics configuration.
 - `GENERATE_SOURCEMAPS` — Enables source map generation and PostHog uploads during builds.
@@ -68,21 +70,25 @@ Copy `.env.example` to `.env` and fill in the required values:
 
 ## API Endpoints
 
-| Endpoint                | Method | Description                                                                             |
-| ----------------------- | ------ | --------------------------------------------------------------------------------------- |
-| `/api/stake`            | POST   | Create a PSBT for staking runes (user must sign with their wallet)                      |
-| `/api/unstake`          | POST   | Create a PSBT for unstaking and redeeming sLIQUIDIUM (user must sign with their wallet) |
-| `/api/withdraw`         | POST   | Create a PSBT for withdrawing tokens after unstaking (user must sign with their wallet) |
-| `/api/stake/confirm`    | POST   | Validate, send to canister, and broadcast the signed stake transaction                  |
-| `/api/unstake/confirm`  | POST   | Validate, send to canister, and broadcast the signed unstake transaction                |
-| `/api/withdraw/confirm` | POST   | Validate, send to canister, and broadcast the signed withdrawal transaction             |
-| `/api/protocol`         | GET    | Get protocol stats and configuration                                                    |
-| `/api/account/balance`  | GET    | Get wallet balances for runes                                                           |
-| `/api/account/txs`      | GET    | Get wallet transaction history                                                          |
-| `/api/fee-rates`        | GET    | Get recommended fee rates from mempool.space with graceful fallbacks                    |
-| `/api/stake/pending`    | GET    | List pending stake transactions                                                         |
-| `/api/unstake/pending`  | GET    | List pending unstake transactions                                                       |
-| `/api/cron/*`           | GET    | Internal cron endpoints (require secret)                                                |
+| Endpoint                 | Method   | Description                                                                             |
+| ------------------------ | -------- | --------------------------------------------------------------------------------------- |
+| `/api/stake`             | POST     | Create a PSBT for staking runes (user must sign with their wallet)                      |
+| `/api/unstake`           | POST     | Create a PSBT for unstaking and redeeming sLIQUIDIUM (user must sign with their wallet) |
+| `/api/withdraw`          | POST     | Create a PSBT for withdrawing tokens after unstaking (user must sign with their wallet) |
+| `/api/stake/confirm`     | POST     | Validate, send to canister, and broadcast the signed stake transaction                  |
+| `/api/unstake/confirm`   | POST     | Validate, send to canister, and broadcast the signed unstake transaction                |
+| `/api/withdraw/confirm`  | POST     | Validate, send to canister, and broadcast the signed withdrawal transaction             |
+| `/api/protocol`          | GET      | Get protocol stats and configuration                                                    |
+| `/api/account/balance`   | GET      | Get wallet balances for runes                                                           |
+| `/api/account/txs`       | GET      | Get wallet transaction history                                                          |
+| `/api/fee-rates`         | GET      | Get recommended fee rates from mempool.space with graceful fallbacks                    |
+| `/api/stake/pending`     | GET      | List pending stake transactions                                                         |
+| `/api/unstake/pending`   | GET      | List pending unstake transactions                                                       |
+| `/api/email/subscribe`   | POST     | Subscribe a wallet address to staking digest emails                                     |
+| `/api/email/status`      | GET      | Check the subscription status for an address                                            |
+| `/api/email/unsubscribe` | GET/POST | Remove an address from staking digest emails                                            |
+| `/api/email/verify`      | GET      | Verify an email subscription token (redirects with status)                              |
+| `/api/cron/*`            | GET      | Internal cron endpoints (require secret)                                                |
 
 > Endpoints `/stake`, `/unstake`, and `/withdraw` only create the PSBT that the user must sign with their wallet. The corresponding `/confirm` endpoints validate the signed transaction, interact with the canister, and broadcast it to the Bitcoin network.
 
@@ -118,6 +124,10 @@ It also checks if the transactions are confirmed and if they are, it updates the
 ### [Token holders](src/app/api/cron/token_holders/route.ts)
 
 This cron job is responsible for fetching the token holders of the staked rune and storing them in the database. This is only used for analytics and preserving the data for future reference.
+
+### [Weekly email digest](src/app/api/cron/weekly-email/route.ts)
+
+Generates and sends a weekly staking digest email to subscribed addresses. It aggregates balances, recent activity, APY snapshots, and rune market data (via Ordiscan with Best In Slot fallback) before delivering through the Mailjet provider.
 
 ---
 

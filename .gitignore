@@ -44,7 +44,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-
 tmp/
 .env.local
+
+# AI Agents
+/.kilocode/
+/.cursor/
 .cursor/mcp.json
+

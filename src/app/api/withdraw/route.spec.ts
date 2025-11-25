@@ -20,6 +20,16 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+const requireSessionMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    id: 1,
+    address: 'addr',
+    tokenHash: 'hash',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    lastActiveAt: new Date(),
+  }),
+);
+
 vi.mock('@/lib/psbt', () => ({
   RunePSBT: vi.fn().mockImplementation(() => ({
     setPayer: vi.fn().mockReturnThis(),
@@ -34,6 +44,11 @@ vi.mock('@/providers/bestinslot', () => ({
 }));
 vi.mock('@/providers/mempool', () => ({
   mempool: mocks.mempool,
+}));
+
+vi.mock('@/server/auth/session', () => ({
+  requireSession: requireSessionMock,
+  UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
 const getUser = () => {
@@ -56,6 +71,13 @@ describe('POST /api/withdraw', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    requireSessionMock.mockResolvedValue({
+      id: 1,
+      address: user.address,
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      lastActiveAt: new Date(),
+    });
   });
 
   it('returns 400 if body is invalid', async () => {

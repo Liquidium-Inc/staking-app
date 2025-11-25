@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { config as runtimeConfig } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import {
   BROADCAST_ERROR_CODES,
   MEMPOOL_ERROR_PATTERNS,
@@ -18,6 +19,7 @@ import { TelemetryScope } from '@/lib/telemetry';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 const inputSchema = z.object({
   sender: z.string(),
@@ -33,11 +35,15 @@ export async function POST(req: NextRequest) {
   let sender: string | undefined;
   let unstakeTxId: string | undefined;
   try {
+    const session = await requireSession(req);
     const { success, data, error } = inputSchema.safeParse(await req.json());
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
 
     const { psbt: psbtBase64, sender: senderInput } = data;
     sender = senderInput;
+    if (!addressesMatch(session.address, senderInput)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
     const senderAddress = senderInput;
     let psbt: bitcoin.Psbt;
     try {
@@ -198,6 +204,9 @@ export async function POST(req: NextRequest) {
       txid: tx.getId(),
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     if (axios.isAxiosError(error)) {
       if (!captured) {
         const respStatus = error.response?.status;

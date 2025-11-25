@@ -49,21 +49,23 @@ const mocks = vi.hoisted(() => ({
   },
   mempool: { getPrice: vi.fn().mockImplementation(() => ({ USD: 100_000 })) },
   canister: {
-    getExchangeRate: vi.fn().mockResolvedValue({
-      circulating: BigInt(500_000),
-      balance: BigInt(550_000),
-    }),
-    address: 'bc1ptestaddress000000000000000000000000000',
+    getExchangeRate: vi
+      .fn()
+      .mockImplementation(() => ({ circulating: BigInt(1000), balance: BigInt(1000) })),
+    address: 'mock-canister-address',
   },
   ordiscan: {
     rune: {
-      market: vi.fn().mockResolvedValue({
-        data: { price_in_sats: 123 },
-      }),
+      market: vi.fn().mockImplementation(() => ({
+        data: { price_in_sats: 100 },
+      })),
     },
   },
   redis: {
-    client: null,
+    client: {
+      get: vi.fn().mockImplementation(() => null),
+      set: vi.fn(),
+    },
   },
 }));
 

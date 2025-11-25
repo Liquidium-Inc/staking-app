@@ -5,10 +5,12 @@ import { NextResponse, NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
 import { canister } from '@/providers/canister';
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 import { BroadcastService } from '@/services/broadcast';
 
 export const maxDuration = 120;
@@ -24,6 +26,7 @@ export async function POST(req: NextRequest) {
   if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
 
   try {
+    const session = await requireSession(req);
     const userSignedPsbt = bitcoin.Psbt.fromBase64(data.psbt, { network: canister.network });
 
     // Get the temporary transaction ID to find the saved canister signature
@@ -38,6 +41,10 @@ export async function POST(req: NextRequest) {
         { error: 'Unstake entry not found or missing canister signature' },
         { status: 404 },
       );
+    }
+
+    if (!addressesMatch(session.address, unstakeEntry.address)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Load the canister-signed PSBT and combine with user signatures
@@ -62,6 +69,9 @@ export async function POST(req: NextRequest) {
       throw broadcastError;
     }
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     if (axios.isAxiosError(error)) {
       await captureServerException(req, error);
       logger.error('Axios error in unstake confirm', {

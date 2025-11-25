@@ -6,9 +6,11 @@ import { z } from 'zod';
 import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
@@ -32,10 +34,16 @@ export type Body = z.infer<typeof body>;
 
 export const POST = async (req: NextRequest) => {
   try {
+    const session = await requireSession(req);
+
     const { success, data, error } = body.safeParse(await req.json());
 
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
     const { sender, payer = sender, amount, sAmount, feeRate } = data;
+
+    if (!addressesMatch(session.address, sender.address)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const psbtService = new PSBTService(
       { ...sender, rune_id: publicConfig.rune.id, amount: amount },
@@ -106,6 +114,9 @@ export const POST = async (req: NextRequest) => {
       feeRate: finalFeeRate,
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     logger.error(error as Error);
     if (error instanceof PSBTService.NotEnoughBalanceError)
       return NextResponse.json({ error: error.message }, { status: 400 });

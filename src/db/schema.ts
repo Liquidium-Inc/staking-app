@@ -8,6 +8,9 @@ import {
   integer,
   text,
   uuid,
+  boolean,
+  uniqueIndex,
+  index,
 } from 'drizzle-orm/pg-core';
 
 export const tokenBalances = pgTable('token_balances', {
@@ -62,3 +65,74 @@ export const unstakes = pgTable('unstakes', {
   claimTxBlock: integer(),
   psbt: text(),
 });
+
+export const emailSubscriptions = pgTable(
+  'email_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    address: varchar({ length: 255 }).notNull().unique(),
+    email: varchar({ length: 255 }).notNull(),
+    isVerified: boolean('is_verified').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    emailIdx: index('email_subscriptions_email_idx').on(table.email),
+  }),
+);
+
+export const emailVerifications = pgTable(
+  'email_verifications',
+  {
+    id: serial('id').primaryKey(),
+    address: varchar({ length: 255 }).notNull(),
+    email: varchar({ length: 255 }).notNull(),
+    token: varchar({ length: 255 }).notNull().unique(),
+    purpose: varchar({ length: 20 }).notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    addressIdx: index('email_verifications_address_idx').on(table.address),
+    emailIdx: index('email_verifications_email_idx').on(table.email),
+    expiresAtIdx: index('email_verifications_expires_at_idx').on(table.expiresAt),
+  }),
+);
+
+export const walletAuthNonces = pgTable(
+  'wallet_auth_nonces',
+  {
+    id: serial('id').primaryKey(),
+    address: varchar({ length: 255 }).notNull(),
+    message: text().notNull(),
+    nonce: varchar({ length: 255 }).notNull().unique(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    expiresAtIdx: index('wallet_auth_nonces_expires_at_idx').on(table.expiresAt),
+  }),
+);
+
+export const walletSessions = pgTable(
+  'wallet_sessions',
+  {
+    id: serial('id').primaryKey(),
+    address: varchar({ length: 255 }).notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at').notNull(),
+    lastActiveAt: timestamp('last_active_at').notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    addressUnique: uniqueIndex('wallet_sessions_address_unique').on(table.address),
+    expiresAtIdx: index('wallet_sessions_expires_at_idx').on(table.expiresAt),
+  }),
+);
