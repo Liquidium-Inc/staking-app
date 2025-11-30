@@ -4,9 +4,9 @@ import { Check, Copy, Loader2, Share2, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
-import { Button } from '@ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatCurrency } from '@/lib/formatCurrency';
+import { Button } from '@ui/button';
 
 interface ShareButtonProps {
   tokenAmount: number;

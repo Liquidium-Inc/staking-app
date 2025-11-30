@@ -1,13 +1,13 @@
+import { ArrowRight, ExternalLink, HandCoins, TrendingUp } from 'lucide-react';
 import { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, ExternalLink, HandCoins, TrendingUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { getRunePrice } from '@/providers/rune-provider';
-import Image from 'next/image';
 
 interface PageProps {
   params: Promise<{
