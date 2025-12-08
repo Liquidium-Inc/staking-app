@@ -274,7 +274,7 @@ export const emailService = {
     apy: Bigish;
     totalRewardsDistributed: number;
     tokenPrice: Bigish;
-    stakedValue?: Bigish;
+    stakedValue: Bigish;
   }): Promise<EmailTemplate> {
     const {
       address,
@@ -283,15 +283,13 @@ export const emailService = {
       apy,
       totalRewardsDistributed,
       tokenPrice,
-      stakedValue: providedStakedValue,
+      stakedValue,
     } = data;
 
     const sLiqBalanceBig = toBig(sLiqBalance);
     const tokenPriceBig = toBig(tokenPrice);
     const apyBig = toBig(apy);
-    const stakedValueBig = providedStakedValue
-      ? toBig(providedStakedValue)
-      : sLiqBalanceBig.times(tokenPriceBig);
+    const stakedValueBig = toBig(stakedValue);
     const unsubscribeToken = await this.getOrCreateUnsubscribeToken(address, data.email);
 
     return {
