@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import Big from 'big.js';
 import { nanoid } from 'nanoid';
 import mailjet from 'node-mailjet';
 
@@ -126,6 +127,10 @@ const EMAIL_UNSUBSCRIBE_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 const metricValueStyle = (color: string) =>
   `margin: 0; font-size: 20px; font-weight: 700; color: ${color};`;
+
+type Bigish = number | Big;
+
+const toBig = (value: Bigish): Big => (value instanceof Big ? value : new Big(value));
 
 const renderHero = (heading: string, subtitle?: string) => `
   <div style="${heroWrapperStyle}">
@@ -264,12 +269,12 @@ export const emailService = {
   async generateWeeklyReportEmail(data: {
     address: string;
     email: string;
-    sLiqBalance: number;
+    sLiqBalance: Bigish;
     earnedLiq: number;
-    apy: number;
+    apy: Bigish;
     totalRewardsDistributed: number;
-    tokenPrice: number;
-    stakedValue?: number;
+    tokenPrice: Bigish;
+    stakedValue?: Bigish;
   }): Promise<EmailTemplate> {
     const {
       address,
@@ -281,27 +286,32 @@ export const emailService = {
       stakedValue: providedStakedValue,
     } = data;
 
-    const stakedValue = providedStakedValue ?? sLiqBalance * tokenPrice;
+    const sLiqBalanceBig = toBig(sLiqBalance);
+    const tokenPriceBig = toBig(tokenPrice);
+    const apyBig = toBig(apy);
+    const stakedValueBig = providedStakedValue
+      ? toBig(providedStakedValue)
+      : sLiqBalanceBig.times(tokenPriceBig);
     const unsubscribeToken = await this.getOrCreateUnsubscribeToken(address, data.email);
 
     return {
       subject: 'Your weekly Liquidium staking report',
       html: this.createWeeklyReportHtml({
         address,
-        sLiqBalance,
+        sLiqBalance: sLiqBalanceBig,
         earnedLiq,
-        apy,
+        apy: apyBig,
         totalRewardsDistributed,
-        stakedValue,
+        stakedValue: stakedValueBig,
         unsubscribeToken,
       }),
       text: this.createWeeklyReportText({
         address,
-        sLiqBalance,
+        sLiqBalance: sLiqBalanceBig,
         earnedLiq,
-        apy,
+        apy: apyBig,
         totalRewardsDistributed,
-        stakedValue,
+        stakedValue: stakedValueBig,
         unsubscribeToken,
       }),
       attachments: defaultEmailAttachments,
@@ -310,11 +320,11 @@ export const emailService = {
 
   createWeeklyReportHtml(data: {
     address: string;
-    sLiqBalance: number;
+    sLiqBalance: Bigish;
     earnedLiq: number;
-    apy: number;
+    apy: Bigish;
     totalRewardsDistributed: number;
-    stakedValue: number;
+    stakedValue: Bigish;
     unsubscribeToken: string;
   }): string {
     const {
@@ -346,15 +356,19 @@ export const emailService = {
   },
 
   createStakingOverviewHtml(
-    sLiqBalance: number,
+    sLiqBalance: Bigish,
     earnedLiq: number,
-    apy: number,
-    stakedValue: number,
+    apy: Bigish,
+    stakedValue: Bigish,
   ): string {
+    const sLiqBalanceBig = toBig(sLiqBalance);
+    const apyBig = toBig(apy);
+    const stakedValueBig = toBig(stakedValue);
+
     const metrics = [
       {
         label: 'sLIQ Balance',
-        value: this.formatTwoDecimals(sLiqBalance),
+        value: this.formatTwoDecimals(sLiqBalanceBig),
         detail: 'sLIQ tokens',
         valueColor: '#fafafa',
       },
@@ -366,13 +380,13 @@ export const emailService = {
       },
       {
         label: 'Current APY',
-        value: `${this.formatTwoDecimals(apy * 100)}%`,
+        value: `${this.formatTwoDecimals(apyBig.times(100))}%`,
         detail: 'annual yield',
         valueColor: '#f97316',
       },
       {
         label: 'Staked Value',
-        value: `$${this.formatTwoDecimals(stakedValue)}`,
+        value: `$${this.formatTwoDecimals(stakedValueBig)}`,
         detail: 'USD value',
         valueColor: '#fafafa',
       },
@@ -416,11 +430,11 @@ export const emailService = {
 
   createWeeklyReportText(data: {
     address: string;
-    sLiqBalance: number;
+    sLiqBalance: Bigish;
     earnedLiq: number;
-    apy: number;
+    apy: Bigish;
     totalRewardsDistributed: number;
-    stakedValue: number;
+    stakedValue: Bigish;
     unsubscribeToken: string;
   }): string {
     const {
@@ -433,6 +447,9 @@ export const emailService = {
       unsubscribeToken,
     } = data;
 
+    const apyBig = toBig(apy);
+    const stakedValueBig = toBig(stakedValue);
+
     return `
       Your Weekly Liquidium Staking Report
 
@@ -441,8 +458,8 @@ export const emailService = {
       Your Staking Overview:
       - sLIQ Balance: ${this.formatTwoDecimals(sLiqBalance)} sLIQ
       - LIQ Earned (7 days): +${this.formatTwoDecimals(earnedLiq)} LIQ
-      - Current APY: ${this.formatTwoDecimals(apy * 100)}%
-      - Staked Value: $${this.formatTwoDecimals(stakedValue)}
+      - Current APY: ${this.formatTwoDecimals(apyBig.times(100))}%
+      - Staked Value: $${this.formatTwoDecimals(stakedValueBig)}
 
       Protocol Stats:
       - Total Rewards Distributed (7 days): ${this.formatTwoDecimals(totalRewardsDistributed)} LIQ
@@ -460,11 +477,13 @@ export const emailService = {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   },
 
-  formatTwoDecimals(value: number): string {
+  formatTwoDecimals(value: Bigish): string {
+    const valueAsBig = toBig(value);
+
     return new Intl.NumberFormat('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value);
+    }).format(Number(valueAsBig.toFixed(2)));
   },
 
   async getOrCreateUnsubscribeToken(address: string, email: string): Promise<string> {
