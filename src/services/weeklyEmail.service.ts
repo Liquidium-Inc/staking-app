@@ -270,23 +270,25 @@ async function processUserEmail(
     const sLiqAmountBig = sLiqBalance
       ? Big(sLiqBalance.total_balance).div(Big(10).pow(publicConfig.sRune.decimals))
       : Big(0);
+    const apyBig = Big(apy);
+    const tokenPriceBig = Big(tokenPrice);
 
     if (sLiqAmountBig.lte(0)) {
       return { success: false, skipped: true };
     }
 
     const earnedLiq = await calculateUserEarnings(user.address);
-    const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPrice);
+    const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPriceBig);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({
       address: user.address,
       email: user.email,
-      sLiqBalance: sLiqAmountBig.toNumber(),
+      sLiqBalance: sLiqAmountBig,
       earnedLiq,
-      apy,
+      apy: apyBig,
       totalRewardsDistributed,
-      tokenPrice,
-      stakedValue: stakedValueBig.toNumber(),
+      tokenPrice: tokenPriceBig,
+      stakedValue: stakedValueBig,
     });
 
     const result = await emailService.sendEmail(user.email, emailTemplate);
