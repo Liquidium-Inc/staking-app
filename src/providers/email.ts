@@ -354,25 +354,25 @@ export const emailService = {
     const metrics = [
       {
         label: 'sLIQ Balance',
-        value: sLiqBalance.toFixed(6),
+        value: this.formatTwoDecimals(sLiqBalance),
         detail: 'sLIQ tokens',
         valueColor: '#fafafa',
       },
       {
         label: 'LIQ Earned',
-        value: `+${earnedLiq.toFixed(6)}`,
+        value: `+${this.formatTwoDecimals(earnedLiq)}`,
         detail: 'past 7 days',
         valueColor: '#22c55e',
       },
       {
         label: 'Current APY',
-        value: `${(apy * 100).toFixed(2)}%`,
+        value: `${this.formatTwoDecimals(apy * 100)}%`,
         detail: 'annual yield',
         valueColor: '#f97316',
       },
       {
         label: 'Staked Value',
-        value: `$${stakedValue.toFixed(2)}`,
+        value: `$${this.formatTwoDecimals(stakedValue)}`,
         detail: 'USD value',
         valueColor: '#fafafa',
       },
@@ -391,7 +391,7 @@ export const emailService = {
       'Protocol Stats',
       renderMetric({
         label: 'Total Rewards Distributed',
-        value: `${totalRewardsDistributed.toFixed(6)} LIQ`,
+        value: `${this.formatTwoDecimals(totalRewardsDistributed)} LIQ`,
         detail: 'past 7 days across subscribers',
         valueColor: '#8b5cf6',
       }),
@@ -435,18 +435,18 @@ export const emailService = {
 
     return `
       Your Weekly Liquidium Staking Report
-      
+
       Here's your staking summary for the past 7 days:
-      
+
       Your Staking Overview:
-      - sLIQ Balance: ${sLiqBalance.toFixed(6)} sLIQ
-      - LIQ Earned (7 days): +${earnedLiq.toFixed(6)} LIQ
-      - Current APY: ${(apy * 100).toFixed(2)}%
-      - Staked Value: $${stakedValue.toFixed(2)}
-      
+      - sLIQ Balance: ${this.formatTwoDecimals(sLiqBalance)} sLIQ
+      - LIQ Earned (7 days): +${this.formatTwoDecimals(earnedLiq)} LIQ
+      - Current APY: ${this.formatTwoDecimals(apy * 100)}%
+      - Staked Value: $${this.formatTwoDecimals(stakedValue)}
+
       Protocol Stats:
-      - Total Rewards Distributed (7 days): ${totalRewardsDistributed.toFixed(6)} LIQ
-      
+      - Total Rewards Distributed (7 days): ${this.formatTwoDecimals(totalRewardsDistributed)} LIQ
+
       Your wallet address: ${this.formatAddress(address)}
       
       View your portfolio: ${config.email.baseUrl}/portfolio
@@ -458,6 +458,13 @@ export const emailService = {
 
   formatAddress(address: string): string {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  },
+
+  formatTwoDecimals(value: number): string {
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
   },
 
   async getOrCreateUnsubscribeToken(address: string, email: string): Promise<string> {
