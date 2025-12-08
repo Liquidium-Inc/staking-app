@@ -35,9 +35,6 @@ export default function RootLayout({
       >
         <Providers>
           <div className="flex w-full flex-1 flex-col">
-            <div className="w-full border-b border-yellow-700 bg-yellow-900/60 px-3 py-2 text-center text-sm text-yellow-50">
-              This product is still in beta. Please be cautious and report feedback.
-            </div>
             <div className="flex flex-1 flex-col items-center px-2">
               <Header />
               <main className="flex w-full flex-1 flex-col items-center px-1">
