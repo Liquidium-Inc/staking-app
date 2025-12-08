@@ -483,7 +483,7 @@ export const emailService = {
     return new Intl.NumberFormat('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(Number(valueAsBig.toFixed(2)));
+    }).format(valueAsBig.toNumber());
   },
 
   async getOrCreateUnsubscribeToken(address: string, email: string): Promise<string> {
