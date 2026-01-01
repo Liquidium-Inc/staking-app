@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-const PAUSE_END_DATE = new Date('2025-01-11T00:00:00Z');
+const PAUSE_END_DATE = new Date('2026-01-11T00:00:00Z');
 
 export function RewardsPauseBanner() {
   const [expanded, setExpanded] = useState(false);
