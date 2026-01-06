@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
                   gap: '24px',
                 }}
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`${process.env.BASE_URL}/liquidium.svg`}
                   alt="Liquidium"
@@ -200,6 +201,7 @@ export async function GET(request: NextRequest) {
                 paddingTop: '50px',
               }}
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`${process.env.BASE_URL}/isologo.svg`}
                 alt="Liquidium"

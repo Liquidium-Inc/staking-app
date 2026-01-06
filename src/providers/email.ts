@@ -287,7 +287,6 @@ export const emailService = {
     } = data;
 
     const sLiqBalanceBig = toBig(sLiqBalance);
-    const tokenPriceBig = toBig(tokenPrice);
     const apyBig = toBig(apy);
     const stakedValueBig = toBig(stakedValue);
     const unsubscribeToken = await this.getOrCreateUnsubscribeToken(address, data.email);

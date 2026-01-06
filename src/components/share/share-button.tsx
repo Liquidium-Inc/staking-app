@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Copy, Loader2, Share2, X } from 'lucide-react';
+import { Check, Copy, Loader2, Share2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
@@ -23,7 +23,7 @@ export function ShareButton({ tokenAmount, tokenSymbol, decimals }: ShareButtonP
 
   const roundedAmount = formatCurrency(tokenAmount, decimals);
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/earned/${roundedAmount}`;
-  const tweetText = `Check out liquid staking on Liquidium.`;
+  const tweetText = `Check out liquid staking on Liquidium. I just earned ${roundedAmount} ${tokenSymbol}.`;
 
   const handleCopyLink = async () => {
     try {
