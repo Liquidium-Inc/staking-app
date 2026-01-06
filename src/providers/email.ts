@@ -276,15 +276,7 @@ export const emailService = {
     tokenPrice: Bigish;
     stakedValue: Bigish;
   }): Promise<EmailTemplate> {
-    const {
-      address,
-      sLiqBalance,
-      earnedLiq,
-      apy,
-      totalRewardsDistributed,
-      tokenPrice,
-      stakedValue,
-    } = data;
+    const { address, sLiqBalance, earnedLiq, apy, totalRewardsDistributed, stakedValue } = data;
 
     const sLiqBalanceBig = toBig(sLiqBalance);
     const apyBig = toBig(apy);
