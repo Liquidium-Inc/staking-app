@@ -12,7 +12,6 @@ import {
   Scale,
   Sprout,
   TrendingUp,
-  Vote,
   X,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -30,7 +29,6 @@ import {
   Drawer,
   DrawerClose,
   DrawerContent,
-  DrawerFooter,
   DrawerOverlay,
   DrawerPortal,
 } from '@/components/ui/drawer';

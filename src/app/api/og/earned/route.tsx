@@ -1,3 +1,4 @@
+import Big from 'big.js';
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 
@@ -34,16 +35,21 @@ export async function GET(request: NextRequest) {
     }
 
     const decodedAmount = decodeURIComponent(rawAmount);
-    const amount = Number(decodedAmount.replace(/,/g, ''));
-    if (!amount || Number.isNaN(amount)) {
+    const normalizedAmount = decodedAmount.replace(/,/g, '');
+    let tokenAmount: Big;
+    try {
+      tokenAmount = new Big(normalizedAmount);
+    } catch {
       return new Response('Invalid amount parameter', { status: 400 });
     }
 
-    const tokenAmount = Number(amount);
+    if (tokenAmount.lte(0)) {
+      return new Response('Invalid amount parameter', { status: 400 });
+    }
 
     const [tokenPrice, apy] = await Promise.all([getRunePrice(), getProtocolApy()]);
-    const usdValue = tokenAmount * tokenPrice;
-    const apyPercentage = (apy * 100).toFixed(1);
+    const usdValue = tokenAmount.times(tokenPrice);
+    const apyPercentage = new Big(apy).times(100).toFixed(1);
 
     // load fonts
     const fontBoldData = await fetch(
@@ -121,6 +127,7 @@ export async function GET(request: NextRequest) {
                   gap: '24px',
                 }}
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`${process.env.BASE_URL}/liquidium.svg`}
                   alt="Liquidium"
@@ -150,7 +157,7 @@ export async function GET(request: NextRequest) {
                         fontWeight: 700,
                       }}
                     >
-                      {formatCurrency(tokenAmount, 1)}
+                      {formatCurrency(tokenAmount.toString(), 1)}
                     </span>
                     <span
                       style={{
@@ -168,7 +175,7 @@ export async function GET(request: NextRequest) {
                       display: 'flex',
                     }}
                   >
-                    ${formatCurrency(usdValue)} USD
+                    ${formatCurrency(usdValue.toString())} USD
                   </div>
                 </div>
               </div>
@@ -200,6 +207,7 @@ export async function GET(request: NextRequest) {
                 paddingTop: '50px',
               }}
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`${process.env.BASE_URL}/isologo.svg`}
                 alt="Liquidium"

@@ -273,21 +273,11 @@ export const emailService = {
     earnedLiq: number;
     apy: Bigish;
     totalRewardsDistributed: number;
-    tokenPrice: Bigish;
     stakedValue: Bigish;
   }): Promise<EmailTemplate> {
-    const {
-      address,
-      sLiqBalance,
-      earnedLiq,
-      apy,
-      totalRewardsDistributed,
-      tokenPrice,
-      stakedValue,
-    } = data;
+    const { address, sLiqBalance, earnedLiq, apy, totalRewardsDistributed, stakedValue } = data;
 
     const sLiqBalanceBig = toBig(sLiqBalance);
-    const tokenPriceBig = toBig(tokenPrice);
     const apyBig = toBig(apy);
     const stakedValueBig = toBig(stakedValue);
     const unsubscribeToken = await this.getOrCreateUnsubscribeToken(address, data.email);

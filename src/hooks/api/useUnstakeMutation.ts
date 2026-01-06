@@ -9,6 +9,7 @@ import type { POST as PSBT_HANDLER } from '@/app/api/unstake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useUnstakeMutation = () => {
@@ -29,7 +30,10 @@ export const useUnstakeMutation = () => {
     }) => {
       const toastId = toast.loading('Unstaking...');
       try {
-        toast.loading('Generating Transaction...', { id: toastId });
+        toast.loading(GENERATING_TRANSACTION_TOAST.title, {
+          id: toastId,
+          description: GENERATING_TRANSACTION_TOAST.description,
+        });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/unstake', {
           feeRate: 'feeRate' in window ? window.feeRate : selectedRate,
           sender: { address, public: publicKey },
@@ -38,7 +42,7 @@ export const useUnstakeMutation = () => {
           sAmount: stakedAmount.toString(),
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -49,12 +53,12 @@ export const useUnstakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/unstake/confirm',
           { psbt: signedPsbt.signedPsbtBase64 },
         );
-        toast.success('Unstaked request sent successfully', { id: toastId });
+        toast.success('Unstaked request sent successfully', { id: toastId, description: '' });
         capture('unstake_request_succeeded', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),

@@ -1,0 +1,1 @@
+export const SATOSHIS_PER_BTC = 100_000_000;

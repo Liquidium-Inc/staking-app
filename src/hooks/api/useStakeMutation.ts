@@ -9,6 +9,7 @@ import type { POST as PSBT_HANDLER } from '@/app/api/stake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useStakeMutation = () => {
@@ -29,7 +30,10 @@ export const useStakeMutation = () => {
       const toastId = toast.loading('Staking...');
       const finalFeeRate = 'feeRate' in window ? window.feeRate : selectedRate;
       try {
-        toast.loading('Generating Transaction...', { id: toastId });
+        toast.loading(GENERATING_TRANSACTION_TOAST.title, {
+          id: toastId,
+          description: GENERATING_TRANSACTION_TOAST.description,
+        });
 
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/stake', {
           feeRate: finalFeeRate,
@@ -39,7 +43,7 @@ export const useStakeMutation = () => {
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -50,11 +54,11 @@ export const useStakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const response = await axios.post<ApiOutput<typeof SEND_HANDLER>>('/api/stake/confirm', {
           psbt: signedPsbt.signedPsbtBase64,
         });
-        toast.success('Staked successfully', { id: toastId });
+        toast.success('Staked successfully', { id: toastId, description: '' });
         capture('stake_successful', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),

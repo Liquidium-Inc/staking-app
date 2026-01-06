@@ -9,6 +9,7 @@ import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useWithdrawMutation = () => {
@@ -41,7 +42,10 @@ export const useWithdrawMutation = () => {
           feeRate,
         });
 
-        toast.loading('Generating Transaction...', { id: toastId });
+        toast.loading(GENERATING_TRANSACTION_TOAST.title, {
+          id: toastId,
+          description: GENERATING_TRANSACTION_TOAST.description,
+        });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/withdraw', {
           feeRate: feeRate,
           sender: { address, public: publicKey },
@@ -49,7 +53,7 @@ export const useWithdrawMutation = () => {
           txid,
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -60,12 +64,12 @@ export const useWithdrawMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/withdraw/confirm',
           { psbt: signedPsbt.signedPsbtBase64, sender: address },
         );
-        toast.success('Withdraw request sent successfully', { id: toastId });
+        toast.success('Withdraw request sent successfully', { id: toastId, description: '' });
         capture('withdrawal_succeeded', {
           txid,
           ...(maskedAddress ? { address: maskedAddress } : {}),
