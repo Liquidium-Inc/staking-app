@@ -205,7 +205,7 @@ export class BroadcastService {
         }
         try {
           psbt.finalizeInput(index);
-        } catch (error) {
+        } catch {
           logger.debug('Could not finalize input before co-signing', { index });
         }
       });
