@@ -287,7 +287,6 @@ async function processUserEmail(
       earnedLiq,
       apy: apyBig,
       totalRewardsDistributed,
-      tokenPrice: tokenPriceBig,
       stakedValue: stakedValueBig,
     });
 

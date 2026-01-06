@@ -2,8 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import Big from 'big.js';
 
-import { SATOSHIS_PER_BTC } from '@/lib/bitcoin-units';
-
 const BTC_BALANCE_ENDPOINT = '/api/account/btc-balance';
 
 type BtcBalanceResponse = {
@@ -26,7 +24,7 @@ export const useBtcBalance = (address: string) => {
       const { data } = await axios.get<BtcBalanceResponse>(BTC_BALANCE_ENDPOINT, {
         params: { address },
       });
-      const balanceBtc = new Big(data.balance_sats).div(SATOSHIS_PER_BTC);
+      const balanceBtc = new Big(data.balance_btc);
 
       return balanceBtc.toNumber();
     },

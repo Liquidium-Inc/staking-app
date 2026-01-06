@@ -27,8 +27,10 @@ const querySchema = z.object({
   address: z.string().trim().min(1, 'Address is required'),
 });
 
+const MEMPOOL_TIMEOUT_MS = 10_000;
 const ERROR_INVALID_QUERY = 'Invalid query parameters';
 const ERROR_FETCH_FAILED = 'Failed to fetch BTC balance';
+const ERROR_FETCH_TIMEOUT = 'BTC balance request timed out';
 
 export const GET = async (request: Request) => {
   const { searchParams } = new URL(request.url);
@@ -45,7 +47,9 @@ export const GET = async (request: Request) => {
 
   try {
     const baseUrl = getBaseMempoolUrl();
-    const { data } = await axios.get<MempoolAddressResponse>(`${baseUrl}/api/address/${address}`);
+    const { data } = await axios.get<MempoolAddressResponse>(`${baseUrl}/api/address/${address}`, {
+      timeout: MEMPOOL_TIMEOUT_MS,
+    });
 
     const chainBalanceSats = new Big(data.chain_stats.funded_txo_sum).minus(
       data.chain_stats.spent_txo_sum,
@@ -61,6 +65,13 @@ export const GET = async (request: Request) => {
       balance_btc: totalBalanceSats.div(SATOSHIS_PER_BTC).toFixed(8),
     });
   } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
+      if (isTimeout) {
+        logger.warn('BTC balance request timed out', { address, error: error.message });
+        return NextResponse.json({ error: ERROR_FETCH_TIMEOUT }, { status: 504 });
+      }
+    }
     logger.error('Failed to fetch BTC balance', { address, error });
     return NextResponse.json({ error: ERROR_FETCH_FAILED }, { status: 502 });
   }

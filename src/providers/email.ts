@@ -273,7 +273,6 @@ export const emailService = {
     earnedLiq: number;
     apy: Bigish;
     totalRewardsDistributed: number;
-    tokenPrice: Bigish;
     stakedValue: Bigish;
   }): Promise<EmailTemplate> {
     const { address, sLiqBalance, earnedLiq, apy, totalRewardsDistributed, stakedValue } = data;
