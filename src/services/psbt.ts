@@ -1,10 +1,10 @@
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 
+import { resolveFeeRate } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT, type RunePSBTInput as PSBTInput } from '@/lib/psbt';
 import { selectRuneUtxos, type UTXO } from '@/lib/utxo-selection';
-import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
 import { runeProvider } from '@/providers/rune-provider';
 
@@ -126,18 +126,44 @@ export class PSBTService {
     const utxos = outpoints.map((input) => this.convertToUtxo(input));
 
     // Filter out frozen/locked UTXOs before selection
-    const availableUtxos = [];
-    for (const utxo of utxos) {
-      const utxoKey = `${utxo.hash}:${utxo.index}`;
-      const redisKey = `utxo:${utxoKey}`;
-      const isLocked = redis.client ? await redis.client.exists(redisKey) : false;
-      if (!isLocked) {
-        availableUtxos.push(utxo);
-      } else {
-        logger.debug('Skipping locked UTXO during selection', { utxo: utxoKey });
+    const availableUtxos: UTXO[] = [];
+    const utxoKeys = utxos.map((utxo) => `${utxo.hash}:${utxo.index}`);
+
+    let lockedSet = new Set<string>();
+    if (redis.client && utxoKeys.length > 0) {
+      const pipeline = redis.client.pipeline();
+      utxoKeys.forEach((utxoKey) => pipeline.exists(`utxo:${utxoKey}`));
+      const results = await pipeline.exec();
+      if (!results) {
+        throw new Error('Failed to check UTXO locks');
       }
+
+      lockedSet = new Set(
+        results
+          ?.map((result, index) => {
+            if (!result) return null;
+            const [error, value] = result;
+            if (error) {
+              logger.error('Failed to check UTXO lock status', {
+                utxo: utxoKeys[index],
+                error: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
+            }
+            return value ? utxoKeys[index] : null;
+          })
+          .filter((utxoKey): utxoKey is string => Boolean(utxoKey)) ?? [],
+      );
     }
 
+    for (const utxo of utxos) {
+      const utxoKey = `${utxo.hash}:${utxo.index}`;
+      if (lockedSet.has(utxoKey)) {
+        logger.debug('Skipping locked UTXO during selection', { utxo: utxoKey });
+        continue;
+      }
+      availableUtxos.push(utxo);
+    }
     // Use efficient UTXO selection on available (unlocked) UTXOs
     const selectionResult = selectRuneUtxos(availableUtxos, rune, target, feeRate, 'target_aware');
 
@@ -208,7 +234,7 @@ export class PSBTService {
 
   async build() {
     const { source, payer, target, network } = this;
-    const { feeRate = (await mempool.fees.getFeesRecommended()).fastestFee + 1 } = this;
+    const feeRate = await resolveFeeRate(this.feeRate);
 
     const utxos = await this.prepareAvailableUtxos();
     logger.debug('Unstake build UTXO summary', {
