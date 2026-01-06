@@ -29,7 +29,12 @@ export const POST = async (req: NextRequest) => {
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
 
     const { txid, sender, payer = sender } = data;
-    const { feeRate = (await mempool.fees.getFeesRecommended()).fastestFee + 1 } = data;
+    let resolvedFeeRate = data.feeRate;
+    if (!resolvedFeeRate) {
+      const feeResponse = await mempool.fees.getFeesRecommended();
+      resolvedFeeRate = feeResponse.fastestFee + 1;
+    }
+    const feeRate = resolvedFeeRate;
 
     if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

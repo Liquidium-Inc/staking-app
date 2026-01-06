@@ -197,10 +197,16 @@ export class BroadcastService {
       logger.info(`${sender} is trying to ${this.operation} ${amount} runes for ${sAmount}`);
 
       psbt.txInputs.forEach((_, index) => {
+        const input = psbt.data.inputs[index];
+        const alreadyFinalized = Boolean(input?.finalScriptSig || input?.finalScriptWitness);
+        if (alreadyFinalized) {
+          logger.debug('Skipping finalizeInput for already finalized input', { index });
+          return;
+        }
         try {
           psbt.finalizeInput(index);
         } catch (error) {
-          logger.warn('Could not finalize input before co-signing', { index, error });
+          logger.debug('Could not finalize input before co-signing', { index });
         }
       });
 
