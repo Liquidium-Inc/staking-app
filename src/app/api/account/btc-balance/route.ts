@@ -1,8 +1,11 @@
 import axios from 'axios';
 import Big from 'big.js';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { config as publicConfig } from '@/config/public';
+import { SATOSHIS_PER_BTC } from '@/lib/bitcoin-units';
+import { logger } from '@/lib/logger';
 
 type MempoolStats = {
   tx_count: number;
@@ -18,32 +21,47 @@ type MempoolAddressResponse = {
   mempool_stats: MempoolStats;
 };
 
-const BTC_BALANCE_DECIMALS = 100_000_000;
-
 const getBaseMempoolUrl = () => publicConfig.mempool.url.replace(/\/$/, '');
+
+const querySchema = z.object({
+  address: z.string().trim().min(1, 'Address is required'),
+});
+
+const ERROR_INVALID_QUERY = 'Invalid query parameters';
+const ERROR_FETCH_FAILED = 'Failed to fetch BTC balance';
 
 export const GET = async (request: Request) => {
   const { searchParams } = new URL(request.url);
-  const address = searchParams.get('address');
+  const parseResult = querySchema.safeParse({ address: searchParams.get('address') });
 
-  if (!address) {
-    return NextResponse.json({ error: 'Address is required' }, { status: 400 });
+  if (!parseResult.success) {
+    return NextResponse.json(
+      { error: ERROR_INVALID_QUERY, details: parseResult.error.issues },
+      { status: 400 },
+    );
   }
 
-  const baseUrl = getBaseMempoolUrl();
-  const { data } = await axios.get<MempoolAddressResponse>(`${baseUrl}/api/address/${address}`);
+  const { address } = parseResult.data;
 
-  const chainBalanceSats = new Big(data.chain_stats.funded_txo_sum).minus(
-    data.chain_stats.spent_txo_sum,
-  );
-  const mempoolBalanceSats = new Big(data.mempool_stats.funded_txo_sum).minus(
-    data.mempool_stats.spent_txo_sum,
-  );
-  const totalBalanceSats = chainBalanceSats.plus(mempoolBalanceSats);
+  try {
+    const baseUrl = getBaseMempoolUrl();
+    const { data } = await axios.get<MempoolAddressResponse>(`${baseUrl}/api/address/${address}`);
 
-  return NextResponse.json({
-    address: data.address,
-    balance_sats: totalBalanceSats.round(0, 0).toFixed(0),
-    balance_btc: totalBalanceSats.div(BTC_BALANCE_DECIMALS).toFixed(8),
-  });
+    const chainBalanceSats = new Big(data.chain_stats.funded_txo_sum).minus(
+      data.chain_stats.spent_txo_sum,
+    );
+    const mempoolBalanceSats = new Big(data.mempool_stats.funded_txo_sum).minus(
+      data.mempool_stats.spent_txo_sum,
+    );
+    const totalBalanceSats = chainBalanceSats.plus(mempoolBalanceSats);
+
+    return NextResponse.json({
+      address: data.address,
+      balance_sats: totalBalanceSats.round(0, 0).toFixed(0),
+      balance_btc: totalBalanceSats.div(SATOSHIS_PER_BTC).toFixed(8),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch BTC balance', { address, error });
+    return NextResponse.json({ error: ERROR_FETCH_FAILED }, { status: 502 });
+  }
 };

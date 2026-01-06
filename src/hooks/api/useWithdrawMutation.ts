@@ -53,7 +53,7 @@ export const useWithdrawMutation = () => {
           txid,
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -64,12 +64,12 @@ export const useWithdrawMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/withdraw/confirm',
           { psbt: signedPsbt.signedPsbtBase64, sender: address },
         );
-        toast.success('Withdraw request sent successfully', { id: toastId });
+        toast.success('Withdraw request sent successfully', { id: toastId, description: '' });
         capture('withdrawal_succeeded', {
           txid,
           ...(maskedAddress ? { address: maskedAddress } : {}),

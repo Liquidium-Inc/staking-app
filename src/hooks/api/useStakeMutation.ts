@@ -43,7 +43,7 @@ export const useStakeMutation = () => {
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -54,11 +54,11 @@ export const useStakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const response = await axios.post<ApiOutput<typeof SEND_HANDLER>>('/api/stake/confirm', {
           psbt: signedPsbt.signedPsbtBase64,
         });
-        toast.success('Staked successfully', { id: toastId });
+        toast.success('Staked successfully', { id: toastId, description: '' });
         capture('stake_successful', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),

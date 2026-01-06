@@ -82,6 +82,7 @@ describe('useUnstakeMutation', () => {
     expect(toastMock.loading).toHaveBeenCalled();
     expect(toastMock.success).toHaveBeenCalledWith('Unstaked request sent successfully', {
       id: 'toast-id',
+      description: '',
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['protocol'] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({

@@ -80,7 +80,10 @@ describe('useStakeMutation', () => {
     );
     expect(axiosMock.post).toHaveBeenCalledWith('/api/stake/confirm', { psbt: 'signed-psbt' });
     expect(toastMock.loading).toHaveBeenCalled();
-    expect(toastMock.success).toHaveBeenCalledWith('Staked successfully', { id: 'toast-id' });
+    expect(toastMock.success).toHaveBeenCalledWith('Staked successfully', {
+      id: 'toast-id',
+      description: '',
+    });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['protocol'] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['pending-stakes', 'test-address'],

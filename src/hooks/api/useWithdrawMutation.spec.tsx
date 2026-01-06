@@ -82,6 +82,7 @@ describe('useWithdrawMutation', () => {
     expect(toastMock.loading).toHaveBeenCalled();
     expect(toastMock.success).toHaveBeenCalledWith('Withdraw request sent successfully', {
       id: 'toast-id',
+      description: '',
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['pending-unstakes', 'test-address'],

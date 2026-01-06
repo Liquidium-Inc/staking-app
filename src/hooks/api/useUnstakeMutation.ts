@@ -42,7 +42,7 @@ export const useUnstakeMutation = () => {
           sAmount: stakedAmount.toString(),
         });
 
-        toast.loading('Waiting for signature...', { id: toastId });
+        toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
           finalize: false,
@@ -53,12 +53,12 @@ export const useUnstakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        toast.loading('Sending transaction...', { id: toastId });
+        toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/unstake/confirm',
           { psbt: signedPsbt.signedPsbtBase64 },
         );
-        toast.success('Unstaked request sent successfully', { id: toastId });
+        toast.success('Unstaked request sent successfully', { id: toastId, description: '' });
         capture('unstake_request_succeeded', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),
