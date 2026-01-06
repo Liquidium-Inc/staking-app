@@ -9,6 +9,7 @@ import type { POST as PSBT_HANDLER } from '@/app/api/unstake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useUnstakeMutation = () => {
@@ -29,7 +30,10 @@ export const useUnstakeMutation = () => {
     }) => {
       const toastId = toast.loading('Unstaking...');
       try {
-        toast.loading('Generating Transaction...', { id: toastId });
+        toast.loading(GENERATING_TRANSACTION_TOAST.title, {
+          id: toastId,
+          description: GENERATING_TRANSACTION_TOAST.description,
+        });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/unstake', {
           feeRate: 'feeRate' in window ? window.feeRate : selectedRate,
           sender: { address, public: publicKey },

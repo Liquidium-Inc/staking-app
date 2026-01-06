@@ -9,6 +9,7 @@ import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useWithdrawMutation = () => {
@@ -41,7 +42,10 @@ export const useWithdrawMutation = () => {
           feeRate,
         });
 
-        toast.loading('Generating Transaction...', { id: toastId });
+        toast.loading(GENERATING_TRANSACTION_TOAST.title, {
+          id: toastId,
+          description: GENERATING_TRANSACTION_TOAST.description,
+        });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/withdraw', {
           feeRate: feeRate,
           sender: { address, public: publicKey },
