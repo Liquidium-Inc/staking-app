@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { addressesMatch } from '@/lib/address';
+import { resolveFeeRate } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
@@ -12,6 +13,9 @@ import { runeProvider } from '@/providers/rune-provider';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 bitcoin.initEccLib(ecc);
+
+const FEE_ESTIMATION_ERROR_MESSAGE = 'Fee estimation failed';
+const HTTP_STATUS_BAD_GATEWAY = 502;
 
 const body = z.object({
   txid: z.string(),
@@ -29,12 +33,18 @@ export const POST = async (req: NextRequest) => {
     if (!success) return NextResponse.json({ error: error.flatten() }, { status: 400 });
 
     const { txid, sender, payer = sender } = data;
-    let resolvedFeeRate = data.feeRate;
-    if (!resolvedFeeRate) {
-      const feeResponse = await mempool.fees.getFeesRecommended();
-      resolvedFeeRate = feeResponse.fastestFee + 1;
+    let feeRate: number;
+    try {
+      feeRate = await resolveFeeRate(data.feeRate);
+    } catch (error) {
+      logger.error('Fee rate estimation failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return NextResponse.json(
+        { error: FEE_ESTIMATION_ERROR_MESSAGE },
+        { status: HTTP_STATUS_BAD_GATEWAY },
+      );
     }
-    const feeRate = resolvedFeeRate;
 
     if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

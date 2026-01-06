@@ -1,10 +1,10 @@
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 
+import { resolveFeeRate } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT, type RunePSBTInput as PSBTInput } from '@/lib/psbt';
 import { selectRuneUtxos, type UTXO } from '@/lib/utxo-selection';
-import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
 import { runeProvider } from '@/providers/rune-provider';
 
@@ -134,6 +134,9 @@ export class PSBTService {
       const pipeline = redis.client.pipeline();
       utxoKeys.forEach((utxoKey) => pipeline.exists(`utxo:${utxoKey}`));
       const results = await pipeline.exec();
+      if (!results) {
+        throw new Error('Failed to check UTXO locks');
+      }
 
       lockedSet = new Set(
         results
@@ -141,11 +144,11 @@ export class PSBTService {
             if (!result) return null;
             const [error, value] = result;
             if (error) {
-              logger.warn('Failed to check UTXO lock status', {
+              logger.error('Failed to check UTXO lock status', {
                 utxo: utxoKeys[index],
                 error: error instanceof Error ? error.message : String(error),
               });
-              return null;
+              throw error;
             }
             return value ? utxoKeys[index] : null;
           })
@@ -231,12 +234,7 @@ export class PSBTService {
 
   async build() {
     const { source, payer, target, network } = this;
-    let resolvedFeeRate = this.feeRate;
-    if (!resolvedFeeRate) {
-      const feeResponse = await mempool.fees.getFeesRecommended();
-      resolvedFeeRate = feeResponse.fastestFee + 1;
-    }
-    const feeRate = resolvedFeeRate;
+    const feeRate = await resolveFeeRate(this.feeRate);
 
     const utxos = await this.prepareAvailableUtxos();
     logger.debug('Unstake build UTXO summary', {
