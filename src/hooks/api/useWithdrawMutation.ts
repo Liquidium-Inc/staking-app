@@ -79,7 +79,7 @@ export const useWithdrawMutation = () => {
         if (axios.isAxiosError(error)) {
           if (typeof error.response?.data.error === 'string') {
             const errorMessage = error.response.data.error;
-            showErrorToast(errorMessage, { id: toastId });
+            showErrorToast(errorMessage, { id: toastId, description: '' });
             capture('withdrawal_failed', {
               txid,
               ...(maskedAddress ? { address: maskedAddress } : {}),
@@ -89,7 +89,7 @@ export const useWithdrawMutation = () => {
             throw new Error(errorMessage);
           }
           const errorMessage = error.response?.data + '';
-          showErrorToast(errorMessage, { id: toastId });
+          showErrorToast(errorMessage, { id: toastId, description: '' });
           capture('withdrawal_failed', {
             txid,
             ...(maskedAddress ? { address: maskedAddress } : {}),
@@ -98,9 +98,7 @@ export const useWithdrawMutation = () => {
           throw new Error(errorMessage);
         }
         const errorMessage = error instanceof Error ? error.message : 'Cannot withdraw';
-        showErrorToast(errorMessage, {
-          id: toastId,
-        });
+        showErrorToast(errorMessage, { id: toastId, description: '' });
         capture('withdrawal_failed', {
           txid,
           ...(maskedAddress ? { address: maskedAddress } : {}),

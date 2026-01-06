@@ -84,7 +84,7 @@ export const useStakeMutation = () => {
           error_message: errorMessage,
         });
 
-        showErrorToast(errorMessage, { id: toastId });
+        showErrorToast(errorMessage, { id: toastId, description: '' });
         // Propagate error so React Query marks the mutation as failed
         throw new Error(errorMessage);
       }

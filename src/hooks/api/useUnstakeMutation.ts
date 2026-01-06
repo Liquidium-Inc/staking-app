@@ -73,16 +73,16 @@ export const useUnstakeMutation = () => {
         if (axios.isAxiosError(error)) {
           if (typeof error.response?.data.error === 'string') {
             const errorMessage = error.response.data.error;
-            showErrorToast(errorMessage, { id: toastId });
+            showErrorToast(errorMessage, { id: toastId, description: '' });
             // Propagate error so React Query marks the mutation as failed
             throw new Error(errorMessage);
           }
           const errorMessage = error.response?.data + '';
-          showErrorToast(errorMessage, { id: toastId });
+          showErrorToast(errorMessage, { id: toastId, description: '' });
           throw new Error(errorMessage);
         }
         const errorMessage = error instanceof Error ? error.message : 'Cannot unstake';
-        showErrorToast(errorMessage, { id: toastId });
+        showErrorToast(errorMessage, { id: toastId, description: '' });
         throw new Error(errorMessage);
       }
     },
