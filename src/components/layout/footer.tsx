@@ -41,7 +41,7 @@ const footerLinks = [
   },
   {
     label: 'Marketplaces',
-    href: 'https://help.liquidium.fi/en/articles/11359560-liquidium-marketplaces',
+    href: 'https://help.liquidium.org/en/articles/11359560-liq-marketplaces',
     external: true,
   },
 ];
