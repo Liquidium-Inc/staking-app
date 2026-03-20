@@ -16,21 +16,27 @@ import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
 import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
-import { config } from '@/config/public';
+import { config, PublicEnvironment } from '@/config/public';
 
 const network = config.network === 'testnet4' ? TESTNET4 : MAINNET;
+const isDevelopment = config.env === PublicEnvironment.development;
+const isNonProduction = config.env !== PublicEnvironment.production;
 
 const ReactQueryDevtools = dynamic(
   () => import('@tanstack/react-query-devtools').then((mod) => mod.ReactQueryDevtools),
   { ssr: false },
 );
+const Agentation = dynamic(() => import('agentation').then((mod) => mod.Agentation), {
+  ssr: false,
+});
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
     <QueryClientProvider client={queryClient}>
-      {process.env.NODE_ENV !== 'production' && <ReactQueryDevtools />}
+      {isNonProduction && <ReactQueryDevtools />}
+      {isDevelopment && <Agentation />}
       <AnalyticsConsentProvider>
         <LaserEyesProvider config={{ network }}>
           <WalletAuthProvider>
