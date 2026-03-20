@@ -24,6 +24,9 @@ const ReactQueryDevtools = dynamic(
   () => import('@tanstack/react-query-devtools').then((mod) => mod.ReactQueryDevtools),
   { ssr: false },
 );
+const Agentation = dynamic(() => import('agentation').then((mod) => mod.Agentation), {
+  ssr: false,
+});
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -31,6 +34,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {process.env.NODE_ENV !== 'production' && <ReactQueryDevtools />}
+      {process.env.NODE_ENV === 'development' && <Agentation />}
       <AnalyticsConsentProvider>
         <LaserEyesProvider config={{ network }}>
           <WalletAuthProvider>
