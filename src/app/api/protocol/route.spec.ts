@@ -124,6 +124,13 @@ describe('GET', () => {
     const body = await response.json();
 
     expect(mocks.runePrice.resolveRunePriceSnapshot).toHaveBeenCalledOnce();
+    expect(mocks.runePrice.resolveRunePriceSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runeName: config.rune.name,
+        runeId: config.rune.id,
+        getTicker: expect.any(Function),
+      }),
+    );
     expect(body.btc.price).toBe(100_000);
     expect(body.rune.priceSats).toBe(12_345_678);
   });

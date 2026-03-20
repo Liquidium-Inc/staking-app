@@ -71,6 +71,29 @@ describe('rune-price service', () => {
     expect(result.runePriceSats).toBe(100);
   });
 
+  it('falls back to the injected ticker loader when market sources have no price', async () => {
+    const getTicker = vi.fn().mockResolvedValue({
+      data: {
+        avg_unit_price_in_sats: 321,
+      },
+    });
+
+    mocks.coingecko.liquidium.getPriceUsd.mockResolvedValueOnce(null);
+    mocks.ordiscan.rune.market.mockResolvedValueOnce({
+      data: {},
+    });
+
+    const result = await resolveRunePriceSnapshot({
+      runeName: 'LIQUIDIUM',
+      runeId: '1:1',
+      getTicker,
+    });
+
+    expect(getTicker).toHaveBeenCalledOnce();
+    expect(getTicker).toHaveBeenCalledWith('1:1');
+    expect(result.runePriceSats).toBe(321);
+  });
+
   it('returns the CoinGecko USD price without requiring BTC conversion', async () => {
     const result = await resolveRunePriceUsd({
       runeName: 'LIQUIDIUM',
