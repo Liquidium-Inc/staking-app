@@ -38,7 +38,9 @@ vi.mock('@/db', () => ({ db: mocks.db }));
 vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
 vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
 vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
-vi.mock('@/services/rune-price', () => ({ resolveRunePriceSnapshot: mocks.runePrice.resolveRunePriceSnapshot }));
+vi.mock('@/services/rune-price', () => ({
+  resolveRunePriceSnapshot: mocks.runePrice.resolveRunePriceSnapshot,
+}));
 
 describe('GET', () => {
   beforeEach(() => {
@@ -57,8 +59,7 @@ describe('GET', () => {
     ]);
 
     mocks.BIS.runes.ticker.mockImplementation(({ rune_id }) => {
-      const key =
-        rune_id === config.rune.id ? 'rune' : rune_id === config.sRune.id ? 'sRune' : '';
+      const key = rune_id === config.rune.id ? 'rune' : rune_id === config.sRune.id ? 'sRune' : '';
       const rune = key ? config[key] : undefined;
       return {
         data: {
