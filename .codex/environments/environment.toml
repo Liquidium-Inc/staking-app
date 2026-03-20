@@ -3,12 +3,13 @@ version = 1
 name = "staking-app"
 
 [setup]
-script = ""
+script = '''
+pnpm install --frozen-lockfile
+'''
 
 [[actions]]
 name = "Run"
 icon = "run"
 command = '''
-pnpm install
 pnpm dev
 '''
