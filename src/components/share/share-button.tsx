@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/formatCurrency';
 import { Button } from '@ui/button';
 
 interface ShareButtonProps {
-  tokenAmount: number;
+  tokenAmount: string;
   tokenSymbol: string;
   decimals: number;
 }

@@ -43,7 +43,7 @@ export default function PortfolioPage() {
     } satisfies Record<(typeof activity)[number]['event_type'], number>;
     const txs = activity
       .map((tx) => ({
-        value: multiplier[tx.event_type] * Number(tx.amount) * 10 ** -tx.decimals,
+        value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
         block: new Date(tx.timestamp).valueOf(),
       }))
       .reverse();
@@ -53,12 +53,12 @@ export default function PortfolioPage() {
         ? Number(historicRates[historicRates.length - 1]!.rate)
         : 1;
     const rates = [
-      { value: 1, block: 0 },
+      { value: new Big(1), block: 0 },
       ...(historicRates?.map(({ rate, timestamp }) => ({
-        value: Number(rate),
+        value: new Big(rate),
         block: new Date(timestamp).valueOf(),
       })) ?? []),
-      { value: latestRate, block: Number.POSITIVE_INFINITY },
+      { value: new Big(latestRate), block: Number.POSITIVE_INFINITY },
     ];
 
     return computeEarnings(txs, rates);
@@ -139,10 +139,10 @@ export default function PortfolioPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center space-y-3">
         <Card className="relative w-full space-y-1">
           <div className="absolute top-3 right-11">
-            {earnings.total > 0 && (
+            {earnings.total.gt(0) && (
               <ShareButton
                 decimals={rune.decimals}
-                tokenAmount={earnings.total}
+                tokenAmount={earnings.total.toString()}
                 tokenSymbol={'LIQ'}
               />
             )}
@@ -159,16 +159,16 @@ export default function PortfolioPage() {
           <CardContent className="flex items-center space-x-2 px-2">
             <TokenLogo logo={rune.symbol} variant="primary" size={40} />
             <span className="text-4xl font-semibold">
-              {formatCurrency(earnings.total, rune.decimals)}
+              {formatCurrency(earnings.total.toString(), rune.decimals)}
             </span>
-            {earnings.percentage > 0 && (
+            {earnings.percentage.gt(0) && (
               <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
-                +{formatCurrency(earnings.percentage)}%
+                +{formatCurrency(earnings.percentage.toString())}%
               </div>
             )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            ${formatCurrency(earnings.total * tokenPrice)} USD
+            ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD
           </div>
         </Card>
 

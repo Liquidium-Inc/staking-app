@@ -3,9 +3,25 @@ import Queue from 'yocto-queue';
 
 import { binarySearch } from './binarySearch';
 
-interface Entry {
+export interface EarningsEntry {
   block: number;
-  value: number;
+  value: Big;
+}
+
+export interface EarningsSlot {
+  value: Big;
+  block: number;
+  rate: Big;
+}
+
+export interface EarningsResult {
+  realized: Big;
+  unrealized: Big;
+  total: Big;
+  percentage: Big;
+  slots: Queue<EarningsSlot>;
+  invested: Big;
+  rate: Big;
 }
 
 /**
@@ -14,32 +30,36 @@ interface Entry {
  * @param rates - The list of rates to compute earnings from.
  * @returns The realized and unrealized earnings.
  */
-export const computeEarnings = (values: Entry[], rates: Entry[]) => {
-  let realized = 0;
-  let invested = 0;
-  const slots = new Queue<{ value: number; block: number; rate: number }>();
+export const computeEarnings = (
+  values: EarningsEntry[],
+  rates: EarningsEntry[],
+): EarningsResult => {
+  const zero = new Big(0);
+  let realized = zero;
+  let invested = zero;
+  const slots = new Queue<EarningsSlot>();
+
   for (const { value, block } of values) {
     const rate = binarySearch(rates, (rate) => rate.block, block)?.value;
+    if (rate === undefined) throw new Error('No rate found for block ' + block);
 
-    if (rate !== 0 && !rate) throw new Error('No rate found for block ' + block);
-
-    if (value > 0) {
+    if (value.gt(0)) {
       slots.enqueue({ value, block, rate });
-      invested += value * rate;
+      invested = invested.plus(value.times(rate));
     } else {
-      let remainingValue = -value;
-      while (remainingValue > 0) {
+      let remainingValue = value.times(-1);
+      while (remainingValue.gt(0)) {
         const slot = slots.peek();
         if (!slot) break;
         // throw new Error(`No enough slots to cover ${value} (remaining: ${remainingValue})`);
-        if (slot.value > remainingValue) {
-          slot.value -= remainingValue;
-          realized += remainingValue * (rate - slot.rate);
-          remainingValue = 0;
+        if (slot.value.gt(remainingValue)) {
+          slot.value = slot.value.minus(remainingValue);
+          realized = realized.plus(remainingValue.times(rate.minus(slot.rate)));
+          remainingValue = zero;
         } else {
           slots.dequeue();
-          realized += slot.value * (rate - slot.rate);
-          remainingValue -= slot.value;
+          realized = realized.plus(slot.value.times(rate.minus(slot.rate)));
+          remainingValue = remainingValue.minus(slot.value);
         }
       }
     }
@@ -47,12 +67,12 @@ export const computeEarnings = (values: Entry[], rates: Entry[]) => {
 
   const rate = rates[rates.length - 1].value;
   const unrealized = [...slots].reduce((acc, slot) => {
-    return acc + slot.value * (rate - slot.rate);
-  }, 0);
+    return acc.plus(slot.value.times(rate.minus(slot.rate)));
+  }, zero);
 
-  const total = realized + unrealized;
-  const totalValue = [...slots].reduce((acc, slot) => acc + slot.value, 0);
-  const percentage = totalValue > 0 ? new Big(total).times(100).div(totalValue).toNumber() : 0;
+  const total = realized.plus(unrealized);
+  const totalValue = [...slots].reduce((acc, slot) => acc.plus(slot.value), zero);
+  const percentage = totalValue.gt(0) ? total.times(100).div(totalValue) : zero;
 
   return { realized, unrealized, total, percentage, slots, invested, rate };
 };
