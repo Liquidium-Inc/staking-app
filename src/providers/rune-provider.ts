@@ -1,5 +1,4 @@
 import { config } from '@/config/public';
-import { BIS } from '@/providers/bestinslot';
 import { liquidiumApi } from '@/providers/liquidium-api';
 import { ordiscan } from '@/providers/ordiscan';
 import { resolveRunePriceUsd } from '@/services/rune-price';
@@ -10,11 +9,6 @@ export interface RuneMarketData {
 
 export interface WalletBalance {
   rune_id: string;
-  total_balance: string;
-}
-
-export interface RuneHolder {
-  wallet_addr: string;
   total_balance: string;
 }
 
@@ -65,9 +59,6 @@ export interface RuneProvider {
     walletBalances(
       params: AddressId & Partial<SortBy<'total_balance'>>,
     ): Promise<{ data: WalletBalance[]; block_height: number }>;
-    holders(
-      params: RuneId & Partial<SortBy<'balance'>>,
-    ): Promise<{ data: RuneHolder[]; block_height: number }>;
     walletActivity(
       params: WalletActivityQuery,
     ): Promise<{ data: WalletActivity[]; block_height: number }>;
@@ -85,8 +76,6 @@ export interface RuneProvider {
 class CentralizedRuneProvider implements RuneProvider {
   runes = {
     walletBalances: async (params: AddressId & Partial<SortBy<'total_balance'>>) => {
-      // return await BIS.runes.walletBalances(params);
-
       const balances = await liquidiumApi.runeBalance(params.address);
       return {
         data: balances.data.map((item) => ({
@@ -96,7 +85,6 @@ class CentralizedRuneProvider implements RuneProvider {
         block_height: balances.block_height,
       };
     },
-    holders: (params: RuneId & Partial<SortBy<'balance'>>) => BIS.runes.holders(params),
     walletActivity: async (params: WalletActivityQuery) => {
       const requestedRune = resolveKnownRune(params);
       if (!requestedRune) {
@@ -150,8 +138,6 @@ class CentralizedRuneProvider implements RuneProvider {
 
   mempool = {
     runicUTXOs: async (params: { wallet_addr: string }) => {
-      // return BIS.mempool.runicUTXOs(params);
-
       const utxos = await liquidiumApi.runeOutputs(params.wallet_addr);
       return {
         data: utxos.data.map((utxo) => ({
@@ -167,8 +153,6 @@ class CentralizedRuneProvider implements RuneProvider {
       };
     },
     cardinalUTXOs: async (params: { wallet_addr: string }) => {
-      // return BIS.mempool.cardinalUTXOs(params);
-
       const utxos = await liquidiumApi.paymentOutputs(params.wallet_addr);
       return {
         data: utxos.data.map((utxo) => ({
@@ -187,11 +171,7 @@ class CentralizedRuneProvider implements RuneProvider {
 export const runeProvider = new CentralizedRuneProvider();
 
 export const {
-  runes: {
-    walletBalances: getWalletBalances,
-    holders: getRuneHolders,
-    walletActivity: getWalletActivity,
-  },
+  runes: { walletBalances: getWalletBalances, walletActivity: getWalletActivity },
   mempool: { runicUTXOs: getMempoolRunicUTXOs, cardinalUTXOs: getMempoolCardinalUTXOs },
 } = runeProvider;
 
