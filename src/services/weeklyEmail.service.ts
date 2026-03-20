@@ -5,12 +5,10 @@ import { db } from '@/db';
 import { computeApyFromHistoric } from '@/lib/apy';
 import { computeEarnings } from '@/lib/earnings';
 import { logger } from '@/lib/logger';
-import { BIS } from '@/providers/bestinslot';
 import { canister } from '@/providers/canister';
 import { emailService } from '@/providers/email';
-import { mempool } from '@/providers/mempool';
-import { ordiscan } from '@/providers/ordiscan';
 import { runeProvider } from '@/providers/rune-provider';
+import { resolveRunePriceUsd } from '@/services/rune-price';
 
 export interface WeeklyEmailUser {
   address: string;
@@ -25,6 +23,14 @@ export interface WeeklyEmailRunResult {
   totalRewardsDistributed: number;
 }
 
+type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
+
+type WeeklyEarningsContext = {
+  historic: HistoricBalances;
+  rates: Array<{ timestamp: Date; block: number; rate: number }>;
+  sevenDaysAgoTimestamp: number;
+};
+
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
   if (!domain) return '***@***';
@@ -34,34 +40,7 @@ function maskEmail(email: string): string {
   return `${local[0]}***${local.slice(-1)}@${domain}`;
 }
 
-async function getRunePriceInSats(runeName: string, runeId: string): Promise<number | null> {
-  if (!runeName?.trim() || !runeId?.trim()) {
-    throw new Error('runeName and runeId must be non-empty strings');
-  }
-
-  try {
-    const { data: marketData } = await ordiscan.rune.market(runeName);
-    if (marketData.price_in_sats > 0) {
-      return marketData.price_in_sats;
-    }
-  } catch (error) {
-    logger.warn(`Ordiscan price fetch failed for ${runeName}:`, error);
-  }
-
-  try {
-    const { data: rune } = await BIS.runes.ticker({ rune_id: runeId });
-    return rune.avg_unit_price_in_sats && rune.avg_unit_price_in_sats > 0
-      ? rune.avg_unit_price_in_sats
-      : null;
-  } catch (error) {
-    logger.error(`BIS price fetch also failed for ${runeId}:`, error);
-    return null;
-  }
-}
-
-function getExchangeRates(
-  historic: Array<{ timestamp: Date; block: number; balance: string; staked: string }>,
-) {
+function getExchangeRates(historic: HistoricBalances) {
   const supply = publicConfig.sRune.supply;
 
   return historic.reduce(
@@ -85,57 +64,70 @@ function getExchangeRates(
   );
 }
 
+/**
+ * Builds a single weekly earnings snapshot so every email computation uses the same rates and time cutoff.
+ */
+function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarningsContext {
+  return {
+    historic,
+    rates: getExchangeRates(historic),
+    sevenDaysAgoTimestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
+  };
+}
+
 function calculateEarningsFromActivity(
   activity: Array<{
-    block_height: number;
+    timestamp: string;
     rune_id: string;
     amount: string;
     decimals: number;
     event_type: string;
   }>,
-  sevenDaysAgoBlock: number,
-  rates: Array<{ timestamp: Date; block: number; rate: number }>,
+  context: WeeklyEarningsContext,
 ) {
   const multiplier = {
     input: -1,
     output: 1,
-    'new-allocation': 0,
-    mint: 0,
-    burn: 0,
   } as const;
 
   const values = activity
-    .filter((tx) => tx.block_height >= sevenDaysAgoBlock && tx.rune_id === publicConfig.sRune.id)
+    .filter(
+      (tx) =>
+        new Date(tx.timestamp).valueOf() >= context.sevenDaysAgoTimestamp &&
+        tx.rune_id === publicConfig.sRune.id,
+    )
     .map((tx) => {
       const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
       const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult).toNumber();
-      return { value, block: tx.block_height };
+      return { value, block: new Date(tx.timestamp).valueOf() };
     })
     .reverse();
 
   const rateValues = [
     { value: 1, block: 0 },
-    ...rates.map(({ rate, block }: { rate: number; block: number }) => ({ value: rate, block })),
-    { value: rates[rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
+    ...context.rates.map(({ rate, timestamp }: { rate: number; timestamp: Date }) => ({
+      value: rate,
+      block: timestamp.valueOf(),
+    })),
+    { value: context.rates[context.rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
   ];
 
   return computeEarnings(values, rateValues);
 }
 
-async function calculateUserEarnings(address: string): Promise<number> {
+async function calculateUserEarnings(
+  address: string,
+  context: WeeklyEarningsContext,
+): Promise<number> {
   try {
-    const [{ data: activity }, historic] = await Promise.all([
-      runeProvider.runes.walletActivity({ address, rune_id: publicConfig.sRune.id, count: 1000 }),
-      db.poolBalance.getHistoric(),
-    ]);
+    const { data: activity } = await runeProvider.runes.walletActivity({
+      address,
+      rune_id: publicConfig.sRune.id,
+      count: 1000,
+      newerThan: new Date(context.sevenDaysAgoTimestamp),
+    });
 
-    const rates = getExchangeRates(historic);
-
-    const sevenDaysBlocks = 7 * 144;
-    const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
-    const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
-
-    const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
+    const earnings = calculateEarningsFromActivity(activity, context);
 
     return earnings.total;
   } catch (error) {
@@ -144,11 +136,13 @@ async function calculateUserEarnings(address: string): Promise<number> {
   }
 }
 
-async function getProtocolApy(): Promise<{ yearly: number; monthly: number; daily: number }> {
+function getProtocolApy(context: WeeklyEarningsContext): {
+  yearly: number;
+  monthly: number;
+  daily: number;
+} {
   try {
-    const historic = await db.poolBalance.getHistoric();
-    const historicRates = getExchangeRates(historic);
-    return computeApyFromHistoric(historicRates);
+    return computeApyFromHistoric(context.rates);
   } catch (error) {
     logger.error('Failed to calculate APY:', error);
     return { yearly: 0, monthly: 0, daily: 0 };
@@ -157,11 +151,10 @@ async function getProtocolApy(): Promise<{ yearly: number; monthly: number; dail
 
 async function calculateTotalRewardsDistributed(
   users: WeeklyEmailUser[],
-  historic: Array<{ timestamp: Date; block: number; balance: string; staked: string }>,
+  context: WeeklyEarningsContext,
 ): Promise<number> {
   try {
     let totalRewards = new Big(0);
-    const rates = getExchangeRates(historic);
 
     for (const user of users) {
       try {
@@ -169,13 +162,9 @@ async function calculateTotalRewardsDistributed(
           address: user.address,
           rune_id: publicConfig.sRune.id,
           count: 1000,
+          newerThan: new Date(context.sevenDaysAgoTimestamp),
         });
-
-        const sevenDaysBlocks = 7 * 144;
-        const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
-        const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
-
-        const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
+        const earnings = calculateEarningsFromActivity(activity, context);
         totalRewards = totalRewards.plus(earnings.total);
       } catch (error) {
         logger.warn(`Failed to calculate rewards for user ${user.address}:`, error);
@@ -189,38 +178,12 @@ async function calculateTotalRewardsDistributed(
   }
 }
 
-type BtcPrice = {
-  time: number;
-  USD: number;
-  EUR: number;
-  GBP: number;
-  CAD: number;
-  CHF: number;
-  AUD: number;
-  JPY: number;
-};
-
-type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
-
-async function getProtocolData(): Promise<
-  [
-    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
-    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
-    number,
-    number | null,
-    BtcPrice,
-    { yearly: number; monthly: number; daily: number },
-    HistoricBalances,
-  ]
-> {
+async function getProtocolData(
+  context: WeeklyEarningsContext,
+): Promise<[number, number, { yearly: number; monthly: number; daily: number }]> {
   const settled = await Promise.allSettled([
-    BIS.runes.ticker({ rune_id: publicConfig.rune.id }),
-    BIS.runes.ticker({ rune_id: publicConfig.sRune.id }),
     canister.getExchangeRateDecimal(),
-    getRunePriceInSats(publicConfig.rune.name, publicConfig.rune.id),
-    mempool.getPrice(),
-    getProtocolApy(),
-    db.poolBalance.getHistoric(),
+    resolveRunePriceUsd({ runeName: publicConfig.rune.name }),
   ]);
 
   type SettledResult<T> = PromiseSettledResult<T>;
@@ -229,31 +192,11 @@ async function getProtocolData(): Promise<
       ? (settled[i] as PromiseFulfilledResult<T>).value
       : undefined;
 
-  const defaultTicker = null;
   const defaultRateDecimal = 1;
-  const defaultRunePriceSats: number | null = null;
-  const defaultBtcPrice: BtcPrice = {
-    time: 0,
-    USD: 0,
-    EUR: 0,
-    GBP: 0,
-    CAD: 0,
-    CHF: 0,
-    AUD: 0,
-    JPY: 0,
-  };
-  const defaultApy = { yearly: 0, monthly: 0, daily: 0 };
-  const defaultHistoric: HistoricBalances = [];
+  const defaultTokenPrice = 0;
+  const apy = getProtocolApy(context);
 
-  return [
-    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(0) ?? defaultTicker,
-    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(1) ?? defaultTicker,
-    pick<number>(2) ?? defaultRateDecimal,
-    pick<number | null>(3) ?? defaultRunePriceSats,
-    pick<BtcPrice>(4) ?? defaultBtcPrice,
-    pick<{ yearly: number; monthly: number; daily: number }>(5) ?? defaultApy,
-    pick<HistoricBalances>(6) ?? defaultHistoric,
-  ];
+  return [pick<number>(0) ?? defaultRateDecimal, pick<number>(1) ?? defaultTokenPrice, apy];
 }
 
 async function processUserEmail(
@@ -262,6 +205,7 @@ async function processUserEmail(
   exchangeRate: number,
   apy: number,
   totalRewardsDistributed: number,
+  context: WeeklyEarningsContext,
 ): Promise<{ success: boolean; skipped: boolean }> {
   try {
     const { data: balance } = await runeProvider.runes.walletBalances({ address: user.address });
@@ -277,7 +221,7 @@ async function processUserEmail(
       return { success: false, skipped: true };
     }
 
-    const earnedLiq = await calculateUserEarnings(user.address);
+    const earnedLiq = await calculateUserEarnings(user.address, context);
     const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPriceBig);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({
@@ -322,17 +266,17 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     };
   }
 
-  const [, , rateDecimal, runePriceSats, btcPrice, apy, historic] = await getProtocolData();
-
-  const tokenPrice = Big(runePriceSats ?? 0)
-    .times(btcPrice.USD || 0)
-    .div(100_000_000)
-    .toNumber();
+  const historic = await db.poolBalance.getHistoric().catch((error: unknown) => {
+    logger.error('Failed to load historic pool balances for weekly email:', error);
+    return [] as HistoricBalances;
+  });
+  const context = createWeeklyEarningsContext(historic);
+  const [rateDecimal, tokenPrice, apy] = await getProtocolData(context);
 
   const exchangeRate =
     rateDecimal && Number.isFinite(rateDecimal) && rateDecimal > 0 ? rateDecimal : 1;
 
-  const totalRewardsDistributed = await calculateTotalRewardsDistributed(users, historic);
+  const totalRewardsDistributed = await calculateTotalRewardsDistributed(users, context);
   logger.info(`Total rewards distributed in last 7 days: ${totalRewardsDistributed} LIQ`);
 
   let emailsSent = 0;
@@ -345,6 +289,7 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
       exchangeRate,
       apy.yearly,
       totalRewardsDistributed,
+      context,
     );
 
     if (result.success) emailsSent++;

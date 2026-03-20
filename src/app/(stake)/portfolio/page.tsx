@@ -40,14 +40,11 @@ export default function PortfolioPage() {
     const multiplier = {
       input: -1,
       output: 1,
-      'new-allocation': 0,
-      mint: 0,
-      burn: 0,
     } satisfies Record<(typeof activity)[number]['event_type'], number>;
     const txs = activity
       .map((tx) => ({
         value: multiplier[tx.event_type] * Number(tx.amount) * 10 ** -tx.decimals,
-        block: tx.block_height,
+        block: new Date(tx.timestamp).valueOf(),
       }))
       .reverse();
     const latestRate = Number.isFinite(exchangeRate)
@@ -57,7 +54,10 @@ export default function PortfolioPage() {
         : 1;
     const rates = [
       { value: 1, block: 0 },
-      ...(historicRates?.map(({ rate, block }) => ({ value: Number(rate), block })) ?? []),
+      ...(historicRates?.map(({ rate, timestamp }) => ({
+        value: Number(rate),
+        block: new Date(timestamp).valueOf(),
+      })) ?? []),
       { value: latestRate, block: Number.POSITIVE_INFINITY },
     ];
 
@@ -69,7 +69,7 @@ export default function PortfolioPage() {
     if (!historicRates) return [];
 
     return historicRates
-      .map((k) => ({ ...k, timestamp: k.timestamp.valueOf() }))
+      .map((k) => ({ ...k, timestamp: new Date(k.timestamp).valueOf() }))
       .sort((a, b) => a.block - b.block);
   }, [historicRates]);
 

@@ -4,15 +4,6 @@ import { resolveRunePriceSnapshot, resolveRunePriceUsd } from './rune-price';
 
 const mocks = vi.hoisted(() => ({
   convertedSentinelSats: 12_345_678,
-  BIS: {
-    runes: {
-      ticker: vi.fn().mockResolvedValue({
-        data: {
-          avg_unit_price_in_sats: 200,
-        },
-      }),
-    },
-  },
   mempool: {
     getPrice: vi.fn().mockResolvedValue({ USD: 100_000 }),
   },
@@ -31,7 +22,6 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
 vi.mock('@/providers/mempool', () => ({ mempool: mocks.mempool }));
 vi.mock('@/providers/coingecko', () => ({
   coingecko: mocks.coingecko,
@@ -47,7 +37,6 @@ describe('rune-price service', () => {
   it('uses CoinGecko as the primary LIQ price source for sats', async () => {
     const result = await resolveRunePriceSnapshot({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
     });
 
     expect(mocks.coingecko.liquidium.getPriceUsd).toHaveBeenCalledOnce();
@@ -64,20 +53,13 @@ describe('rune-price service', () => {
 
     const result = await resolveRunePriceSnapshot({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
     });
 
     expect(mocks.ordiscan.rune.market).toHaveBeenCalledOnce();
     expect(result.runePriceSats).toBe(100);
   });
 
-  it('falls back to the injected ticker loader when market sources have no price', async () => {
-    const getTicker = vi.fn().mockResolvedValue({
-      data: {
-        avg_unit_price_in_sats: 321,
-      },
-    });
-
+  it('returns null when CoinGecko and Ordiscan cannot provide a sats price', async () => {
     mocks.coingecko.liquidium.getPriceUsd.mockResolvedValueOnce(null);
     mocks.ordiscan.rune.market.mockResolvedValueOnce({
       data: {},
@@ -85,19 +67,14 @@ describe('rune-price service', () => {
 
     const result = await resolveRunePriceSnapshot({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
-      getTicker,
     });
 
-    expect(getTicker).toHaveBeenCalledOnce();
-    expect(getTicker).toHaveBeenCalledWith('1:1');
-    expect(result.runePriceSats).toBe(321);
+    expect(result.runePriceSats).toBeNull();
   });
 
   it('returns the CoinGecko USD price without requiring BTC conversion', async () => {
     const result = await resolveRunePriceUsd({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
     });
 
     expect(result).toBe(0.05);
@@ -112,7 +89,6 @@ describe('rune-price service', () => {
 
     const result = await resolveRunePriceUsd({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
     });
 
     expect(mocks.ordiscan.rune.market).toHaveBeenCalledOnce();
@@ -125,12 +101,24 @@ describe('rune-price service', () => {
 
     const result = await resolveRunePriceSnapshot({
       runeName: 'LIQUIDIUM',
-      runeId: '1:1',
     });
 
     expect(result).toEqual({
       btcPriceUsd: 0,
       runePriceSats: 100,
     });
+  });
+
+  it('returns zero USD when CoinGecko and Ordiscan both fail', async () => {
+    mocks.coingecko.liquidium.getPriceUsd.mockResolvedValueOnce(null);
+    mocks.ordiscan.rune.market.mockResolvedValueOnce({
+      data: {},
+    });
+
+    const result = await resolveRunePriceUsd({
+      runeName: 'LIQUIDIUM',
+    });
+
+    expect(result).toBe(0);
   });
 });
