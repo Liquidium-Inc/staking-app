@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 
 const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
 const COINGECKO_LIQUIDIUM_COIN_ID = 'liquidium-token';
+const COINGECKO_TIMEOUT_MS = 2_000;
 const SATS_PER_BTC = 100_000_000;
 
 type CoinGeckoSimplePriceResponse = {
@@ -16,10 +17,13 @@ type CoinGeckoSimplePriceResponse = {
  * Fetches the Liquidium token USD spot price from CoinGecko.
  */
 async function getLiquidiumPriceUsd(): Promise<number | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), COINGECKO_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `${COINGECKO_API_URL}/simple/price?ids=${COINGECKO_LIQUIDIUM_COIN_ID}&vs_currencies=usd`,
-      { next: { revalidate: 60 } },
+      { next: { revalidate: 60 }, signal: controller.signal },
     );
 
     if (!response.ok) {
@@ -32,8 +36,15 @@ async function getLiquidiumPriceUsd(): Promise<number | null> {
 
     return typeof priceUsd === 'number' && priceUsd > 0 ? priceUsd : null;
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.warn(`CoinGecko price fetch timed out after ${COINGECKO_TIMEOUT_MS}ms`);
+      return null;
+    }
+
     logger.warn('CoinGecko price fetch failed:', error);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

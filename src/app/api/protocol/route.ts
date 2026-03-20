@@ -7,10 +7,8 @@ import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import { BIS } from '@/providers/bestinslot';
 import { canister } from '@/providers/canister';
-import { coingecko, convertUsdPriceToSats } from '@/providers/coingecko';
-import { mempool } from '@/providers/mempool';
-import { ordiscan } from '@/providers/ordiscan';
 import { redis } from '@/providers/redis';
+import { resolveRunePriceSnapshot } from '@/services/rune-price';
 
 const runeId = config.rune.id;
 const stakedId = config.sRune.id;
@@ -47,68 +45,24 @@ async function getCachedRuneTicker(runeId: string) {
   return result;
 }
 
-/**
- * Fetches the legacy LIQ price in sats from rune market data providers.
- */
-async function getFallbackRunePriceInSats(
-  runeName: string,
-  runeId: string,
-): Promise<number | null> {
-  // Validate inputs — should never be empty due to build-time checks, but guard against future regressions.
-  if (!runeName || !runeName.trim() || !runeId || !runeId.trim()) {
-    throw new Error('runeName and runeId must be non-empty strings');
-  }
-
-  try {
-    // Try Ordiscan first
-    logger.debug(`Fetching price from Ordiscan for ${runeName}`);
-    const { data: marketData } = await ordiscan.rune.market(runeName);
-    if (marketData.price_in_sats && marketData.price_in_sats > 0) {
-      logger.info(`Ordiscan price for ${runeName}: ${marketData.price_in_sats} sats`);
-      return marketData.price_in_sats;
-    }
-  } catch (error) {
-    logger.warn(`Ordiscan price fetch failed for ${runeName}:`, error);
-  }
-
-  try {
-    // Fallback to Best In Slot
-    logger.debug(`Falling back to Best In Slot for rune ID ${runeId}`);
-    const { data: rune } = await getCachedRuneTicker(runeId);
-    const bisPrice =
-      rune.avg_unit_price_in_sats && rune.avg_unit_price_in_sats > 0
-        ? rune.avg_unit_price_in_sats
-        : null;
-    if (bisPrice !== null) {
-      logger.info(`BIS fallback price for ${runeName}: ${bisPrice} sats`);
-    }
-    return bisPrice;
-  } catch (error) {
-    logger.error(`BIS price fetch also failed for ${runeId}:`, error);
-    return null;
-  }
-}
-
 export async function GET() {
-  let historic: Awaited<ReturnType<typeof db.poolBalance.getHistoric>> = [];
-  try {
-    historic = await db.poolBalance.getHistoric();
-  } catch (error) {
-    logger.error('Historic pool balance fetch failed, falling back to empty history:', error);
-  }
+  const historicPromise: Promise<Awaited<ReturnType<typeof db.poolBalance.getHistoric>>> =
+    db.poolBalance.getHistoric().catch((error: unknown) => {
+      logger.error('Historic pool balance fetch failed, falling back to empty history:', error);
+      return [];
+    });
 
-  const [{ data: rune }, { data: staked }, price, rate, runePriceUsd] = await Promise.all([
+  const [{ data: rune }, { data: staked }, rate, historic, priceSnapshot] = await Promise.all([
     getCachedRuneTicker(runeId),
     getCachedRuneTicker(stakedId),
-    mempool.getPrice(),
     canister.getExchangeRate(),
-    coingecko.liquidium.getPriceUsd(),
+    historicPromise,
+    resolveRunePriceSnapshot({
+      runeName: config.rune.name,
+      runeId,
+      getTicker: getCachedRuneTicker,
+    }),
   ]);
-
-  const runePriceSats =
-    runePriceUsd && price.USD > 0
-      ? convertUsdPriceToSats(runePriceUsd, price.USD)
-      : await getFallbackRunePriceInSats(config.rune.name, runeId);
 
   const supply = totalSupply || staked.total_minted_supply;
 
@@ -133,7 +87,7 @@ export async function GET() {
     exchangeRate:
       Number(rate.circulating) !== 0 ? Number(rate.balance) / Number(rate.circulating) : 1,
     btc: {
-      price: price.USD,
+      price: priceSnapshot.btcPriceUsd,
     },
     rune: {
       id: runeId,
@@ -141,7 +95,7 @@ export async function GET() {
       name: rune.spaced_rune_name,
       decimals: rune.decimals,
       priceSats:
-        runePriceSats ??
+        priceSnapshot.runePriceSats ??
         (() => {
           logger.debug(
             'Price fetch failed for CoinGecko and legacy rune sources, using fallback price of 0',
