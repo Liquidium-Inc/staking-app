@@ -54,6 +54,16 @@ const mocks = vi.hoisted(() => ({
       .mockImplementation(() => ({ circulating: BigInt(1000), balance: BigInt(1000) })),
     address: 'mock-canister-address',
   },
+  coingecko: {
+    liquidium: {
+      getPriceUsd: vi.fn().mockImplementation(() => 0.05),
+    },
+  },
+  convertUsdPriceToSats: vi
+    .fn()
+    .mockImplementation(
+      (priceUsd: number, btcPriceUsd: number) => (priceUsd * 100_000_000) / btcPriceUsd,
+    ),
   ordiscan: {
     rune: {
       market: vi.fn().mockImplementation(() => ({
@@ -73,6 +83,10 @@ vi.mock('@/db', () => ({ db: mocks.db }));
 vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
 vi.mock('@/providers/mempool', () => ({ mempool: mocks.mempool }));
 vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
+vi.mock('@/providers/coingecko', () => ({
+  coingecko: mocks.coingecko,
+  convertUsdPriceToSats: mocks.convertUsdPriceToSats,
+}));
 vi.mock('@/providers/ordiscan', () => ({ ordiscan: mocks.ordiscan }));
 vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
 
@@ -106,6 +120,49 @@ describe('GET', () => {
     expect(body.apy.yearly).toBe(1.1 ** (365 / 31) - 1);
     expect(body.apy.monthly).toBe(1.1 ** (365 / 31 / 12) - 1);
     expect(body.apy.daily).toBe(1.1 ** (1 / 31) - 1);
+  });
+
+  it('uses CoinGecko as the primary LIQ price source', async () => {
+    const response = await GET();
+    const body = await response.json();
+
+    expect(mocks.coingecko.liquidium.getPriceUsd).toHaveBeenCalledOnce();
+    expect(mocks.convertUsdPriceToSats).toHaveBeenCalledWith(0.05, 100_000);
+    expect(mocks.ordiscan.rune.market).not.toHaveBeenCalled();
+    expect(body.rune.priceSats).toBe(50);
+  });
+
+  it('falls back to legacy rune price sources when CoinGecko is unavailable', async () => {
+    mocks.coingecko.liquidium.getPriceUsd.mockResolvedValueOnce(null);
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(mocks.ordiscan.rune.market).toHaveBeenCalledOnce();
+    expect(body.rune.priceSats).toBe(100);
+  });
+
+  it('returns protocol data even when historic pool balances fail', async () => {
+    mocks.db.poolBalance.getHistoric.mockRejectedValueOnce(new Error('db offline'));
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.historicRates).toEqual([]);
+    expect(body.apy).toEqual({
+      window: 0,
+      monthly: 0,
+      daily: 0,
+      yearly: 0,
+    });
+    expect(body.rune.priceSats).toBe(50);
+  });
+
+  it('throws when the exchange rate cannot be loaded', async () => {
+    mocks.canister.getExchangeRate.mockRejectedValueOnce(new Error('canister offline'));
+
+    await expect(GET()).rejects.toThrow('canister offline');
   });
 
   it.skip('returns exchangeRate as 1 if circulating is 0', async () => {});

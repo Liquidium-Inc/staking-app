@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import { BIS } from '@/providers/bestinslot';
 import { canister } from '@/providers/canister';
+import { coingecko, convertUsdPriceToSats } from '@/providers/coingecko';
 import { mempool } from '@/providers/mempool';
 import { ordiscan } from '@/providers/ordiscan';
 import { redis } from '@/providers/redis';
@@ -46,8 +47,13 @@ async function getCachedRuneTicker(runeId: string) {
   return result;
 }
 
-// Helper function to fetch rune price with Ordiscan primary, BIS fallback
-async function getRunePriceInSats(runeName: string, runeId: string): Promise<number | null> {
+/**
+ * Fetches the legacy LIQ price in sats from rune market data providers.
+ */
+async function getFallbackRunePriceInSats(
+  runeName: string,
+  runeId: string,
+): Promise<number | null> {
   // Validate inputs — should never be empty due to build-time checks, but guard against future regressions.
   if (!runeName || !runeName.trim() || !runeId || !runeId.trim()) {
     throw new Error('runeName and runeId must be non-empty strings');
@@ -84,15 +90,25 @@ async function getRunePriceInSats(runeName: string, runeId: string): Promise<num
 }
 
 export async function GET() {
-  const [{ data: rune }, { data: staked }, historic, price, rate, runePriceSats] =
-    await Promise.all([
-      getCachedRuneTicker(runeId),
-      getCachedRuneTicker(stakedId),
-      db.poolBalance.getHistoric(),
-      mempool.getPrice(),
-      canister.getExchangeRate(),
-      getRunePriceInSats(config.rune.name, runeId),
-    ]);
+  let historic: Awaited<ReturnType<typeof db.poolBalance.getHistoric>> = [];
+  try {
+    historic = await db.poolBalance.getHistoric();
+  } catch (error) {
+    logger.error('Historic pool balance fetch failed, falling back to empty history:', error);
+  }
+
+  const [{ data: rune }, { data: staked }, price, rate, runePriceUsd] = await Promise.all([
+    getCachedRuneTicker(runeId),
+    getCachedRuneTicker(stakedId),
+    mempool.getPrice(),
+    canister.getExchangeRate(),
+    coingecko.liquidium.getPriceUsd(),
+  ]);
+
+  const runePriceSats =
+    runePriceUsd && price.USD > 0
+      ? convertUsdPriceToSats(runePriceUsd, price.USD)
+      : await getFallbackRunePriceInSats(config.rune.name, runeId);
 
   const supply = totalSupply || staked.total_minted_supply;
 
@@ -127,10 +143,11 @@ export async function GET() {
       priceSats:
         runePriceSats ??
         (() => {
-          logger.debug('Price fetch failed for both APIs, using fallback price of 0');
+          logger.debug(
+            'Price fetch failed for CoinGecko and legacy rune sources, using fallback price of 0',
+          );
           return 0;
-        })(), // Using Ordiscan primary, BIS fallback
-      // priceSats: rune.avg_unit_price_in_sats ?? 0, // Old BIS-only price (kept as reference)
+        })(),
     },
     staked: {
       id: stakedId,

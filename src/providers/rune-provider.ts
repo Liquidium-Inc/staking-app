@@ -3,6 +3,7 @@ import Big from 'big.js';
 import { config } from '@/config/public';
 import { logger } from '@/lib/logger';
 import { BIS } from '@/providers/bestinslot';
+import { coingecko } from '@/providers/coingecko';
 import { liquidiumApi } from '@/providers/liquidium-api';
 import { mempool } from '@/providers/mempool';
 import { ordiscan } from '@/providers/ordiscan';
@@ -152,9 +153,18 @@ export const {
   mempool: { runicUTXOs: getMempoolRunicUTXOs, cardinalUTXOs: getMempoolCardinalUTXOs },
 } = runeProvider;
 
+/**
+ * Returns the LIQ token USD price, preferring CoinGecko and falling back to rune market data.
+ */
 export async function getRunePrice(): Promise<number> {
   try {
-    // fetch price in sats from Ordiscan (primary) or BIS (fallback)
+    const coinGeckoPriceUsd = await coingecko.liquidium.getPriceUsd();
+
+    if (coinGeckoPriceUsd) {
+      return coinGeckoPriceUsd;
+    }
+
+    // Fetch price in sats from legacy rune market providers.
     let priceSats: number | null = null;
 
     try {
