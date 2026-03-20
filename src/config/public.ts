@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+const publicEnvironmentSchema = z.enum(['development', 'production', 'test']);
+
+export const PublicEnvironment = publicEnvironmentSchema.enum;
+
 const initializeConfig = () => {
   const protocol = z.object({
     withdrawTime: z.coerce.number().min(0).default(604800),
@@ -35,6 +39,7 @@ const initializeConfig = () => {
   });
 
   const configSchema = z.object({
+    env: publicEnvironmentSchema.default(PublicEnvironment.development),
     network: z.enum(['mainnet', 'testnet4']).default('mainnet'),
     protocol,
     mempool,
@@ -43,6 +48,7 @@ const initializeConfig = () => {
   });
 
   const { success, data, error } = configSchema.safeParse({
+    env: process.env.NODE_ENV,
     network: process.env.NEXT_PUBLIC_NETWORK,
     protocol: {
       withdrawTime: process.env.NEXT_PUBLIC_WITHDRAW_TIME,
