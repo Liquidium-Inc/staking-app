@@ -56,7 +56,7 @@ export default function PortfolioPage() {
       { value: 1, block: 0 },
       ...(historicRates?.map(({ rate, timestamp }) => ({
         value: Number(rate),
-        block: timestamp.valueOf(),
+        block: new Date(timestamp).valueOf(),
       })) ?? []),
       { value: latestRate, block: Number.POSITIVE_INFINITY },
     ];
@@ -69,7 +69,7 @@ export default function PortfolioPage() {
     if (!historicRates) return [];
 
     return historicRates
-      .map((k) => ({ ...k, timestamp: k.timestamp.valueOf() }))
+      .map((k) => ({ ...k, timestamp: new Date(k.timestamp).valueOf() }))
       .sort((a, b) => a.block - b.block);
   }, [historicRates]);
 

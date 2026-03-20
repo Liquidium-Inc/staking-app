@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { config } from '@/config/public';
 import { db } from '@/db';
@@ -20,6 +21,14 @@ type ProtocolRuneInfo = {
   supply: string;
 };
 
+const ProtocolRuneInfoSchema = z.object({
+  id: z.string().min(1),
+  symbol: z.string().min(1),
+  name: z.string().min(1),
+  decimals: z.number().int().nonnegative(),
+  supply: z.string().min(1),
+});
+
 /**
  * Fetches cached rune metadata from Ordiscan and falls back to static config when unavailable.
  */
@@ -33,8 +42,13 @@ async function getCachedRuneInfo(
     try {
       const cached = await redis.client.get(cacheKey);
       if (cached) {
-        logger.debug(`Cache hit for rune info ${runeName}`);
-        return JSON.parse(cached);
+        const parsedCached = ProtocolRuneInfoSchema.safeParse(JSON.parse(cached));
+        if (parsedCached.success) {
+          logger.debug(`Cache hit for rune info ${runeName}`);
+          return parsedCached.data;
+        }
+
+        logger.warn(`Cached rune info for ${runeName} failed validation:`, parsedCached.error);
       }
     } catch (error) {
       logger.warn(`Cache read failed for rune info ${runeName}:`, error);
@@ -44,13 +58,20 @@ async function getCachedRuneInfo(
   try {
     logger.debug(`Cache miss for rune info ${runeName}, fetching from Ordiscan`);
     const { data } = await ordiscan.rune.info(runeName);
-    const result: ProtocolRuneInfo = {
-      id: data.id,
+    const parsedResult = ProtocolRuneInfoSchema.safeParse({
+      id: data.id ? String(data.id) : fallback.id,
       symbol: data.symbol || fallback.symbol,
       name: data.formatted_name || fallback.name,
       decimals: data.decimals ?? fallback.decimals,
-      supply: data.current_supply || data.premined_supply || fallback.supply || '0',
-    };
+      supply: String(data.current_supply || data.premined_supply || fallback.supply || '0'),
+    });
+
+    if (!parsedResult.success) {
+      logger.warn(`Ordiscan rune info for ${runeName} failed validation:`, parsedResult.error);
+      throw new Error(`Invalid Ordiscan rune info for ${runeName}`);
+    }
+
+    const result = parsedResult.data;
 
     if (redis.client) {
       try {
@@ -64,13 +85,13 @@ async function getCachedRuneInfo(
     return result;
   } catch (error) {
     logger.warn(`Ordiscan rune info fetch failed for ${runeName}, using static fallback:`, error);
-    return {
+    return ProtocolRuneInfoSchema.parse({
       id: fallback.id,
       symbol: fallback.symbol,
       name: fallback.name,
       decimals: fallback.decimals,
-      supply: fallback.supply || '0',
-    };
+      supply: String(fallback.supply || '0'),
+    });
   }
 }
 
@@ -102,7 +123,7 @@ export async function GET() {
     }),
   ]);
 
-  const supply = totalSupply || Number(staked.supply);
+  const supply = totalSupply != null ? BigInt(totalSupply) : BigInt(staked.supply);
   const runePriceSats = priceSnapshot.runePriceSats ?? 0;
   if (priceSnapshot.runePriceSats == null) {
     logger.debug('Price fetch failed for CoinGecko and Ordiscan, using fallback price of 0');
@@ -110,7 +131,7 @@ export async function GET() {
 
   const historicRates = historic.reduce(
     (acc, balance) => {
-      const diff = BigInt(supply) - BigInt(balance.staked);
+      const diff = supply - BigInt(balance.staked);
       const rate = diff > 0 && +balance.balance > 0 ? +balance.balance / Number(diff) : 1;
       if (acc[acc.length - 1]?.rate !== rate)
         acc.push({

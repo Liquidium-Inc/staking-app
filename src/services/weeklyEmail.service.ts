@@ -23,6 +23,14 @@ export interface WeeklyEmailRunResult {
   totalRewardsDistributed: number;
 }
 
+type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
+
+type WeeklyEarningsContext = {
+  historic: HistoricBalances;
+  rates: Array<{ timestamp: Date; block: number; rate: number }>;
+  sevenDaysAgoTimestamp: number;
+};
+
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
   if (!domain) return '***@***';
@@ -32,9 +40,7 @@ function maskEmail(email: string): string {
   return `${local[0]}***${local.slice(-1)}@${domain}`;
 }
 
-function getExchangeRates(
-  historic: Array<{ timestamp: Date; block: number; balance: string; staked: string }>,
-) {
+function getExchangeRates(historic: HistoricBalances) {
   const supply = publicConfig.sRune.supply;
 
   return historic.reduce(
@@ -58,6 +64,17 @@ function getExchangeRates(
   );
 }
 
+/**
+ * Builds a single weekly earnings snapshot so every email computation uses the same rates and time cutoff.
+ */
+function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarningsContext {
+  return {
+    historic,
+    rates: getExchangeRates(historic),
+    sevenDaysAgoTimestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
+  };
+}
+
 function calculateEarningsFromActivity(
   activity: Array<{
     timestamp: string;
@@ -66,8 +83,7 @@ function calculateEarningsFromActivity(
     decimals: number;
     event_type: string;
   }>,
-  sevenDaysAgoTimestamp: number,
-  rates: Array<{ timestamp: Date; block: number; rate: number }>,
+  context: WeeklyEarningsContext,
 ) {
   const multiplier = {
     input: -1,
@@ -77,7 +93,7 @@ function calculateEarningsFromActivity(
   const values = activity
     .filter(
       (tx) =>
-        new Date(tx.timestamp).valueOf() >= sevenDaysAgoTimestamp &&
+        new Date(tx.timestamp).valueOf() >= context.sevenDaysAgoTimestamp &&
         tx.rune_id === publicConfig.sRune.id,
     )
     .map((tx) => {
@@ -89,31 +105,29 @@ function calculateEarningsFromActivity(
 
   const rateValues = [
     { value: 1, block: 0 },
-    ...rates.map(({ rate, timestamp }: { rate: number; timestamp: Date }) => ({
+    ...context.rates.map(({ rate, timestamp }: { rate: number; timestamp: Date }) => ({
       value: rate,
       block: timestamp.valueOf(),
     })),
-    { value: rates[rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
+    { value: context.rates[context.rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
   ];
 
   return computeEarnings(values, rateValues);
 }
 
-async function calculateUserEarnings(address: string): Promise<number> {
+async function calculateUserEarnings(
+  address: string,
+  context: WeeklyEarningsContext,
+): Promise<number> {
   try {
-    const sevenDaysAgoTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const [{ data: activity }, historic] = await Promise.all([
-      runeProvider.runes.walletActivity({
-        address,
-        rune_id: publicConfig.sRune.id,
-        count: 1000,
-        newerThan: new Date(sevenDaysAgoTimestamp),
-      }),
-      db.poolBalance.getHistoric(),
-    ]);
+    const { data: activity } = await runeProvider.runes.walletActivity({
+      address,
+      rune_id: publicConfig.sRune.id,
+      count: 1000,
+      newerThan: new Date(context.sevenDaysAgoTimestamp),
+    });
 
-    const rates = getExchangeRates(historic);
-    const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoTimestamp, rates);
+    const earnings = calculateEarningsFromActivity(activity, context);
 
     return earnings.total;
   } catch (error) {
@@ -122,11 +136,13 @@ async function calculateUserEarnings(address: string): Promise<number> {
   }
 }
 
-async function getProtocolApy(): Promise<{ yearly: number; monthly: number; daily: number }> {
+function getProtocolApy(context: WeeklyEarningsContext): {
+  yearly: number;
+  monthly: number;
+  daily: number;
+} {
   try {
-    const historic = await db.poolBalance.getHistoric();
-    const historicRates = getExchangeRates(historic);
-    return computeApyFromHistoric(historicRates);
+    return computeApyFromHistoric(context.rates);
   } catch (error) {
     logger.error('Failed to calculate APY:', error);
     return { yearly: 0, monthly: 0, daily: 0 };
@@ -135,12 +151,10 @@ async function getProtocolApy(): Promise<{ yearly: number; monthly: number; dail
 
 async function calculateTotalRewardsDistributed(
   users: WeeklyEmailUser[],
-  historic: Array<{ timestamp: Date; block: number; balance: string; staked: string }>,
+  context: WeeklyEarningsContext,
 ): Promise<number> {
   try {
     let totalRewards = new Big(0);
-    const rates = getExchangeRates(historic);
-    const sevenDaysAgoTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     for (const user of users) {
       try {
@@ -148,9 +162,9 @@ async function calculateTotalRewardsDistributed(
           address: user.address,
           rune_id: publicConfig.sRune.id,
           count: 1000,
-          newerThan: new Date(sevenDaysAgoTimestamp),
+          newerThan: new Date(context.sevenDaysAgoTimestamp),
         });
-        const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoTimestamp, rates);
+        const earnings = calculateEarningsFromActivity(activity, context);
         totalRewards = totalRewards.plus(earnings.total);
       } catch (error) {
         logger.warn(`Failed to calculate rewards for user ${user.address}:`, error);
@@ -164,16 +178,12 @@ async function calculateTotalRewardsDistributed(
   }
 }
 
-type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
-
-async function getProtocolData(): Promise<
-  [number, number, { yearly: number; monthly: number; daily: number }, HistoricBalances]
-> {
+async function getProtocolData(
+  context: WeeklyEarningsContext,
+): Promise<[number, number, { yearly: number; monthly: number; daily: number }]> {
   const settled = await Promise.allSettled([
     canister.getExchangeRateDecimal(),
     resolveRunePriceUsd({ runeName: publicConfig.rune.name }),
-    getProtocolApy(),
-    db.poolBalance.getHistoric(),
   ]);
 
   type SettledResult<T> = PromiseSettledResult<T>;
@@ -184,15 +194,9 @@ async function getProtocolData(): Promise<
 
   const defaultRateDecimal = 1;
   const defaultTokenPrice = 0;
-  const defaultApy = { yearly: 0, monthly: 0, daily: 0 };
-  const defaultHistoric: HistoricBalances = [];
+  const apy = getProtocolApy(context);
 
-  return [
-    pick<number>(0) ?? defaultRateDecimal,
-    pick<number>(1) ?? defaultTokenPrice,
-    pick<{ yearly: number; monthly: number; daily: number }>(2) ?? defaultApy,
-    pick<HistoricBalances>(3) ?? defaultHistoric,
-  ];
+  return [pick<number>(0) ?? defaultRateDecimal, pick<number>(1) ?? defaultTokenPrice, apy];
 }
 
 async function processUserEmail(
@@ -201,6 +205,7 @@ async function processUserEmail(
   exchangeRate: number,
   apy: number,
   totalRewardsDistributed: number,
+  context: WeeklyEarningsContext,
 ): Promise<{ success: boolean; skipped: boolean }> {
   try {
     const { data: balance } = await runeProvider.runes.walletBalances({ address: user.address });
@@ -216,7 +221,7 @@ async function processUserEmail(
       return { success: false, skipped: true };
     }
 
-    const earnedLiq = await calculateUserEarnings(user.address);
+    const earnedLiq = await calculateUserEarnings(user.address, context);
     const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPriceBig);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({
@@ -261,12 +266,17 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     };
   }
 
-  const [rateDecimal, tokenPrice, apy, historic] = await getProtocolData();
+  const historic = await db.poolBalance.getHistoric().catch((error: unknown) => {
+    logger.error('Failed to load historic pool balances for weekly email:', error);
+    return [] as HistoricBalances;
+  });
+  const context = createWeeklyEarningsContext(historic);
+  const [rateDecimal, tokenPrice, apy] = await getProtocolData(context);
 
   const exchangeRate =
     rateDecimal && Number.isFinite(rateDecimal) && rateDecimal > 0 ? rateDecimal : 1;
 
-  const totalRewardsDistributed = await calculateTotalRewardsDistributed(users, historic);
+  const totalRewardsDistributed = await calculateTotalRewardsDistributed(users, context);
   logger.info(`Total rewards distributed in last 7 days: ${totalRewardsDistributed} LIQ`);
 
   let emailsSent = 0;
@@ -279,6 +289,7 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
       exchangeRate,
       apy.yearly,
       totalRewardsDistributed,
+      context,
     );
 
     if (result.success) emailsSent++;

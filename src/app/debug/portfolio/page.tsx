@@ -74,7 +74,7 @@ function PortfolioPage() {
         { value: 1, block: 0 },
         ...protocol.historicRates.map(({ rate, timestamp }) => ({
           value: Number(rate),
-          block: timestamp.valueOf(),
+          block: new Date(timestamp).valueOf(),
         })),
       ];
       setRates(newRates);
@@ -92,7 +92,7 @@ function PortfolioPage() {
   const exchangeRateData = useMemo(() => {
     if (!protocol.historicRates) return [];
     return protocol.historicRates
-      .map((k) => ({ ...k, timestamp: k.timestamp.valueOf() }))
+      .map((k) => ({ ...k, timestamp: new Date(k.timestamp).valueOf() }))
       .sort((a, b) => a.block - b.block);
   }, [protocol.historicRates]);
 

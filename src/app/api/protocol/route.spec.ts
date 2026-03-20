@@ -199,4 +199,28 @@ describe('GET', () => {
       decimals: config.rune.decimals,
     });
   });
+
+  it('falls back to the configured rune id when Ordiscan omits it', async () => {
+    mocks.ordiscan.rune.info.mockImplementation((runeName: string) => {
+      const key =
+        runeName === config.rune.name ? 'rune' : runeName === config.sRune.name ? 'sRune' : '';
+      const rune = key ? config[key] : undefined;
+      return Promise.resolve({
+        data: {
+          id: undefined,
+          symbol: rune?.symbol,
+          formatted_name: rune?.name,
+          decimals: rune?.decimals,
+          current_supply: key === 'sRune' ? String(config.sRune.supply) : '10000000000',
+          premined_supply: key === 'sRune' ? String(config.sRune.supply) : '10000000000',
+        },
+      });
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.rune.id).toBe(config.rune.id);
+    expect(body.staked.id).toBe(config.sRune.id);
+  });
 });

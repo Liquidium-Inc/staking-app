@@ -47,7 +47,7 @@ export interface CardinalUTXO {
   address: string;
 }
 
-export type RuneId = { rune_id: string } | { rune_name: string } | { rune_number: number };
+export type RuneId = { rune_id: string } | { rune_name: string };
 export type AddressId = { address: string };
 export type SortBy<T> = { sort_by: T; order?: 'asc' | 'desc'; offset?: number; count?: number };
 type WalletActivityQuery = AddressId &

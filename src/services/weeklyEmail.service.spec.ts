@@ -77,6 +77,7 @@ describe('runWeeklyEmailCron', () => {
     await vi.runAllTimersAsync();
     const result = await promise;
 
+    expect(mocks.db.poolBalance.getHistoric).toHaveBeenCalledOnce();
     expect(mocks.runePrice.resolveRunePriceUsd).toHaveBeenCalledOnce();
     expect(mocks.runePrice.resolveRunePriceUsd).toHaveBeenCalledWith({
       runeName: publicConfig.rune.name,
