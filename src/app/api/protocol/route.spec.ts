@@ -47,15 +47,15 @@ describe('GET', () => {
     vi.clearAllMocks();
 
     const supply = config.sRune.supply;
-    const createRate = (timestamp: Date, balance: number, circulating: number) => {
-      return { timestamp, balance, staked: +supply - +circulating + '' };
+    const createRate = (timestamp: Date, block: number, balance: number, circulating: number) => {
+      return { timestamp, block, balance, staked: +supply - +circulating + '' };
     };
 
     mocks.db.poolBalance.getHistoric.mockResolvedValue([
-      createRate(new Date('2025-01-01'), 0, 0),
-      createRate(new Date('2025-01-02'), 1000, 1000),
-      createRate(new Date('2025-01-04'), 500_000, 500_000),
-      createRate(new Date('2025-02-01'), 550_000, 500_000),
+      createRate(new Date('2025-01-01'), 100, 0, 0),
+      createRate(new Date('2025-01-02'), 101, 1000, 1000),
+      createRate(new Date('2025-01-04'), 103, 500_000, 500_000),
+      createRate(new Date('2025-02-01'), 131, 550_000, 500_000),
     ]);
 
     mocks.BIS.runes.ticker.mockImplementation(({ rune_id }) => {
@@ -163,5 +163,15 @@ describe('GET', () => {
     await expect(GET()).rejects.toThrow('canister offline');
   });
 
-  it.skip('returns exchangeRate as 1 if circulating is 0', async () => {});
+  it('returns exchangeRate as 1 if circulating is 0', async () => {
+    mocks.canister.getExchangeRate.mockResolvedValueOnce({
+      circulating: BigInt(0),
+      balance: BigInt(1000),
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.exchangeRate).toBe(1);
+  });
 });

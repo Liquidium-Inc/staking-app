@@ -1,12 +1,11 @@
 import Big from 'big.js';
 
+import { SATOSHIS_PER_BTC as SATS_PER_BTC } from '@/lib/bitcoin-units';
 import { logger } from '@/lib/logger';
 
 const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
 const COINGECKO_LIQUIDIUM_COIN_ID = 'liquidium-token';
 const COINGECKO_TIMEOUT_MS = 2_000;
-const SATS_PER_BTC = 100_000_000;
-
 type CoinGeckoSimplePriceResponse = {
   'liquidium-token'?: {
     usd?: number;
@@ -56,7 +55,7 @@ export function convertUsdPriceToSats(priceUsd: number, btcPriceUsd: number): nu
     throw new Error('priceUsd and btcPriceUsd must be greater than 0');
   }
 
-  return Big(priceUsd).times(SATS_PER_BTC).div(btcPriceUsd).toNumber();
+  return Big(priceUsd).times(SATS_PER_BTC).div(btcPriceUsd).round(0, 0).toNumber();
 }
 
 export const coingecko = {

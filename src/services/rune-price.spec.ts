@@ -80,4 +80,18 @@ describe('rune-price service', () => {
     expect(result).toBe(0.05);
     expect(mocks.mempool.getPrice).not.toHaveBeenCalled();
   });
+
+  it('falls back to legacy rune sources when BTC price lookup fails', async () => {
+    mocks.mempool.getPrice.mockRejectedValueOnce(new Error('mempool offline'));
+
+    const result = await resolveRunePriceSnapshot({
+      runeName: 'LIQUIDIUM',
+      runeId: '1:1',
+    });
+
+    expect(result).toEqual({
+      btcPriceUsd: 0,
+      runePriceSats: 100,
+    });
+  });
 });

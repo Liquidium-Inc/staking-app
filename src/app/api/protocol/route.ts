@@ -65,6 +65,12 @@ export async function GET() {
   ]);
 
   const supply = totalSupply || staked.total_minted_supply;
+  const runePriceSats = priceSnapshot.runePriceSats ?? 0;
+  if (priceSnapshot.runePriceSats == null) {
+    logger.debug(
+      'Price fetch failed for CoinGecko and legacy rune sources, using fallback price of 0',
+    );
+  }
 
   const historicRates = historic.reduce(
     (acc, balance) => {
@@ -94,14 +100,7 @@ export async function GET() {
       symbol: rune.symbol,
       name: rune.spaced_rune_name,
       decimals: rune.decimals,
-      priceSats:
-        priceSnapshot.runePriceSats ??
-        (() => {
-          logger.debug(
-            'Price fetch failed for CoinGecko and legacy rune sources, using fallback price of 0',
-          );
-          return 0;
-        })(),
+      priceSats: runePriceSats,
     },
     staked: {
       id: stakedId,

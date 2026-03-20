@@ -1,12 +1,11 @@
 import Big from 'big.js';
 
+import { SATOSHIS_PER_BTC as SATS_PER_BTC } from '@/lib/bitcoin-units';
 import { logger } from '@/lib/logger';
 import { BIS } from '@/providers/bestinslot';
 import { coingecko, convertUsdPriceToSats } from '@/providers/coingecko';
 import { mempool } from '@/providers/mempool';
 import { ordiscan } from '@/providers/ordiscan';
-
-const SATS_PER_BTC = 100_000_000;
 
 type RuneTickerResult = Awaited<ReturnType<typeof BIS.runes.ticker>>;
 type RuneTickerLoader = (runeId: string) => Promise<RuneTickerResult>;
@@ -68,18 +67,31 @@ async function getFallbackRunePriceInSats({
 export async function resolveRunePriceSnapshot(
   params: ResolveRunePriceParams,
 ): Promise<RunePriceSnapshot> {
-  const [btcPrice, coinGeckoPriceUsd] = await Promise.all([
+  const [btcPriceResult, coinGeckoPriceUsd] = await Promise.allSettled([
     mempool.getPrice(),
     coingecko.liquidium.getPriceUsd(),
   ]);
 
+  const btcPriceUsd =
+    btcPriceResult.status === 'fulfilled'
+      ? btcPriceResult.value.USD
+      : (() => {
+          logger.warn(
+            'BTC price fetch failed while resolving rune price snapshot:',
+            btcPriceResult.reason,
+          );
+          return 0;
+        })();
+
+  const coinGeckoUsd = coinGeckoPriceUsd.status === 'fulfilled' ? coinGeckoPriceUsd.value : null;
+
   const runePriceSats =
-    coinGeckoPriceUsd && btcPrice.USD > 0
-      ? convertUsdPriceToSats(coinGeckoPriceUsd, btcPrice.USD)
+    coinGeckoUsd && btcPriceUsd > 0
+      ? convertUsdPriceToSats(coinGeckoUsd, btcPriceUsd)
       : await getFallbackRunePriceInSats(params);
 
   return {
-    btcPriceUsd: btcPrice.USD,
+    btcPriceUsd,
     runePriceSats,
   };
 }
