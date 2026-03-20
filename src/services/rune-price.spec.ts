@@ -104,6 +104,22 @@ describe('rune-price service', () => {
     expect(mocks.mempool.getPrice).not.toHaveBeenCalled();
   });
 
+  it('converts the legacy sats fallback into USD when CoinGecko is unavailable', async () => {
+    mocks.coingecko.liquidium.getPriceUsd.mockResolvedValueOnce(null);
+    mocks.ordiscan.rune.market.mockResolvedValueOnce({
+      data: { price_in_sats: 100 },
+    });
+
+    const result = await resolveRunePriceUsd({
+      runeName: 'LIQUIDIUM',
+      runeId: '1:1',
+    });
+
+    expect(mocks.ordiscan.rune.market).toHaveBeenCalledOnce();
+    expect(mocks.mempool.getPrice).toHaveBeenCalledOnce();
+    expect(result).toBe(0.1);
+  });
+
   it('falls back to legacy rune sources when BTC price lookup fails', async () => {
     mocks.mempool.getPrice.mockRejectedValueOnce(new Error('mempool offline'));
 
