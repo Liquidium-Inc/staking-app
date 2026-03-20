@@ -105,7 +105,7 @@ export default function Footer() {
         className="absolute top-0 right-0 flex -translate-y-[130%] items-center rounded-full border border-white/10 p-0.5 pr-2 hover:opacity-80"
       >
         <Image src="/liquidium.svg" alt="liq-logo" width={30} height={30} className="-ml-0.5 h-6" />
-        <span className="text-sm">${formatCurrency(tokenPrice)}</span>
+        <span className="text-sm">${formatCurrency(tokenPrice, 3)}</span>
       </Link>
       <div className="mt-6 flex w-full flex-col justify-center gap-2 xl:hidden">
         {footerLinks.map((link) => (

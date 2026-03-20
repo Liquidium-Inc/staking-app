@@ -5,80 +5,91 @@ import { pick } from '@/lib/pick';
 
 import { GET } from './route';
 
-const supply = config.sRune.supply;
-
-const createRate = (timestamp: Date, balance: number, circulating: number) => {
-  return { timestamp, balance, staked: +supply - +circulating + '' };
-};
-
-const mocks = vi.hoisted(() => ({
-  db: {
-    poolBalance: {
-      getHistoric: vi
-        .fn()
-        .mockImplementation(() => [
-          createRate(new Date('2025-01-01'), 0, 0),
-          createRate(new Date('2025-01-02'), 1000, 1000),
-          createRate(new Date('2025-01-04'), 500_000, 500_000),
-          createRate(new Date('2025-02-01'), 550_000, 500_000),
-        ]),
+const mocks = vi.hoisted(() => {
+  return {
+    db: {
+      poolBalance: {
+        getHistoric: vi.fn(),
+      },
     },
-  },
-  BIS: {
-    runes: {
-      ticker: vi.fn().mockImplementation(({ rune_id }) => {
-        const key =
-          rune_id === config.rune.id ? 'rune' : rune_id === config.sRune.id ? 'sRune' : '';
-        const rune = key ? config[key] : undefined;
-        return {
-          data: {
-            symbol: rune?.symbol,
-            spaced_rune_name: rune?.name,
-            decimals: rune?.decimals,
-          },
-        };
-      }),
-      walletBalances: vi.fn().mockImplementation(() => ({
-        data: [
-          { rune_id: config.rune.id, total_balance: '550000000' },
-          { rune_id: config.sRune.id, total_balance: '500000000' },
-        ],
-        block_height: 100,
-      })),
+    BIS: {
+      runes: {
+        ticker: vi.fn(),
+        walletBalances: vi.fn(),
+      },
     },
-  },
-  mempool: { getPrice: vi.fn().mockImplementation(() => ({ USD: 100_000 })) },
-  canister: {
-    getExchangeRate: vi
-      .fn()
-      .mockImplementation(() => ({ circulating: BigInt(1000), balance: BigInt(1000) })),
-    address: 'mock-canister-address',
-  },
-  ordiscan: {
-    rune: {
-      market: vi.fn().mockImplementation(() => ({
-        data: { price_in_sats: 100 },
-      })),
+    canister: {
+      getExchangeRate: vi.fn(),
+      address: 'mock-canister-address',
     },
-  },
-  redis: {
-    client: {
-      get: vi.fn().mockImplementation(() => null),
-      set: vi.fn(),
+    runePrice: {
+      resolveRunePriceSnapshot: vi.fn(),
     },
-  },
-}));
+    redis: {
+      client: {
+        get: vi.fn(),
+        set: vi.fn(),
+      },
+    },
+  };
+});
 
 vi.mock('@/db', () => ({ db: mocks.db }));
 vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
-vi.mock('@/providers/mempool', () => ({ mempool: mocks.mempool }));
 vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
-vi.mock('@/providers/ordiscan', () => ({ ordiscan: mocks.ordiscan }));
 vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
+vi.mock('@/services/rune-price', () => ({
+  resolveRunePriceSnapshot: mocks.runePrice.resolveRunePriceSnapshot,
+}));
 
 describe('GET', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    const supply = config.sRune.supply;
+    const createRate = (timestamp: Date, block: number, balance: number, circulating: number) => {
+      return { timestamp, block, balance, staked: +supply - +circulating + '' };
+    };
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      createRate(new Date('2025-01-01'), 100, 0, 0),
+      createRate(new Date('2025-01-02'), 101, 1000, 1000),
+      createRate(new Date('2025-01-04'), 103, 500_000, 500_000),
+      createRate(new Date('2025-02-01'), 131, 550_000, 500_000),
+    ]);
+
+    mocks.BIS.runes.ticker.mockImplementation(({ rune_id }) => {
+      const key = rune_id === config.rune.id ? 'rune' : rune_id === config.sRune.id ? 'sRune' : '';
+      const rune = key ? config[key] : undefined;
+      return {
+        data: {
+          symbol: rune?.symbol,
+          spaced_rune_name: rune?.name,
+          decimals: rune?.decimals,
+        },
+      };
+    });
+
+    mocks.BIS.runes.walletBalances.mockResolvedValue({
+      data: [
+        { rune_id: config.rune.id, total_balance: '550000000' },
+        { rune_id: config.sRune.id, total_balance: '500000000' },
+      ],
+      block_height: 100,
+    });
+
+    mocks.canister.getExchangeRate.mockResolvedValue({
+      circulating: BigInt(1000),
+      balance: BigInt(1000),
+    });
+
+    mocks.runePrice.resolveRunePriceSnapshot.mockResolvedValue({
+      btcPriceUsd: 100_000,
+      runePriceSats: 12_345_678,
+    });
+
+    mocks.redis.client.get.mockResolvedValue(null);
+    mocks.redis.client.set.mockResolvedValue(undefined);
   });
 
   it('returns protocol data with correct structure', async () => {
@@ -108,5 +119,66 @@ describe('GET', () => {
     expect(body.apy.daily).toBe(1.1 ** (1 / 31) - 1);
   });
 
-  it.skip('returns exchangeRate as 1 if circulating is 0', async () => {});
+  it('returns the resolved rune price snapshot', async () => {
+    const response = await GET();
+    const body = await response.json();
+
+    expect(mocks.runePrice.resolveRunePriceSnapshot).toHaveBeenCalledOnce();
+    expect(mocks.runePrice.resolveRunePriceSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runeName: config.rune.name,
+        runeId: config.rune.id,
+        getTicker: expect.any(Function),
+      }),
+    );
+    expect(body.btc.price).toBe(100_000);
+    expect(body.rune.priceSats).toBe(12_345_678);
+  });
+
+  it('returns a zero rune price when the price service cannot resolve one', async () => {
+    mocks.runePrice.resolveRunePriceSnapshot.mockResolvedValueOnce({
+      btcPriceUsd: 100_000,
+      runePriceSats: null,
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.rune.priceSats).toBe(0);
+  });
+
+  it('returns protocol data even when historic pool balances fail', async () => {
+    mocks.db.poolBalance.getHistoric.mockRejectedValueOnce(new Error('db offline'));
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.historicRates).toEqual([]);
+    expect(body.apy).toEqual({
+      window: 0,
+      monthly: 0,
+      daily: 0,
+      yearly: 0,
+    });
+    expect(body.rune.priceSats).toBe(12_345_678);
+  });
+
+  it('throws when the exchange rate cannot be loaded', async () => {
+    mocks.canister.getExchangeRate.mockRejectedValueOnce(new Error('canister offline'));
+
+    await expect(GET()).rejects.toThrow('canister offline');
+  });
+
+  it('returns exchangeRate as 1 if circulating is 0', async () => {
+    mocks.canister.getExchangeRate.mockResolvedValueOnce({
+      circulating: BigInt(0),
+      balance: BigInt(1000),
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.exchangeRate).toBe(1);
+  });
 });
