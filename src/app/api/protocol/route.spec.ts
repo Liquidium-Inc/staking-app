@@ -12,15 +12,14 @@ const mocks = vi.hoisted(() => {
         getHistoric: vi.fn(),
       },
     },
-    BIS: {
-      runes: {
-        ticker: vi.fn(),
-        walletBalances: vi.fn(),
-      },
-    },
     canister: {
       getExchangeRate: vi.fn(),
       address: 'mock-canister-address',
+    },
+    ordiscan: {
+      rune: {
+        info: vi.fn(),
+      },
     },
     runePrice: {
       resolveRunePriceSnapshot: vi.fn(),
@@ -35,8 +34,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('@/db', () => ({ db: mocks.db }));
-vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.BIS }));
 vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
+vi.mock('@/providers/ordiscan', () => ({ ordiscan: mocks.ordiscan }));
 vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
 vi.mock('@/services/rune-price', () => ({
   resolveRunePriceSnapshot: mocks.runePrice.resolveRunePriceSnapshot,
@@ -58,24 +57,20 @@ describe('GET', () => {
       createRate(new Date('2025-02-01'), 131, 550_000, 500_000),
     ]);
 
-    mocks.BIS.runes.ticker.mockImplementation(({ rune_id }) => {
-      const key = rune_id === config.rune.id ? 'rune' : rune_id === config.sRune.id ? 'sRune' : '';
+    mocks.ordiscan.rune.info.mockImplementation((runeName: string) => {
+      const key =
+        runeName === config.rune.name ? 'rune' : runeName === config.sRune.name ? 'sRune' : '';
       const rune = key ? config[key] : undefined;
-      return {
+      return Promise.resolve({
         data: {
+          id: rune?.id,
           symbol: rune?.symbol,
-          spaced_rune_name: rune?.name,
+          formatted_name: rune?.name,
           decimals: rune?.decimals,
+          current_supply: key === 'sRune' ? String(config.sRune.supply) : '10000000000',
+          premined_supply: key === 'sRune' ? String(config.sRune.supply) : '10000000000',
         },
-      };
-    });
-
-    mocks.BIS.runes.walletBalances.mockResolvedValue({
-      data: [
-        { rune_id: config.rune.id, total_balance: '550000000' },
-        { rune_id: config.sRune.id, total_balance: '500000000' },
-      ],
-      block_height: 100,
+      });
     });
 
     mocks.canister.getExchangeRate.mockResolvedValue({
@@ -109,6 +104,17 @@ describe('GET', () => {
     expect(body.apy).toHaveProperty('daily');
   });
 
+  it('loads rune metadata from Ordiscan', async () => {
+    const response = await GET();
+    const body = await response.json();
+
+    expect(mocks.ordiscan.rune.info).toHaveBeenCalledTimes(2);
+    expect(mocks.ordiscan.rune.info).toHaveBeenCalledWith(config.rune.name);
+    expect(mocks.ordiscan.rune.info).toHaveBeenCalledWith(config.sRune.name);
+    expect(body.rune.name).toBe(config.rune.name);
+    expect(body.staked.name).toBe(config.sRune.name);
+  });
+
   it('computes APY correctly', async () => {
     const response = await GET();
     expect(response.status).toBe(200);
@@ -127,8 +133,6 @@ describe('GET', () => {
     expect(mocks.runePrice.resolveRunePriceSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         runeName: config.rune.name,
-        runeId: config.rune.id,
-        getTicker: expect.any(Function),
       }),
     );
     expect(body.btc.price).toBe(100_000);
@@ -180,5 +184,19 @@ describe('GET', () => {
     const body = await response.json();
 
     expect(body.exchangeRate).toBe(1);
+  });
+
+  it('falls back to static protocol metadata when Ordiscan info fails', async () => {
+    mocks.ordiscan.rune.info.mockRejectedValueOnce(new Error('ordiscan down'));
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.rune).toMatchObject({
+      id: config.rune.id,
+      symbol: config.rune.symbol,
+      name: config.rune.name,
+      decimals: config.rune.decimals,
+    });
   });
 });

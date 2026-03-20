@@ -54,15 +54,12 @@ function PortfolioPage() {
       const multiplier = {
         input: -1,
         output: 1,
-        'new-allocation': 0,
-        mint: 0,
-        burn: 0,
       } satisfies Record<(typeof fetchedActivity)[number]['event_type'], number>;
 
       const newTxs = fetchedActivity
         .map((tx) => ({
           value: multiplier[tx.event_type] * Number(tx.amount) * 10 ** -tx.decimals,
-          block: tx.block_height,
+          block: new Date(tx.timestamp).valueOf(),
         }))
         .reverse();
       setTxs(newTxs);
@@ -75,7 +72,10 @@ function PortfolioPage() {
     if (!hydratedRates.current && protocol.historicRates?.length > 0) {
       const newRates = [
         { value: 1, block: 0 },
-        ...protocol.historicRates.map(({ rate, block }) => ({ value: Number(rate), block })),
+        ...protocol.historicRates.map(({ rate, timestamp }) => ({
+          value: Number(rate),
+          block: timestamp.valueOf(),
+        })),
       ];
       setRates(newRates);
       setRateBlock(newRates[newRates.length - 1].block + 5 + '');

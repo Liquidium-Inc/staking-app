@@ -1,6 +1,7 @@
 import { config } from '@/config/public';
 import { BIS } from '@/providers/bestinslot';
 import { liquidiumApi } from '@/providers/liquidium-api';
+import { ordiscan } from '@/providers/ordiscan';
 import { resolveRunePriceUsd } from '@/services/rune-price';
 
 export interface RuneMarketData {
@@ -18,10 +19,11 @@ export interface RuneHolder {
 }
 
 export interface WalletActivity {
-  event_type: 'output' | 'input' | 'mint' | 'new-allocation' | 'burn';
+  event_type: 'output' | 'input';
   outpoint: string;
   amount: string;
-  block_height: number;
+  timestamp: string;
+  rune_id: string;
   decimals: number;
 }
 
@@ -54,6 +56,9 @@ export interface CardinalUTXO {
 export type RuneId = { rune_id: string } | { rune_name: string } | { rune_number: number };
 export type AddressId = { address: string };
 export type SortBy<T> = { sort_by: T; order?: 'asc' | 'desc'; offset?: number; count?: number };
+type WalletActivityQuery = AddressId &
+  Partial<RuneId> &
+  Partial<SortBy<'ts'>> & { runes_filter_only_wallet?: boolean; newerThan?: Date };
 
 export interface RuneProvider {
   runes: {
@@ -64,9 +69,7 @@ export interface RuneProvider {
       params: RuneId & Partial<SortBy<'balance'>>,
     ): Promise<{ data: RuneHolder[]; block_height: number }>;
     walletActivity(
-      params: AddressId &
-        Partial<RuneId> &
-        Partial<SortBy<'ts'>> & { runes_filter_only_wallet?: boolean },
+      params: WalletActivityQuery,
     ): Promise<{ data: WalletActivity[]; block_height: number }>;
   };
   mempool: {
@@ -94,11 +97,55 @@ class CentralizedRuneProvider implements RuneProvider {
       };
     },
     holders: (params: RuneId & Partial<SortBy<'balance'>>) => BIS.runes.holders(params),
-    walletActivity: (
-      params: AddressId &
-        Partial<RuneId> &
-        Partial<SortBy<'ts'>> & { runes_filter_only_wallet?: boolean },
-    ) => BIS.runes.walletActivity(params),
+    walletActivity: async (params: WalletActivityQuery) => {
+      const requestedRune = resolveKnownRune(params);
+      if (!requestedRune) {
+        return { data: [], block_height: 0 };
+      }
+
+      const offset = params.offset ?? 0;
+      const count = params.count ?? 2000;
+      const sort = params.order === 'asc' ? 'oldest' : 'newest';
+      const newerThan = params.newerThan?.valueOf();
+      const collected: WalletActivity[] = [];
+      let page = 1;
+
+      while (collected.length < offset + count) {
+        const { data: transactions } = await ordiscan.rune.walletActivity(params.address, {
+          page,
+          sort,
+        });
+
+        if (transactions.length === 0) break;
+
+        let reachedOlderTransactions = false;
+
+        for (const transaction of transactions) {
+          const transactionTime = new Date(transaction.timestamp).valueOf();
+          if (sort === 'newest' && newerThan && transactionTime < newerThan) {
+            reachedOlderTransactions = true;
+            continue;
+          }
+
+          collected.push(
+            ...flattenWalletActivity(params.address, requestedRune, transaction).filter((entry) => {
+              if (!newerThan) return true;
+              return new Date(entry.timestamp).valueOf() >= newerThan;
+            }),
+          );
+
+          if (collected.length >= offset + count) break;
+        }
+
+        if (transactions.length < 100 || reachedOlderTransactions) break;
+        page += 1;
+      }
+
+      return {
+        data: collected.slice(offset, offset + count),
+        block_height: 0,
+      };
+    },
   };
 
   mempool = {
@@ -154,6 +201,72 @@ export const {
 export async function getRunePrice(): Promise<number> {
   return await resolveRunePriceUsd({
     runeName: config.rune.name,
-    runeId: config.rune.id,
   });
+}
+
+type KnownRune = {
+  id: string;
+  name: string;
+  decimals: number;
+};
+
+const KNOWN_RUNES: KnownRune[] = [
+  {
+    id: config.rune.id,
+    name: config.rune.name,
+    decimals: config.rune.decimals,
+  },
+  {
+    id: config.sRune.id,
+    name: config.sRune.name,
+    decimals: config.sRune.decimals,
+  },
+];
+
+/**
+ * Resolves supported app runes from the mixed rune query formats used by the provider API.
+ */
+function resolveKnownRune(params: Partial<RuneId>): KnownRune | undefined {
+  if ('rune_id' in params && params.rune_id) {
+    return KNOWN_RUNES.find((rune) => rune.id === params.rune_id);
+  }
+
+  if ('rune_name' in params && params.rune_name) {
+    return KNOWN_RUNES.find((rune) => rune.name === params.rune_name);
+  }
+
+  return undefined;
+}
+
+/**
+ * Flattens Ordiscan transaction-level rune activity into the app's simple in/out event model.
+ */
+function flattenWalletActivity(
+  address: string,
+  rune: KnownRune,
+  transaction: Awaited<ReturnType<typeof ordiscan.rune.walletActivity>>['data'][number],
+): WalletActivity[] {
+  const inputs = transaction.inputs
+    .filter((input) => input.address === address && input.rune === rune.name)
+    .map((input) => ({
+      event_type: 'input' as const,
+      outpoint: input.output,
+      amount: input.rune_amount,
+      timestamp: transaction.timestamp,
+      rune_id: rune.id,
+      decimals: rune.decimals,
+    }));
+
+  const outputs = transaction.outputs
+    .filter((output) => output.address === address && output.rune === rune.name)
+    .map((output) => ({
+      event_type: 'output' as const,
+      outpoint: `${transaction.txid}:${output.vout}`,
+      amount: output.rune_amount,
+      timestamp: transaction.timestamp,
+      rune_id: rune.id,
+      decimals: rune.decimals,
+    }));
+
+  return [...inputs, ...outputs];
 }

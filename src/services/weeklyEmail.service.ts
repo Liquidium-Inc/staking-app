@@ -5,12 +5,10 @@ import { db } from '@/db';
 import { computeApyFromHistoric } from '@/lib/apy';
 import { computeEarnings } from '@/lib/earnings';
 import { logger } from '@/lib/logger';
-import { BIS } from '@/providers/bestinslot';
 import { canister } from '@/providers/canister';
 import { emailService } from '@/providers/email';
-import { mempool } from '@/providers/mempool';
-import { ordiscan } from '@/providers/ordiscan';
 import { runeProvider } from '@/providers/rune-provider';
+import { resolveRunePriceUsd } from '@/services/rune-price';
 
 export interface WeeklyEmailUser {
   address: string;
@@ -32,31 +30,6 @@ function maskEmail(email: string): string {
     return `${local[0] ?? '*'}***@${domain}`;
   }
   return `${local[0]}***${local.slice(-1)}@${domain}`;
-}
-
-async function getRunePriceInSats(runeName: string, runeId: string): Promise<number | null> {
-  if (!runeName?.trim() || !runeId?.trim()) {
-    throw new Error('runeName and runeId must be non-empty strings');
-  }
-
-  try {
-    const { data: marketData } = await ordiscan.rune.market(runeName);
-    if (marketData.price_in_sats > 0) {
-      return marketData.price_in_sats;
-    }
-  } catch (error) {
-    logger.warn(`Ordiscan price fetch failed for ${runeName}:`, error);
-  }
-
-  try {
-    const { data: rune } = await BIS.runes.ticker({ rune_id: runeId });
-    return rune.avg_unit_price_in_sats && rune.avg_unit_price_in_sats > 0
-      ? rune.avg_unit_price_in_sats
-      : null;
-  } catch (error) {
-    logger.error(`BIS price fetch also failed for ${runeId}:`, error);
-    return null;
-  }
 }
 
 function getExchangeRates(
@@ -87,35 +60,39 @@ function getExchangeRates(
 
 function calculateEarningsFromActivity(
   activity: Array<{
-    block_height: number;
+    timestamp: string;
     rune_id: string;
     amount: string;
     decimals: number;
     event_type: string;
   }>,
-  sevenDaysAgoBlock: number,
+  sevenDaysAgoTimestamp: number,
   rates: Array<{ timestamp: Date; block: number; rate: number }>,
 ) {
   const multiplier = {
     input: -1,
     output: 1,
-    'new-allocation': 0,
-    mint: 0,
-    burn: 0,
   } as const;
 
   const values = activity
-    .filter((tx) => tx.block_height >= sevenDaysAgoBlock && tx.rune_id === publicConfig.sRune.id)
+    .filter(
+      (tx) =>
+        new Date(tx.timestamp).valueOf() >= sevenDaysAgoTimestamp &&
+        tx.rune_id === publicConfig.sRune.id,
+    )
     .map((tx) => {
       const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
       const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult).toNumber();
-      return { value, block: tx.block_height };
+      return { value, block: new Date(tx.timestamp).valueOf() };
     })
     .reverse();
 
   const rateValues = [
     { value: 1, block: 0 },
-    ...rates.map(({ rate, block }: { rate: number; block: number }) => ({ value: rate, block })),
+    ...rates.map(({ rate, timestamp }: { rate: number; timestamp: Date }) => ({
+      value: rate,
+      block: timestamp.valueOf(),
+    })),
     { value: rates[rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
   ];
 
@@ -124,18 +101,19 @@ function calculateEarningsFromActivity(
 
 async function calculateUserEarnings(address: string): Promise<number> {
   try {
+    const sevenDaysAgoTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const [{ data: activity }, historic] = await Promise.all([
-      runeProvider.runes.walletActivity({ address, rune_id: publicConfig.sRune.id, count: 1000 }),
+      runeProvider.runes.walletActivity({
+        address,
+        rune_id: publicConfig.sRune.id,
+        count: 1000,
+        newerThan: new Date(sevenDaysAgoTimestamp),
+      }),
       db.poolBalance.getHistoric(),
     ]);
 
     const rates = getExchangeRates(historic);
-
-    const sevenDaysBlocks = 7 * 144;
-    const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
-    const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
-
-    const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
+    const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoTimestamp, rates);
 
     return earnings.total;
   } catch (error) {
@@ -162,6 +140,7 @@ async function calculateTotalRewardsDistributed(
   try {
     let totalRewards = new Big(0);
     const rates = getExchangeRates(historic);
+    const sevenDaysAgoTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     for (const user of users) {
       try {
@@ -169,13 +148,9 @@ async function calculateTotalRewardsDistributed(
           address: user.address,
           rune_id: publicConfig.sRune.id,
           count: 1000,
+          newerThan: new Date(sevenDaysAgoTimestamp),
         });
-
-        const sevenDaysBlocks = 7 * 144;
-        const maxHeight = activity.reduce((max, tx) => Math.max(max, tx.block_height), 0);
-        const sevenDaysAgoBlock = Math.max(0, maxHeight - sevenDaysBlocks);
-
-        const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoBlock, rates);
+        const earnings = calculateEarningsFromActivity(activity, sevenDaysAgoTimestamp, rates);
         totalRewards = totalRewards.plus(earnings.total);
       } catch (error) {
         logger.warn(`Failed to calculate rewards for user ${user.address}:`, error);
@@ -189,36 +164,14 @@ async function calculateTotalRewardsDistributed(
   }
 }
 
-type BtcPrice = {
-  time: number;
-  USD: number;
-  EUR: number;
-  GBP: number;
-  CAD: number;
-  CHF: number;
-  AUD: number;
-  JPY: number;
-};
-
 type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string; staked: string }>;
 
 async function getProtocolData(): Promise<
-  [
-    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
-    Awaited<ReturnType<typeof BIS.runes.ticker>> | null,
-    number,
-    number | null,
-    BtcPrice,
-    { yearly: number; monthly: number; daily: number },
-    HistoricBalances,
-  ]
+  [number, number, { yearly: number; monthly: number; daily: number }, HistoricBalances]
 > {
   const settled = await Promise.allSettled([
-    BIS.runes.ticker({ rune_id: publicConfig.rune.id }),
-    BIS.runes.ticker({ rune_id: publicConfig.sRune.id }),
     canister.getExchangeRateDecimal(),
-    getRunePriceInSats(publicConfig.rune.name, publicConfig.rune.id),
-    mempool.getPrice(),
+    resolveRunePriceUsd({ runeName: publicConfig.rune.name }),
     getProtocolApy(),
     db.poolBalance.getHistoric(),
   ]);
@@ -229,30 +182,16 @@ async function getProtocolData(): Promise<
       ? (settled[i] as PromiseFulfilledResult<T>).value
       : undefined;
 
-  const defaultTicker = null;
   const defaultRateDecimal = 1;
-  const defaultRunePriceSats: number | null = null;
-  const defaultBtcPrice: BtcPrice = {
-    time: 0,
-    USD: 0,
-    EUR: 0,
-    GBP: 0,
-    CAD: 0,
-    CHF: 0,
-    AUD: 0,
-    JPY: 0,
-  };
+  const defaultTokenPrice = 0;
   const defaultApy = { yearly: 0, monthly: 0, daily: 0 };
   const defaultHistoric: HistoricBalances = [];
 
   return [
-    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(0) ?? defaultTicker,
-    pick<Awaited<ReturnType<typeof BIS.runes.ticker>>>(1) ?? defaultTicker,
-    pick<number>(2) ?? defaultRateDecimal,
-    pick<number | null>(3) ?? defaultRunePriceSats,
-    pick<BtcPrice>(4) ?? defaultBtcPrice,
-    pick<{ yearly: number; monthly: number; daily: number }>(5) ?? defaultApy,
-    pick<HistoricBalances>(6) ?? defaultHistoric,
+    pick<number>(0) ?? defaultRateDecimal,
+    pick<number>(1) ?? defaultTokenPrice,
+    pick<{ yearly: number; monthly: number; daily: number }>(2) ?? defaultApy,
+    pick<HistoricBalances>(3) ?? defaultHistoric,
   ];
 }
 
@@ -322,12 +261,7 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     };
   }
 
-  const [, , rateDecimal, runePriceSats, btcPrice, apy, historic] = await getProtocolData();
-
-  const tokenPrice = Big(runePriceSats ?? 0)
-    .times(btcPrice.USD || 0)
-    .div(100_000_000)
-    .toNumber();
+  const [rateDecimal, tokenPrice, apy, historic] = await getProtocolData();
 
   const exchangeRate =
     rateDecimal && Number.isFinite(rateDecimal) && rateDecimal > 0 ? rateDecimal : 1;
