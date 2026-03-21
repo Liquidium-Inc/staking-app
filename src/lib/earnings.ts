@@ -3,6 +3,9 @@ import Queue from 'yocto-queue';
 
 import { binarySearch } from './binarySearch';
 
+const EARNINGS_PERCENTAGE_DECIMALS = Big.DP;
+const EARNINGS_PERCENTAGE_ROUNDING_MODE: Big.RoundingMode = 1;
+
 export interface EarningsEntry {
   block: number;
   value: Big;
@@ -78,7 +81,10 @@ export const computeEarnings = (
   const total = realized.plus(unrealized);
   const totalValue = [...slots].reduce((acc, slot) => acc.plus(slot.value), zero);
   const percentage = totalValue.gt(0)
-    ? total.times(100).div(totalValue).round(Big.DP, Big.RM)
+    ? total
+        .times(100)
+        .div(totalValue)
+        .round(EARNINGS_PERCENTAGE_DECIMALS, EARNINGS_PERCENTAGE_ROUNDING_MODE)
     : zero;
 
   return { realized, unrealized, total, percentage, slots, invested, rate };
