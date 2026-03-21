@@ -5,6 +5,7 @@ import { binarySearch } from './binarySearch';
 
 const EARNINGS_PERCENTAGE_DECIMALS = Big.DP;
 const EARNINGS_PERCENTAGE_ROUNDING_MODE: Big.RoundingMode = 1;
+export const INSUFFICIENT_EARNINGS_SLOTS_MESSAGE = 'Insufficient FIFO slots to cover withdrawal';
 
 export interface EarningsEntry {
   block: number;
@@ -26,6 +27,25 @@ export interface EarningsResult {
   invested: Big;
   rate: Big;
 }
+
+/**
+ * Returns a zeroed earnings result for callers that need a safe render fallback.
+ */
+export const createEmptyEarningsResult = (rate: Big = new Big(0)): EarningsResult => ({
+  realized: new Big(0),
+  unrealized: new Big(0),
+  total: new Big(0),
+  percentage: new Big(0),
+  slots: new Queue<EarningsSlot>(),
+  invested: new Big(0),
+  rate,
+});
+
+/**
+ * Checks whether an error came from an insufficient FIFO slot reconstruction.
+ */
+export const isInsufficientEarningsSlotsError = (error: unknown): error is Error =>
+  error instanceof Error && error.message.startsWith(INSUFFICIENT_EARNINGS_SLOTS_MESSAGE);
 
 /**
  * Computes the realized and unrealized earnings from a list of values and rates.
@@ -58,8 +78,6 @@ export const computeEarnings = (
       while (remainingValue.gt(0)) {
         const slot = slots.peek();
         if (!slot) break;
-        // TODO(DEV-2704): decide whether insufficient-slot withdrawals should throw or stay permissive,
-        // then align callers and re-enable the matching spec before changing this behavior.
         if (slot.value.gt(remainingValue)) {
           slot.value = slot.value.minus(remainingValue);
           realized = realized.plus(remainingValue.times(rate.minus(slot.rate)));
@@ -69,6 +87,12 @@ export const computeEarnings = (
           realized = realized.plus(slot.value.times(rate.minus(slot.rate)));
           remainingValue = remainingValue.minus(slot.value);
         }
+      }
+
+      if (remainingValue.gt(0)) {
+        throw new Error(
+          `${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE} of ${value.abs().toString()} (remaining uncovered: ${remainingValue.toString()})`,
+        );
       }
     }
   }

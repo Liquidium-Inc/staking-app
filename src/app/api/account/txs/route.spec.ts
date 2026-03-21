@@ -86,7 +86,7 @@ describe('GET', () => {
     expect(runeProvider.runes.walletActivity).toHaveBeenCalledWith({
       address,
       rune_id: runeId,
-      count: 2000,
+      count: 5000,
     });
   });
 });
