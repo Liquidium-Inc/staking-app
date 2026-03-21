@@ -31,10 +31,8 @@ export default function PortfolioPage() {
 
   const tokenPrice = Big(rune.priceSats ?? 0)
     .times(btc.price)
-    .div(100_000_000)
-    .toNumber();
-
-  const dailyYield = apy.daily * stakedBalance;
+    .div(100_000_000);
+  const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
   const displayExchangeRate = Number.isFinite(exchangeRate)
     ? exchangeRate
     : historicRates && historicRates.length > 0
@@ -227,11 +225,11 @@ export default function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl font-semibold">
-                {formatCurrency(dailyYield, rune.decimals)}
+                {formatCurrency(dailyYieldBig.toString(), rune.decimals)}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(dailyYield * tokenPrice)} USD
+              ${formatCurrency(dailyYieldBig.times(tokenPrice).toString())} USD
             </div>
           </Card>
 

@@ -113,6 +113,7 @@ describe('computeEarnings', () => {
   });
 
   it.skip('throws error when not enough slots to cover withdrawal', async () => {
+    // TODO(DEV-2704): re-enable once computeEarnings restores explicit insufficient-slot errors.
     const values = [
       { block: 100, value: new Big(10) },
       { block: 200, value: new Big(-20) },

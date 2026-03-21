@@ -55,7 +55,8 @@ export const computeEarnings = (
       while (remainingValue.gt(0)) {
         const slot = slots.peek();
         if (!slot) break;
-        // throw new Error(`No enough slots to cover ${value} (remaining: ${remainingValue})`);
+        // TODO(DEV-2704): decide whether insufficient-slot withdrawals should throw or stay permissive,
+        // then align callers and re-enable the matching spec before changing this behavior.
         if (slot.value.gt(remainingValue)) {
           slot.value = slot.value.minus(remainingValue);
           realized = realized.plus(remainingValue.times(rate.minus(slot.rate)));
@@ -76,7 +77,9 @@ export const computeEarnings = (
 
   const total = realized.plus(unrealized);
   const totalValue = [...slots].reduce((acc, slot) => acc.plus(slot.value), zero);
-  const percentage = totalValue.gt(0) ? total.times(100).div(totalValue) : zero;
+  const percentage = totalValue.gt(0)
+    ? total.times(100).div(totalValue).round(Big.DP, Big.RM)
+    : zero;
 
   return { realized, unrealized, total, percentage, slots, invested, rate };
 };
