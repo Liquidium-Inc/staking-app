@@ -35,6 +35,14 @@ export default function PortfolioPage() {
     .toNumber();
 
   const dailyYield = apy.daily * stakedBalance;
+  const displayExchangeRate = Number.isFinite(exchangeRate)
+    ? exchangeRate
+    : historicRates && historicRates.length > 0
+      ? Number(historicRates[historicRates.length - 1]!.rate)
+      : 1;
+  const stakedBalanceBig = Big(stakedBalance);
+  const liqValue = stakedBalanceBig.times(displayExchangeRate);
+  const stakedValueUsd = liqValue.times(tokenPrice);
 
   const earnings = useMemo(() => {
     const multiplier = {
@@ -183,11 +191,11 @@ export default function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl font-semibold">
-                {formatCurrency(stakedBalance * exchangeRate, rune.decimals)}
+                {formatCurrency(liqValue.toString(), rune.decimals)}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedValueUsd.toString())} USD
             </div>
           </Card>
 
@@ -205,7 +213,7 @@ export default function PortfolioPage() {
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedValueUsd.toString())} USD
             </div>
           </Card>
 

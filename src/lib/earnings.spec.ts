@@ -33,7 +33,7 @@ vi.mock('yocto-queue', () => {
 
 describe('computeEarnings', () => {
   const expectBig = (value: Big, expected: string) => {
-    expect(value.eq(expected)).toBe(true);
+    expect(value.toString()).toBe(expected);
   };
 
   beforeEach(() => {
@@ -106,6 +106,10 @@ describe('computeEarnings', () => {
     const apys = [{ block: 200, value: new Big('0.05') }];
 
     expect(() => computeEarnings(values, apys)).toThrow('No rate found for block 100');
+  });
+
+  it('throws error when no rates are provided', () => {
+    expect(() => computeEarnings([], [])).toThrow('No rates provided');
   });
 
   it.skip('throws error when not enough slots to cover withdrawal', async () => {

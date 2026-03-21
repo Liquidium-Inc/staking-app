@@ -34,6 +34,10 @@ export const computeEarnings = (
   values: EarningsEntry[],
   rates: EarningsEntry[],
 ): EarningsResult => {
+  if (rates.length === 0) {
+    throw new Error('No rates provided');
+  }
+
   const zero = new Big(0);
   let realized = zero;
   let invested = zero;
