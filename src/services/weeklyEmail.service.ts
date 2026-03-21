@@ -35,7 +35,8 @@ type WeeklyEarningsContext = {
 };
 
 const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const ALL_ACTIVITY_HISTORY_COUNT = Number.MAX_SAFE_INTEGER;
+const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
+const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -155,7 +156,40 @@ function calculateEarningsFromActivity(
 }
 
 /**
- * Loads a user's full staking activity and returns their weekly earnings when reconstruction succeeds.
+ * Calculates weekly earnings using a recent-window fetch first, then a bounded history fallback.
+ */
+async function calculateBoundedWeeklyEarnings(
+  address: string,
+  context: WeeklyEarningsContext,
+): Promise<Big> {
+  const recentQuery = {
+    address,
+    rune_id: publicConfig.sRune.id,
+    count: RECENT_WEEKLY_ACTIVITY_COUNT,
+    newerThan: new Date(context.sevenDaysAgoTimestamp),
+  };
+
+  const { data: recentActivity } = await runeProvider.runes.walletActivity(recentQuery);
+
+  try {
+    return calculateEarningsFromActivity(recentActivity, context);
+  } catch (error) {
+    if (!isInsufficientEarningsSlotsError(error)) {
+      throw error;
+    }
+  }
+
+  const { data: boundedHistoryActivity } = await runeProvider.runes.walletActivity({
+    address,
+    rune_id: publicConfig.sRune.id,
+    count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+  });
+
+  return calculateEarningsFromActivity(boundedHistoryActivity, context);
+}
+
+/**
+ * Loads a user's staking activity and returns their weekly earnings when reconstruction succeeds.
  */
 async function calculateUserEarnings(
   address: string,
@@ -168,13 +202,7 @@ async function calculateUserEarnings(
 
   const earningsPromise = (async (): Promise<Big | null> => {
     try {
-      const { data: activity } = await runeProvider.runes.walletActivity({
-        address,
-        rune_id: publicConfig.sRune.id,
-        count: ALL_ACTIVITY_HISTORY_COUNT,
-      });
-
-      return calculateEarningsFromActivity(activity, context);
+      return await calculateBoundedWeeklyEarnings(address, context);
     } catch (error) {
       if (isInsufficientEarningsSlotsError(error)) {
         logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);

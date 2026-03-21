@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
 
-const ALL_ACTIVITY_HISTORY_COUNT = Number.MAX_SAFE_INTEGER;
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 2000;
 const runeId = config.sRune.id;
 
 export async function GET(request: Request) {
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
   const { data: activity } = await runeProvider.runes.walletActivity({
     address,
     rune_id: runeId,
-    // Fetch the full activity history so FIFO earnings reconstruction does not start from a windowed ledger.
-    count: ALL_ACTIVITY_HISTORY_COUNT,
+    // Keep the portfolio response bounded so page load time does not scale with the full wallet history.
+    count: PORTFOLIO_ACTIVITY_HISTORY_COUNT,
   });
 
   const only_runes = activity.filter((tx) => tx.rune_id === runeId);

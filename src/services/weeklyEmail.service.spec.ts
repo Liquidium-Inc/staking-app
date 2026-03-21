@@ -5,6 +5,9 @@ import { config as publicConfig } from '@/config/public';
 
 import { runWeeklyEmailCron } from './weeklyEmail.service';
 
+const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
+const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
+
 const mocks = vi.hoisted(() => ({
   db: {
     emailSubscription: {
@@ -95,7 +98,8 @@ describe('runWeeklyEmailCron', () => {
       expect.objectContaining({
         address: 'bc1qtestaddress',
         rune_id: publicConfig.sRune.id,
-        count: Number.MAX_SAFE_INTEGER,
+        count: RECENT_WEEKLY_ACTIVITY_COUNT,
+        newerThan: expect.any(Date),
       }),
     );
     expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(1);
@@ -211,25 +215,35 @@ describe('runWeeklyEmailCron', () => {
       data: [{ rune_id: publicConfig.sRune.id, total_balance: '600' }],
       block_height: 100,
     });
-    mocks.runeProvider.runes.walletActivity.mockResolvedValue({
-      data: [
-        {
-          timestamp: '2026-03-18T12:00:00.000Z',
-          rune_id: publicConfig.sRune.id,
-          amount: '4',
-          decimals: 0,
-          event_type: 'input',
-        },
-        {
-          timestamp: '2026-03-10T12:00:00.000Z',
-          rune_id: publicConfig.sRune.id,
-          amount: '10',
-          decimals: 0,
-          event_type: 'output',
-        },
-      ],
-      block_height: 0,
-    });
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ newerThan, count }) => ({
+      data: newerThan
+        ? [
+            {
+              timestamp: '2026-03-18T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '4',
+              decimals: 0,
+              event_type: 'input',
+            },
+          ]
+        : [
+            {
+              timestamp: '2026-03-18T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '4',
+              decimals: 0,
+              event_type: 'input',
+            },
+            {
+              timestamp: '2026-03-10T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '10',
+              decimals: 0,
+              event_type: 'output',
+            },
+          ],
+      block_height: count === MAX_WEEKLY_ACTIVITY_HISTORY_COUNT ? 1 : 0,
+    }));
 
     const promise = runWeeklyEmailCron();
     await vi.runAllTimersAsync();
@@ -239,6 +253,20 @@ describe('runWeeklyEmailCron', () => {
 
     expect(emailCall?.earnedLiq.toString()).toBe('2.6');
     expect(emailCall?.totalRewardsDistributed.toString()).toBe('2.6');
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        address: 'bc1qtestaddress',
+        rune_id: publicConfig.sRune.id,
+        count: RECENT_WEEKLY_ACTIVITY_COUNT,
+        newerThan: expect.any(Date),
+      }),
+    );
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenNthCalledWith(2, {
+      address: 'bc1qtestaddress',
+      rune_id: publicConfig.sRune.id,
+      count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+    });
     expect(result).toMatchObject({
       emailsSent: 1,
       emailsSkipped: 0,
@@ -287,6 +315,20 @@ describe('runWeeklyEmailCron', () => {
 
     expect(mocks.emailService.generateWeeklyReportEmail).not.toHaveBeenCalled();
     expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        address: 'bc1qtestaddress',
+        rune_id: publicConfig.sRune.id,
+        count: RECENT_WEEKLY_ACTIVITY_COUNT,
+        newerThan: expect.any(Date),
+      }),
+    );
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenNthCalledWith(2, {
+      address: 'bc1qtestaddress',
+      rune_id: publicConfig.sRune.id,
+      count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+    });
     expect(mocks.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Skipping weekly earnings for address bc1qtestaddress'),
       expect.any(Error),
