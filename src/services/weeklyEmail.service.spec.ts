@@ -31,9 +31,16 @@ const mocks = vi.hoisted(() => ({
   runePrice: {
     resolveRunePriceUsd: vi.fn(),
   },
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock('@/db', () => ({ db: mocks.db }));
+vi.mock('@/lib/logger', () => ({ logger: mocks.logger }));
 vi.mock('@/providers/canister', () => ({ canister: mocks.canister }));
 vi.mock('@/providers/email', () => ({ emailService: mocks.emailService }));
 vi.mock('@/providers/rune-provider', () => ({ runeProvider: mocks.runeProvider }));
@@ -88,8 +95,7 @@ describe('runWeeklyEmailCron', () => {
       expect.objectContaining({
         address: 'bc1qtestaddress',
         rune_id: publicConfig.sRune.id,
-        count: 1000,
-        newerThan: expect.any(Date),
+        count: Number.MAX_SAFE_INTEGER,
       }),
     );
     expect(mocks.emailService.generateWeeklyReportEmail).toHaveBeenCalledOnce();
@@ -173,5 +179,120 @@ describe('runWeeklyEmailCron', () => {
     expect(firstCall?.totalRewardsDistributed.toString()).toBe('0.21');
     expect(secondCall?.totalRewardsDistributed.toString()).toBe('0.21');
     expect(result.totalRewardsDistributed).toBe(0.21);
+  });
+
+  it('reconstructs weekly earnings from full history when a recent withdrawal consumes an older slot', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-10T12:00:00.000Z'),
+        block: 1,
+        balance: '10',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-18T12:00:00.000Z'),
+        block: 2,
+        balance: '12',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 3,
+        balance: '13',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '600' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockResolvedValue({
+      data: [
+        {
+          timestamp: '2026-03-18T12:00:00.000Z',
+          rune_id: publicConfig.sRune.id,
+          amount: '4',
+          decimals: 0,
+          event_type: 'input',
+        },
+        {
+          timestamp: '2026-03-10T12:00:00.000Z',
+          rune_id: publicConfig.sRune.id,
+          amount: '10',
+          decimals: 0,
+          event_type: 'output',
+        },
+      ],
+      block_height: 0,
+    });
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    const emailCall = mocks.emailService.generateWeeklyReportEmail.mock.calls[0]?.[0];
+
+    expect(emailCall?.earnedLiq.toString()).toBe('2.6');
+    expect(emailCall?.totalRewardsDistributed.toString()).toBe('2.6');
+    expect(result).toMatchObject({
+      emailsSent: 1,
+      emailsSkipped: 0,
+      totalRewardsDistributed: 2.6,
+    });
+  });
+
+  it('skips weekly emails and logs clearly when FIFO reconstruction still fails', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-18T12:00:00.000Z'),
+        block: 2,
+        balance: '12',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 3,
+        balance: '13',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '600' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockResolvedValue({
+      data: [
+        {
+          timestamp: '2026-03-18T12:00:00.000Z',
+          rune_id: publicConfig.sRune.id,
+          amount: '4',
+          decimals: 0,
+          event_type: 'input',
+        },
+      ],
+      block_height: 0,
+    });
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mocks.emailService.generateWeeklyReportEmail).not.toHaveBeenCalled();
+    expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Skipping weekly earnings for address bc1qtestaddress'),
+      expect.any(Error),
+    );
+    expect(result).toMatchObject({
+      emailsSent: 0,
+      emailsSkipped: 1,
+      totalRewardsDistributed: 0,
+    });
   });
 });

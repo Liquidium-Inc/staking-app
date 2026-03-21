@@ -17,8 +17,15 @@ import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/comp
 import { config } from '@/config/public';
 import { useProtocol } from '@/hooks/api/useProtocol';
 import { useWalletActivity } from '@/hooks/api/useWalletActivity';
-import { computeEarnings, type EarningsEntry } from '@/lib/earnings';
+import { computeEarnings, createEmptyEarningsResult, type EarningsEntry } from '@/lib/earnings';
 import { formatCurrency } from '@/lib/formatCurrency';
+
+/**
+ * Normalizes debug earnings failures into a visible message.
+ */
+function getDebugEarningsErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown earnings calculation error';
+}
 
 function PortfolioPage() {
   const { address } = useLaserEyes();
@@ -79,9 +86,20 @@ function PortfolioPage() {
     }
   }, [protocol.historicRates]);
 
-  const earnings = useMemo(() => {
-    return computeEarnings(txs, rates);
+  const earningsState = useMemo(() => {
+    try {
+      return {
+        result: computeEarnings(txs, rates),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        result: createEmptyEarningsResult(rates[rates.length - 1]?.value ?? new Big(0)),
+        error: getDebugEarningsErrorMessage(error),
+      };
+    }
   }, [txs, rates]);
+  const earnings = earningsState.result;
 
   // Memoize the data transformation
   const exchangeRateData = useMemo(() => {
@@ -192,6 +210,16 @@ function PortfolioPage() {
   return (
     <TooltipProvider delayDuration={100}>
       <div className="m-4 flex w-full max-w-md flex-col items-center justify-center space-y-3 md:my-10">
+        {earningsState.error && (
+          <Card className="w-full border-red-500/40 bg-red-500/5">
+            <CardHeader className="pb-2">
+              <h3>Earnings Error</h3>
+            </CardHeader>
+            <CardContent className="px-2 pb-3 text-sm text-red-200">
+              {earningsState.error}
+            </CardContent>
+          </Card>
+        )}
         <Card className="w-full space-y-1">
           <CardHeader className="flex">
             <h3>Total Earned</h3>
@@ -209,9 +237,11 @@ function PortfolioPage() {
             <span className="text-4xl font-semibold">
               {formatCurrency(earnings.total.toString(), config.rune.decimals)}
             </span>
-            <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
-              +{formatCurrency(earnings.percentage.toString())}%
-            </div>
+            {!earningsState.error && (
+              <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
+                +{formatCurrency(earnings.percentage.toString())}%
+              </div>
+            )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
             ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD

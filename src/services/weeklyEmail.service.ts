@@ -3,7 +3,8 @@ import Big from 'big.js';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { computeApyFromHistoric } from '@/lib/apy';
-import { computeEarnings } from '@/lib/earnings';
+import { binarySearch } from '@/lib/binarySearch';
+import { computeEarnings, isInsufficientEarningsSlotsError } from '@/lib/earnings';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { emailService } from '@/providers/email';
@@ -28,8 +29,12 @@ type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string;
 type WeeklyEarningsContext = {
   historic: HistoricBalances;
   rates: Array<{ timestamp: Date; block: number; rate: Big }>;
+  evaluationTimestamp: number;
   sevenDaysAgoTimestamp: number;
 };
+
+const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ALL_ACTIVITY_HISTORY_COUNT = Number.MAX_SAFE_INTEGER;
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -70,13 +75,47 @@ function getExchangeRates(historic: HistoricBalances) {
  * Builds a single weekly earnings snapshot so every email computation uses the same rates and time cutoff.
  */
 function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarningsContext {
+  const evaluationTimestamp = Date.now();
+
   return {
     historic,
     rates: getExchangeRates(historic),
-    sevenDaysAgoTimestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
+    evaluationTimestamp,
+    sevenDaysAgoTimestamp: evaluationTimestamp - WEEKLY_EARNINGS_WINDOW_MS,
   };
 }
 
+/**
+ * Builds the rate timeline needed to evaluate earnings at a specific point in time.
+ */
+function buildRateValuesAtTimestamp(
+  context: WeeklyEarningsContext,
+  evaluationTimestamp: number,
+): Array<{ value: Big; block: number }> {
+  const fallbackRate = new Big(1);
+  const rateAtTimestamp =
+    binarySearch(context.rates, (rate) => rate.timestamp.valueOf(), evaluationTimestamp)?.rate ??
+    fallbackRate;
+  const rateValues = [
+    { value: fallbackRate, block: 0 },
+    ...context.rates
+      .filter(({ timestamp }) => timestamp.valueOf() <= evaluationTimestamp)
+      .map(({ rate, timestamp }) => ({
+        value: rate,
+        block: timestamp.valueOf(),
+      })),
+  ];
+
+  if (rateValues[rateValues.length - 1]?.block !== evaluationTimestamp) {
+    rateValues.push({ value: rateAtTimestamp, block: evaluationTimestamp });
+  }
+
+  return rateValues;
+}
+
+/**
+ * Computes weekly earnings by comparing full-history earnings now versus seven days ago.
+ */
 function calculateEarningsFromActivity(
   activity: Array<{
     timestamp: string;
@@ -93,51 +132,49 @@ function calculateEarningsFromActivity(
   } as const;
 
   const values = activity
-    .filter(
-      (tx) =>
-        new Date(tx.timestamp).valueOf() >= context.sevenDaysAgoTimestamp &&
-        tx.rune_id === publicConfig.sRune.id,
-    )
+    .filter((tx) => tx.rune_id === publicConfig.sRune.id)
     .map((tx) => {
       const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
       const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult);
       return { value, block: new Date(tx.timestamp).valueOf() };
     })
     .reverse();
+  const currentValues = values.filter(({ block }) => block <= context.evaluationTimestamp);
+  const currentEarnings = computeEarnings(
+    currentValues,
+    buildRateValuesAtTimestamp(context, context.evaluationTimestamp),
+  );
+  const baselineEarnings = computeEarnings(
+    currentValues.filter(({ block }) => block <= context.sevenDaysAgoTimestamp),
+    buildRateValuesAtTimestamp(context, context.sevenDaysAgoTimestamp),
+  );
 
-  const rateValues = [
-    { value: new Big(1), block: 0 },
-    ...context.rates.map(({ rate, timestamp }: { rate: Big; timestamp: Date }) => ({
-      value: rate,
-      block: timestamp.valueOf(),
-    })),
-    {
-      value: context.rates[context.rates.length - 1]?.rate ?? new Big(1),
-      block: Number.POSITIVE_INFINITY,
-    },
-  ];
-
-  return computeEarnings(values, rateValues);
+  return currentEarnings.total.minus(baselineEarnings.total);
 }
 
+/**
+ * Loads a user's full staking activity and returns their weekly earnings when reconstruction succeeds.
+ */
 async function calculateUserEarnings(
   address: string,
   context: WeeklyEarningsContext,
-): Promise<Big> {
+): Promise<Big | null> {
   try {
     const { data: activity } = await runeProvider.runes.walletActivity({
       address,
       rune_id: publicConfig.sRune.id,
-      count: 1000,
-      newerThan: new Date(context.sevenDaysAgoTimestamp),
+      count: ALL_ACTIVITY_HISTORY_COUNT,
     });
 
-    const earnings = calculateEarningsFromActivity(activity, context);
-
-    return earnings.total;
+    return calculateEarningsFromActivity(activity, context);
   } catch (error) {
-    logger.error(`Failed to calculate earnings for address ${address}:`, error);
-    return new Big(0);
+    if (isInsufficientEarningsSlotsError(error)) {
+      logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);
+    } else {
+      logger.error(`Failed to calculate weekly earnings for address ${address}:`, error);
+    }
+
+    return null;
   }
 }
 
@@ -167,17 +204,10 @@ async function calculateTotalRewardsDistributed(
     let totalRewards = new Big(0);
 
     for (const user of users) {
-      try {
-        const { data: activity } = await runeProvider.runes.walletActivity({
-          address: user.address,
-          rune_id: publicConfig.sRune.id,
-          count: 1000,
-          newerThan: new Date(context.sevenDaysAgoTimestamp),
-        });
-        const earnings = calculateEarningsFromActivity(activity, context);
-        totalRewards = totalRewards.plus(earnings.total);
-      } catch (error) {
-        logger.warn(`Failed to calculate rewards for user ${user.address}:`, error);
+      const earnings = await calculateUserEarnings(user.address, context);
+
+      if (earnings !== null) {
+        totalRewards = totalRewards.plus(earnings);
       }
     }
 
@@ -232,6 +262,10 @@ async function processUserEmail(
     }
 
     const earnedLiq = await calculateUserEarnings(user.address, context);
+    if (earnedLiq === null) {
+      return { success: false, skipped: true };
+    }
+
     const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPriceBig);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({

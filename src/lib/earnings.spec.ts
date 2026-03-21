@@ -2,7 +2,7 @@ import Big from 'big.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
-import { computeEarnings } from './earnings.ts';
+import { computeEarnings, INSUFFICIENT_EARNINGS_SLOTS_MESSAGE } from './earnings.ts';
 
 vi.mock('yocto-queue', () => {
   return {
@@ -112,8 +112,7 @@ describe('computeEarnings', () => {
     expect(() => computeEarnings([], [])).toThrow('No rates provided');
   });
 
-  it.skip('throws error when not enough slots to cover withdrawal', async () => {
-    // TODO(DEV-2704): re-enable once computeEarnings restores explicit insufficient-slot errors.
+  it('throws error when not enough slots to cover withdrawal', async () => {
     const values = [
       { block: 100, value: new Big(10) },
       { block: 200, value: new Big(-20) },
@@ -124,6 +123,8 @@ describe('computeEarnings', () => {
       { block: 200, value: new Big('0.07') },
     ];
 
-    expect(() => computeEarnings(values, apys)).toThrow(/No enough slots to cover/);
+    expect(() => computeEarnings(values, apys)).toThrow(
+      new RegExp(`${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE} of 20`),
+    );
   });
 });
