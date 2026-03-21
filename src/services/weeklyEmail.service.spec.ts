@@ -1,3 +1,4 @@
+import Big from 'big.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { config as publicConfig } from '@/config/public';
@@ -44,6 +45,7 @@ describe('runWeeklyEmailCron', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-20T12:00:00.000Z'));
 
     mocks.db.emailSubscription.deleteExpiredTokens.mockResolvedValue(undefined);
     mocks.db.emailSubscription.getActiveVerifiedUsers.mockResolvedValue([
@@ -98,5 +100,78 @@ describe('runWeeklyEmailCron', () => {
       emailsSent: 1,
       emailsSkipped: 0,
     });
+  });
+
+  it('keeps weekly earnings as Big values until the final cron result boundary', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+
+    mocks.db.emailSubscription.getActiveVerifiedUsers.mockResolvedValue([
+      { address: 'bc1quserone', email: 'one@example.com' },
+      { address: 'bc1qusertwo', email: 'two@example.com' },
+    ]);
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-14T12:00:00.000Z'),
+        block: 1,
+        balance: '10',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 2,
+        balance: '15',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockImplementation(async ({ address }) => ({
+      data: [
+        {
+          rune_id: publicConfig.sRune.id,
+          total_balance: address === 'bc1quserone' ? '1000' : '2000',
+        },
+      ],
+      block_height: 100,
+    }));
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ address }) => ({
+      data:
+        address === 'bc1quserone'
+          ? [
+              {
+                timestamp: '2026-03-14T12:00:00.000Z',
+                rune_id: publicConfig.sRune.id,
+                amount: '3',
+                decimals: 1,
+                event_type: 'output',
+              },
+            ]
+          : [
+              {
+                timestamp: '2026-03-15T12:00:00.000Z',
+                rune_id: publicConfig.sRune.id,
+                amount: '12',
+                decimals: 2,
+                event_type: 'output',
+              },
+            ],
+      block_height: 0,
+    }));
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mocks.emailService.generateWeeklyReportEmail).toHaveBeenCalledTimes(2);
+
+    const firstCall = mocks.emailService.generateWeeklyReportEmail.mock.calls[0]?.[0];
+    const secondCall = mocks.emailService.generateWeeklyReportEmail.mock.calls[1]?.[0];
+
+    expect(firstCall?.earnedLiq).toBeInstanceOf(Big);
+    expect(firstCall?.totalRewardsDistributed).toBeInstanceOf(Big);
+    expect(firstCall?.earnedLiq.toString()).toBe('0.15');
+    expect(secondCall?.earnedLiq.toString()).toBe('0.06');
+    expect(firstCall?.totalRewardsDistributed.toString()).toBe('0.21');
+    expect(secondCall?.totalRewardsDistributed.toString()).toBe('0.21');
+    expect(result.totalRewardsDistributed).toBe(0.21);
   });
 });
