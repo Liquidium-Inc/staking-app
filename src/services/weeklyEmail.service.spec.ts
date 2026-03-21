@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { config as publicConfig } from '@/config/public';
 
-import { runWeeklyEmailCron } from './weeklyEmail.service';
-
-const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
-const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
-const WEEKLY_EARNINGS_CONCURRENCY = 5;
+import {
+  MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+  RECENT_WEEKLY_ACTIVITY_COUNT,
+  runWeeklyEmailCron,
+  WEEKLY_EARNINGS_CONCURRENCY,
+} from './weeklyEmail.service';
 
 const mocks = vi.hoisted(() => ({
   db: {

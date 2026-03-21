@@ -35,9 +35,9 @@ type WeeklyEarningsContext = {
 };
 
 const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
-const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
-const WEEKLY_EARNINGS_CONCURRENCY = 5;
+export const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
+export const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
+export const WEEKLY_EARNINGS_CONCURRENCY = 5;
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
