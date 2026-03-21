@@ -274,7 +274,7 @@ async function calculateTotalRewardsDistributed(
       async (user) => calculateUserEarnings(user.address, context),
     );
 
-    return earningsByUser.reduce((totalRewards, earnings) => {
+    return earningsByUser.reduce<Big>((totalRewards, earnings) => {
       if (earnings === null) {
         return totalRewards;
       }
