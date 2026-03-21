@@ -31,6 +31,7 @@ type WeeklyEarningsContext = {
   rates: Array<{ timestamp: Date; block: number; rate: Big }>;
   evaluationTimestamp: number;
   sevenDaysAgoTimestamp: number;
+  earningsByAddress: Map<string, Promise<Big | null>>;
 };
 
 const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -82,6 +83,7 @@ function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarnings
     rates: getExchangeRates(historic),
     evaluationTimestamp,
     sevenDaysAgoTimestamp: evaluationTimestamp - WEEKLY_EARNINGS_WINDOW_MS,
+    earningsByAddress: new Map<string, Promise<Big | null>>(),
   };
 }
 
@@ -159,23 +161,33 @@ async function calculateUserEarnings(
   address: string,
   context: WeeklyEarningsContext,
 ): Promise<Big | null> {
-  try {
-    const { data: activity } = await runeProvider.runes.walletActivity({
-      address,
-      rune_id: publicConfig.sRune.id,
-      count: ALL_ACTIVITY_HISTORY_COUNT,
-    });
-
-    return calculateEarningsFromActivity(activity, context);
-  } catch (error) {
-    if (isInsufficientEarningsSlotsError(error)) {
-      logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);
-    } else {
-      logger.error(`Failed to calculate weekly earnings for address ${address}:`, error);
-    }
-
-    return null;
+  const cached = context.earningsByAddress.get(address);
+  if (cached) {
+    return cached;
   }
+
+  const earningsPromise = (async (): Promise<Big | null> => {
+    try {
+      const { data: activity } = await runeProvider.runes.walletActivity({
+        address,
+        rune_id: publicConfig.sRune.id,
+        count: ALL_ACTIVITY_HISTORY_COUNT,
+      });
+
+      return calculateEarningsFromActivity(activity, context);
+    } catch (error) {
+      if (isInsufficientEarningsSlotsError(error)) {
+        logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);
+      } else {
+        logger.error(`Failed to calculate weekly earnings for address ${address}:`, error);
+      }
+
+      return null;
+    }
+  })();
+
+  context.earningsByAddress.set(address, earningsPromise);
+  return earningsPromise;
 }
 
 function getProtocolApy(context: WeeklyEarningsContext): {

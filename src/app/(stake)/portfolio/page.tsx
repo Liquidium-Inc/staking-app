@@ -48,19 +48,14 @@ export default function PortfolioPage() {
     .times(btc.price)
     .div(100_000_000);
   const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
-  const displayExchangeRate = Number.isFinite(exchangeRate)
+  const resolvedExchangeRate = Number.isFinite(exchangeRate)
     ? exchangeRate
     : historicRates && historicRates.length > 0
       ? Number(historicRates[historicRates.length - 1]!.rate)
       : 1;
   const stakedBalanceBig = Big(stakedBalance);
-  const liqValue = stakedBalanceBig.times(displayExchangeRate);
+  const liqValue = stakedBalanceBig.times(resolvedExchangeRate);
   const stakedValueUsd = liqValue.times(tokenPrice);
-  const latestRate = Number.isFinite(exchangeRate)
-    ? exchangeRate
-    : historicRates && historicRates.length > 0
-      ? Number(historicRates[historicRates.length - 1]!.rate)
-      : 1;
 
   const earningsState = useMemo(() => {
     const multiplier = {
@@ -79,7 +74,7 @@ export default function PortfolioPage() {
         value: new Big(rate),
         block: new Date(timestamp).valueOf(),
       })) ?? []),
-      { value: new Big(latestRate), block: Number.POSITIVE_INFINITY },
+      { value: new Big(resolvedExchangeRate), block: Number.POSITIVE_INFINITY },
     ];
 
     try {
@@ -89,11 +84,11 @@ export default function PortfolioPage() {
       };
     } catch (error) {
       return {
-        result: createEmptyEarningsResult(new Big(latestRate)),
+        result: createEmptyEarningsResult(new Big(resolvedExchangeRate)),
         error: getPortfolioEarningsErrorMessage(error),
       };
     }
-  }, [activity, historicRates, latestRate]);
+  }, [activity, historicRates, resolvedExchangeRate]);
   const earnings = earningsState.result;
 
   // Memoize the data transformation

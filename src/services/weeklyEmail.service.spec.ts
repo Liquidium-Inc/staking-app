@@ -98,6 +98,7 @@ describe('runWeeklyEmailCron', () => {
         count: Number.MAX_SAFE_INTEGER,
       }),
     );
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(1);
     expect(mocks.emailService.generateWeeklyReportEmail).toHaveBeenCalledOnce();
     expect(mocks.emailService.sendEmail).toHaveBeenCalledOnce();
     expect(result).toMatchObject({
@@ -178,6 +179,7 @@ describe('runWeeklyEmailCron', () => {
     expect(secondCall?.earnedLiq.toString()).toBe('0.06');
     expect(firstCall?.totalRewardsDistributed.toString()).toBe('0.21');
     expect(secondCall?.totalRewardsDistributed.toString()).toBe('0.21');
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(2);
     expect(result.totalRewardsDistributed).toBe(0.21);
   });
 
