@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
 
-const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 2000;
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
 const runeId = config.sRune.id;
 
 export async function GET(request: Request) {

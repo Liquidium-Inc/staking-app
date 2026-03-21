@@ -37,6 +37,7 @@ type WeeklyEarningsContext = {
 const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
 const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
+const WEEKLY_EARNINGS_CONCURRENCY = 5;
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -45,6 +46,31 @@ function maskEmail(email: string): string {
     return `${local[0] ?? '*'}***@${domain}`;
   }
   return `${local[0]}***${local.slice(-1)}@${domain}`;
+}
+
+/**
+ * Runs async work over a list with bounded concurrency while preserving result order.
+ */
+async function mapWithConcurrencyLimit<T, TResult>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function getExchangeRates(historic: HistoricBalances) {
@@ -207,6 +233,7 @@ async function calculateUserEarnings(
       if (isInsufficientEarningsSlotsError(error)) {
         logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);
       } else {
+        context.earningsByAddress.delete(address);
         logger.error(`Failed to calculate weekly earnings for address ${address}:`, error);
       }
 
@@ -241,17 +268,19 @@ async function calculateTotalRewardsDistributed(
   context: WeeklyEarningsContext,
 ): Promise<Big> {
   try {
-    let totalRewards = new Big(0);
+    const earningsByUser = await mapWithConcurrencyLimit(
+      users,
+      WEEKLY_EARNINGS_CONCURRENCY,
+      async (user) => calculateUserEarnings(user.address, context),
+    );
 
-    for (const user of users) {
-      const earnings = await calculateUserEarnings(user.address, context);
-
-      if (earnings !== null) {
-        totalRewards = totalRewards.plus(earnings);
+    return earningsByUser.reduce((totalRewards, earnings) => {
+      if (earnings === null) {
+        return totalRewards;
       }
-    }
 
-    return totalRewards;
+      return totalRewards.plus(earnings);
+    }, new Big(0));
   } catch (error) {
     logger.error('Failed to calculate total rewards distributed:', error);
     return new Big(0);

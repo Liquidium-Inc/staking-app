@@ -48,43 +48,53 @@ export default function PortfolioPage() {
     .times(btc.price)
     .div(100_000_000);
   const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
-  const resolvedExchangeRate = Number.isFinite(exchangeRate)
-    ? exchangeRate
-    : historicRates && historicRates.length > 0
-      ? Number(historicRates[historicRates.length - 1]!.rate)
-      : 1;
+  const resolvedExchangeRate = useMemo(() => {
+    try {
+      if (Number.isFinite(exchangeRate)) {
+        return new Big(exchangeRate);
+      }
+
+      if (historicRates && historicRates.length > 0) {
+        return new Big(historicRates[historicRates.length - 1]!.rate);
+      }
+    } catch {
+      return new Big(1);
+    }
+
+    return new Big(1);
+  }, [exchangeRate, historicRates]);
   const stakedBalanceBig = Big(stakedBalance);
   const liqValue = stakedBalanceBig.times(resolvedExchangeRate);
   const stakedValueUsd = liqValue.times(tokenPrice);
 
   const earningsState = useMemo(() => {
-    const multiplier = {
-      input: -1,
-      output: 1,
-    } satisfies Record<(typeof activity)[number]['event_type'], number>;
-    const txs = activity
-      .map((tx) => ({
-        value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
-        block: new Date(tx.timestamp).valueOf(),
-      }))
-      .reverse();
-    const rates = [
-      { value: new Big(1), block: 0 },
-      ...(historicRates?.map(({ rate, timestamp }) => ({
-        value: new Big(rate),
-        block: new Date(timestamp).valueOf(),
-      })) ?? []),
-      { value: new Big(resolvedExchangeRate), block: Number.POSITIVE_INFINITY },
-    ];
-
     try {
+      const multiplier = {
+        input: -1,
+        output: 1,
+      } satisfies Record<(typeof activity)[number]['event_type'], number>;
+      const txs = activity
+        .map((tx) => ({
+          value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
+          block: new Date(tx.timestamp).valueOf(),
+        }))
+        .reverse();
+      const rates = [
+        { value: new Big(1), block: 0 },
+        ...(historicRates?.map(({ rate, timestamp }) => ({
+          value: new Big(rate),
+          block: new Date(timestamp).valueOf(),
+        })) ?? []),
+        { value: resolvedExchangeRate, block: Number.POSITIVE_INFINITY },
+      ];
+
       return {
         result: computeEarnings(txs, rates),
         error: null,
       };
     } catch (error) {
       return {
-        result: createEmptyEarningsResult(new Big(resolvedExchangeRate)),
+        result: createEmptyEarningsResult(resolvedExchangeRate),
         error: getPortfolioEarningsErrorMessage(error),
       };
     }

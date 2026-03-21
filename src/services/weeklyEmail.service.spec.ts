@@ -7,6 +7,7 @@ import { runWeeklyEmailCron } from './weeklyEmail.service';
 
 const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
 const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
+const WEEKLY_EARNINGS_CONCURRENCY = 5;
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -50,6 +51,23 @@ vi.mock('@/providers/rune-provider', () => ({ runeProvider: mocks.runeProvider }
 vi.mock('@/services/rune-price', () => ({
   resolveRunePriceUsd: mocks.runePrice.resolveRunePriceUsd,
 }));
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(iterations = 10) {
+  for (let index = 0; index < iterations; index += 1) {
+    await Promise.resolve();
+  }
+}
 
 describe('runWeeklyEmailCron', () => {
   beforeEach(() => {
@@ -337,6 +355,147 @@ describe('runWeeklyEmailCron', () => {
       emailsSent: 0,
       emailsSkipped: 1,
       totalRewardsDistributed: 0,
+    });
+  });
+
+  it('retries weekly earnings during send when the totals pass hit a transient fetch error', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+    const transientError = new Error('ordiscan temporarily unavailable');
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-14T12:00:00.000Z'),
+        block: 1,
+        balance: '10',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 2,
+        balance: '15',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '100' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity
+      .mockRejectedValueOnce(transientError)
+      .mockResolvedValue({
+        data: [
+          {
+            timestamp: '2026-03-14T12:00:00.000Z',
+            rune_id: publicConfig.sRune.id,
+            amount: '3',
+            decimals: 1,
+            event_type: 'output',
+          },
+        ],
+        block_height: 0,
+      });
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(2);
+    expect(mocks.emailService.generateWeeklyReportEmail).toHaveBeenCalledOnce();
+    expect(mocks.emailService.sendEmail).toHaveBeenCalledOnce();
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      'Failed to calculate weekly earnings for address bc1qtestaddress:',
+      transientError,
+    );
+    expect(result).toMatchObject({
+      emailsSent: 1,
+      emailsSkipped: 0,
+      totalRewardsDistributed: 0,
+    });
+  });
+
+  it('limits total rewards reconstruction to bounded concurrency', async () => {
+    const users = Array.from({ length: WEEKLY_EARNINGS_CONCURRENCY + 1 }, (_, index) => ({
+      address: `bc1qconcurrency${index}`,
+      email: `user${index}@example.com`,
+    }));
+    const pendingByAddress = new Map(
+      users.map((user) => [
+        user.address,
+        createDeferred<{
+          data: Array<{
+            timestamp: string;
+            rune_id: string;
+            amount: string;
+            decimals: number;
+            event_type: 'output';
+          }>;
+          block_height: number;
+        }>(),
+      ]),
+    );
+
+    mocks.db.emailSubscription.getActiveVerifiedUsers.mockResolvedValue(users);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '100' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ address }) => {
+      const deferred = pendingByAddress.get(address);
+      if (!deferred) {
+        throw new Error(`Missing deferred activity for ${address}`);
+      }
+
+      return deferred.promise;
+    });
+
+    const promise = runWeeklyEmailCron();
+    await flushMicrotasks();
+
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(
+      WEEKLY_EARNINGS_CONCURRENCY,
+    );
+
+    pendingByAddress.get(users[0]!.address)?.resolve({
+      data: [
+        {
+          timestamp: '2026-03-14T12:00:00.000Z',
+          rune_id: publicConfig.sRune.id,
+          amount: '3',
+          decimals: 1,
+          event_type: 'output',
+        },
+      ],
+      block_height: 0,
+    });
+
+    await flushMicrotasks();
+
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(
+      WEEKLY_EARNINGS_CONCURRENCY + 1,
+    );
+
+    for (const user of users.slice(1)) {
+      pendingByAddress.get(user.address)?.resolve({
+        data: [
+          {
+            timestamp: '2026-03-14T12:00:00.000Z',
+            rune_id: publicConfig.sRune.id,
+            amount: '3',
+            decimals: 1,
+            event_type: 'output',
+          },
+        ],
+        block_height: 0,
+      });
+    }
+
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result).toMatchObject({
+      emailsSent: WEEKLY_EARNINGS_CONCURRENCY + 1,
+      emailsSkipped: 0,
     });
   });
 });
