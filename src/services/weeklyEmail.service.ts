@@ -4,7 +4,11 @@ import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { computeApyFromHistoric } from '@/lib/apy';
 import { binarySearch } from '@/lib/binarySearch';
-import { computeEarnings, isInsufficientEarningsSlotsError } from '@/lib/earnings';
+import {
+  computeEarnings,
+  INSUFFICIENT_EARNINGS_SLOTS_MESSAGE,
+  isInsufficientEarningsSlotsError,
+} from '@/lib/earnings';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { emailService } from '@/providers/email';
@@ -38,6 +42,13 @@ const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
 export const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
 export const WEEKLY_EARNINGS_CONCURRENCY = 5;
+
+/**
+ * Returns whether an activity page may be truncated because it exactly filled the requested count.
+ */
+function isPossiblyTruncatedActivityPage<T>(activity: T[], requestedCount: number): boolean {
+  return activity.length === requestedCount;
+}
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -197,11 +208,13 @@ async function calculateBoundedWeeklyEarnings(
 
   const { data: recentActivity } = await runeProvider.runes.walletActivity(recentQuery);
 
-  try {
-    return calculateEarningsFromActivity(recentActivity, context);
-  } catch (error) {
-    if (!isInsufficientEarningsSlotsError(error)) {
-      throw error;
+  if (!isPossiblyTruncatedActivityPage(recentActivity, recentQuery.count)) {
+    try {
+      return calculateEarningsFromActivity(recentActivity, context);
+    } catch (error) {
+      if (!isInsufficientEarningsSlotsError(error)) {
+        throw error;
+      }
     }
   }
 
@@ -210,6 +223,12 @@ async function calculateBoundedWeeklyEarnings(
     rune_id: publicConfig.sRune.id,
     count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
   });
+
+  if (isPossiblyTruncatedActivityPage(boundedHistoryActivity, MAX_WEEKLY_ACTIVITY_HISTORY_COUNT)) {
+    throw new Error(
+      `${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE}: wallet activity hit the bounded weekly history limit`,
+    );
+  }
 
   return calculateEarningsFromActivity(boundedHistoryActivity, context);
 }

@@ -359,6 +359,116 @@ describe('runWeeklyEmailCron', () => {
     });
   });
 
+  it('falls back to bounded history when the recent activity page exactly fills its limit', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+    const fullRecentActivity = Array.from({ length: RECENT_WEEKLY_ACTIVITY_COUNT }, () => ({
+      timestamp: '2026-03-18T12:00:00.000Z',
+      rune_id: publicConfig.sRune.id,
+      amount: '1',
+      decimals: 0,
+      event_type: 'input',
+    }));
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-18T12:00:00.000Z'),
+        block: 2,
+        balance: '12',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 3,
+        balance: '13',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '600' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ newerThan }) => ({
+      data: newerThan
+        ? fullRecentActivity
+        : [
+            {
+              timestamp: '2026-03-18T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '4',
+              decimals: 0,
+              event_type: 'input',
+            },
+            {
+              timestamp: '2026-03-10T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '10',
+              decimals: 0,
+              event_type: 'output',
+            },
+          ],
+      block_height: 0,
+    }));
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    const emailCall = mocks.emailService.generateWeeklyReportEmail.mock.calls[0]?.[0];
+
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(2);
+    expect(emailCall?.earnedLiq.toString()).toBe('2.6');
+    expect(result).toMatchObject({
+      emailsSent: 1,
+      emailsSkipped: 0,
+      totalRewardsDistributed: 2.6,
+    });
+  });
+
+  it('skips weekly earnings when the bounded history page exactly fills its limit', async () => {
+    const fullRecentActivity = Array.from({ length: RECENT_WEEKLY_ACTIVITY_COUNT }, () => ({
+      timestamp: '2026-03-18T12:00:00.000Z',
+      rune_id: publicConfig.sRune.id,
+      amount: '1',
+      decimals: 0,
+      event_type: 'input',
+    }));
+    const fullBoundedHistoryActivity = Array.from(
+      { length: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT },
+      () => ({
+        timestamp: '2026-03-10T12:00:00.000Z',
+        rune_id: publicConfig.sRune.id,
+        amount: '1',
+        decimals: 0,
+        event_type: 'input',
+      }),
+    );
+
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ newerThan }) => ({
+      data: newerThan ? fullRecentActivity : fullBoundedHistoryActivity,
+      block_height: 0,
+    }));
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mocks.emailService.generateWeeklyReportEmail).not.toHaveBeenCalled();
+    expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(2);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Skipping weekly earnings for address bc1qtestaddress'),
+      expect.objectContaining({
+        message: expect.stringContaining('wallet activity hit the bounded weekly history limit'),
+      }),
+    );
+    expect(result).toMatchObject({
+      emailsSent: 0,
+      emailsSkipped: 1,
+      totalRewardsDistributed: 0,
+    });
+  });
+
   it('retries weekly earnings during send when the totals pass hit a transient fetch error', async () => {
     const supply = BigInt(publicConfig.sRune.supply);
     const sharedStaked = (supply - 10n).toString();
