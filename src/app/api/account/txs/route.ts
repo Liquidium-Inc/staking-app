@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
 
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
 const runeId = config.sRune.id;
 
 export async function GET(request: Request) {
@@ -13,13 +14,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing address' }, { status: 400 });
   }
 
-  const count = 2000;
   const { data: activity } = await runeProvider.runes.walletActivity({
     address,
     rune_id: runeId,
-    count,
+    // Keep the portfolio response bounded so page load time does not scale with the full wallet history.
+    count: PORTFOLIO_ACTIVITY_HISTORY_COUNT,
   });
-  // TODO: Get all pages
 
   const only_runes = activity.filter((tx) => tx.rune_id === runeId);
 

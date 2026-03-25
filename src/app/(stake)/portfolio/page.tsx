@@ -15,9 +15,24 @@ import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/comp
 import { useBalance } from '@/hooks/api/useBalance';
 import { useProtocol } from '@/hooks/api/useProtocol';
 import { useWalletActivity } from '@/hooks/api/useWalletActivity';
-import { computeEarnings } from '@/lib/earnings';
+import {
+  computeEarnings,
+  createEmptyEarningsResult,
+  isInsufficientEarningsSlotsError,
+} from '@/lib/earnings';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { formatPercentage } from '@/lib/formatPercentage';
+
+/**
+ * Converts earnings calculation failures into a user-safe portfolio message.
+ */
+function getPortfolioEarningsErrorMessage(error: unknown): string {
+  if (isInsufficientEarningsSlotsError(error)) {
+    return 'Earnings are temporarily unavailable because your staking history could not be fully reconstructed.';
+  }
+
+  return 'Earnings are temporarily unavailable right now.';
+}
 
 export default function PortfolioPage() {
   const { address } = useLaserEyes();
@@ -33,42 +48,58 @@ export default function PortfolioPage() {
     .times(btc.price)
     .div(100_000_000);
   const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
-  const displayExchangeRate = Number.isFinite(exchangeRate)
-    ? exchangeRate
-    : historicRates && historicRates.length > 0
-      ? Number(historicRates[historicRates.length - 1]!.rate)
-      : 1;
+  const resolvedExchangeRate = useMemo(() => {
+    try {
+      if (Number.isFinite(exchangeRate)) {
+        return new Big(exchangeRate);
+      }
+
+      if (historicRates && historicRates.length > 0) {
+        return new Big(historicRates[historicRates.length - 1]!.rate);
+      }
+    } catch {
+      return new Big(1);
+    }
+
+    return new Big(1);
+  }, [exchangeRate, historicRates]);
   const stakedBalanceBig = Big(stakedBalance);
-  const liqValue = stakedBalanceBig.times(displayExchangeRate);
+  const liqValue = stakedBalanceBig.times(resolvedExchangeRate);
   const stakedValueUsd = liqValue.times(tokenPrice);
 
-  const earnings = useMemo(() => {
-    const multiplier = {
-      input: -1,
-      output: 1,
-    } satisfies Record<(typeof activity)[number]['event_type'], number>;
-    const txs = activity
-      .map((tx) => ({
-        value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
-        block: new Date(tx.timestamp).valueOf(),
-      }))
-      .reverse();
-    const latestRate = Number.isFinite(exchangeRate)
-      ? exchangeRate
-      : historicRates && historicRates.length > 0
-        ? Number(historicRates[historicRates.length - 1]!.rate)
-        : 1;
-    const rates = [
-      { value: new Big(1), block: 0 },
-      ...(historicRates?.map(({ rate, timestamp }) => ({
-        value: new Big(rate),
-        block: new Date(timestamp).valueOf(),
-      })) ?? []),
-      { value: new Big(latestRate), block: Number.POSITIVE_INFINITY },
-    ];
+  const earningsState = useMemo(() => {
+    try {
+      const multiplier = {
+        input: -1,
+        output: 1,
+      } satisfies Record<(typeof activity)[number]['event_type'], number>;
+      const txs = activity
+        .map((tx) => ({
+          value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
+          block: new Date(tx.timestamp).valueOf(),
+        }))
+        .reverse();
+      const rates = [
+        { value: new Big(1), block: 0 },
+        ...(historicRates?.map(({ rate, timestamp }) => ({
+          value: new Big(rate),
+          block: new Date(timestamp).valueOf(),
+        })) ?? []),
+        { value: resolvedExchangeRate, block: Number.POSITIVE_INFINITY },
+      ];
 
-    return computeEarnings(txs, rates);
-  }, [activity, exchangeRate, historicRates]);
+      return {
+        result: computeEarnings(txs, rates),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        result: createEmptyEarningsResult(resolvedExchangeRate),
+        error: getPortfolioEarningsErrorMessage(error),
+      };
+    }
+  }, [activity, historicRates, resolvedExchangeRate]);
+  const earnings = earningsState.result;
 
   // Memoize the data transformation
   const exchangeRateData = useMemo(() => {
@@ -176,6 +207,9 @@ export default function PortfolioPage() {
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
             ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD
           </div>
+          {earningsState.error && (
+            <div className="px-2 text-xs font-medium text-amber-600">{earningsState.error}</div>
+          )}
         </Card>
 
         <div className="grid w-full grid-cols-2 gap-3">
