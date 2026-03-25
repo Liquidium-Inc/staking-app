@@ -69,24 +69,53 @@ describe('GET', () => {
     const response = await GET(mockRequest(address));
     expect(response).toBeInstanceOf(NextResponse);
     const json = await response.json();
-    expect(json).toEqual([
-      {
-        rune_id: runeId,
-        event_type: 'output',
-        outpoint: '1',
-        timestamp: '2026-01-01T00:00:00.000Z',
-      },
-      {
-        rune_id: runeId,
-        event_type: 'input',
-        outpoint: '2',
-        timestamp: '2026-01-02T00:00:00.000Z',
-      },
-    ]);
+    expect(json).toEqual({
+      activity: [
+        {
+          rune_id: runeId,
+          event_type: 'output',
+          outpoint: '1',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          rune_id: runeId,
+          event_type: 'input',
+          outpoint: '2',
+          timestamp: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+      truncated: false,
+      originalFetchCount: 4,
+      deduplicatedCount: 2,
+    });
     expect(runeProvider.runes.walletActivity).toHaveBeenCalledWith({
       address,
       rune_id: runeId,
       count: 5000,
+    });
+  });
+
+  it('returns truncation metadata when the original fetch exactly hits the portfolio cap', async () => {
+    const address = 'testAddress';
+    const runeId = config.sRune.id;
+
+    mock.runes.walletActivity.mockResolvedValue({
+      data: Array.from({ length: 5000 }, (_, index) => ({
+        rune_id: runeId,
+        event_type: 'output',
+        outpoint: `outpoint-${index}`,
+        timestamp: '2026-01-01T00:00:00.000Z',
+      })),
+      block_height: 0,
+    });
+
+    const response = await GET(mockRequest(address));
+    const json = await response.json();
+
+    expect(json).toMatchObject({
+      truncated: true,
+      originalFetchCount: 5000,
+      deduplicatedCount: 5000,
     });
   });
 });

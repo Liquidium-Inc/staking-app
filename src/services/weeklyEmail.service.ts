@@ -36,12 +36,17 @@ type WeeklyEarningsContext = {
   evaluationTimestamp: number;
   sevenDaysAgoTimestamp: number;
   earningsByAddress: Map<string, Promise<Big | null>>;
+  currentRawBalancesByAddress: Map<string, Promise<Big>>;
 };
 
 const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
 export const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
 export const WEEKLY_EARNINGS_CONCURRENCY = 5;
+const ACTIVITY_DIRECTION = {
+  input: -1,
+  output: 1,
+} as const;
 
 /**
  * Returns whether an activity page may be truncated because it exactly filled the requested count.
@@ -122,6 +127,7 @@ function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarnings
     evaluationTimestamp,
     sevenDaysAgoTimestamp: evaluationTimestamp - WEEKLY_EARNINGS_WINDOW_MS,
     earningsByAddress: new Map<string, Promise<Big | null>>(),
+    currentRawBalancesByAddress: new Map<string, Promise<Big>>(),
   };
 }
 
@@ -166,15 +172,10 @@ function calculateEarningsFromActivity(
   }>,
   context: WeeklyEarningsContext,
 ) {
-  const multiplier = {
-    input: -1,
-    output: 1,
-  } as const;
-
   const values = activity
     .filter((tx) => tx.rune_id === publicConfig.sRune.id)
     .map((tx) => {
-      const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
+      const mult = ACTIVITY_DIRECTION[tx.event_type as keyof typeof ACTIVITY_DIRECTION] ?? 0;
       const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult);
       return { value, block: new Date(tx.timestamp).valueOf() };
     })
@@ -193,6 +194,67 @@ function calculateEarningsFromActivity(
 }
 
 /**
+ * Loads and caches the current raw sLIQ balance so recent activity can be validated cheaply.
+ */
+async function getCurrentRawBalance(address: string, context: WeeklyEarningsContext): Promise<Big> {
+  const cached = context.currentRawBalancesByAddress.get(address);
+  if (cached) {
+    return cached;
+  }
+
+  const balancePromise = (async () => {
+    try {
+      const { data: balances } = await runeProvider.runes.walletBalances({ address });
+      const balance = balances.find((item) => item.rune_id === publicConfig.sRune.id);
+
+      return Big(balance?.total_balance ?? 0);
+    } catch (error) {
+      context.currentRawBalancesByAddress.delete(address);
+      throw error;
+    }
+  })();
+
+  context.currentRawBalancesByAddress.set(address, balancePromise);
+  return balancePromise;
+}
+
+/**
+ * Sums raw sLIQ transfers so the recent activity window can be compared to the live wallet balance.
+ */
+function getRawBalanceFromActivity(
+  activity: Array<{
+    rune_id: string;
+    amount: string;
+    event_type: string;
+  }>,
+): Big {
+  return activity
+    .filter((tx) => tx.rune_id === publicConfig.sRune.id)
+    .reduce((balance, tx) => {
+      const direction = ACTIVITY_DIRECTION[tx.event_type as keyof typeof ACTIVITY_DIRECTION] ?? 0;
+      return balance.plus(Big(tx.amount).times(direction));
+    }, new Big(0));
+}
+
+/**
+ * Verifies that the recent slice fully reconstructs the user's current sLIQ balance.
+ */
+async function recentActivityExplainsCurrentBalance(
+  address: string,
+  recentActivity: Array<{
+    rune_id: string;
+    amount: string;
+    event_type: string;
+  }>,
+  context: WeeklyEarningsContext,
+): Promise<boolean> {
+  const currentRawBalance = await getCurrentRawBalance(address, context);
+  const reconstructedRawBalance = getRawBalanceFromActivity(recentActivity);
+
+  return reconstructedRawBalance.eq(currentRawBalance);
+}
+
+/**
  * Calculates weekly earnings using a recent-window fetch first, then a bounded history fallback.
  */
 async function calculateBoundedWeeklyEarnings(
@@ -207,8 +269,16 @@ async function calculateBoundedWeeklyEarnings(
   };
 
   const { data: recentActivity } = await runeProvider.runes.walletActivity(recentQuery);
+  const recentActivityMatchesCurrentBalance = await recentActivityExplainsCurrentBalance(
+    address,
+    recentActivity,
+    context,
+  );
 
-  if (!isPossiblyTruncatedActivityPage(recentActivity, recentQuery.count)) {
+  if (
+    !isPossiblyTruncatedActivityPage(recentActivity, recentQuery.count) &&
+    recentActivityMatchesCurrentBalance
+  ) {
     try {
       return calculateEarningsFromActivity(recentActivity, context);
     } catch (error) {
@@ -336,12 +406,9 @@ async function processUserEmail(
   context: WeeklyEarningsContext,
 ): Promise<{ success: boolean; skipped: boolean }> {
   try {
-    const { data: balance } = await runeProvider.runes.walletBalances({ address: user.address });
-
-    const sLiqBalance = balance.find((b) => b.rune_id === publicConfig.sRune.id);
-    const sLiqAmountBig = sLiqBalance
-      ? Big(sLiqBalance.total_balance).div(Big(10).pow(publicConfig.sRune.decimals))
-      : Big(0);
+    const sLiqAmountBig = (await getCurrentRawBalance(user.address, context)).div(
+      Big(10).pow(publicConfig.sRune.decimals),
+    );
     const apyBig = Big(apy);
     const tokenPriceBig = Big(tokenPrice);
 
@@ -398,10 +465,13 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     };
   }
 
-  const historic = await db.poolBalance.getHistoric().catch((error: unknown) => {
-    logger.error('Failed to load historic pool balances for weekly email:', error);
-    return [] as HistoricBalances;
-  });
+  let historic: HistoricBalances;
+  try {
+    historic = await db.poolBalance.getHistoric();
+  } catch (error) {
+    logger.error('db.poolBalance.getHistoric failed for weekly email:', error);
+    throw error;
+  }
   const context = createWeeklyEarningsContext(historic);
   const [rateDecimal, tokenPrice, apy] = await getProtocolData(context);
 

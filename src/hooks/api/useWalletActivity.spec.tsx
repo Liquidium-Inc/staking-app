@@ -33,7 +33,12 @@ describe('useWalletActivity', () => {
   });
 
   it('fetches activity data for a valid address', async () => {
-    const mockData = [{ id: 1, tx: '0295' }];
+    const mockData = {
+      activity: [{ id: 1, tx: '0295' }],
+      truncated: false,
+      originalFetchCount: 1,
+      deduplicatedCount: 1,
+    };
     mockedAxios.get = vi.fn().mockResolvedValue({ data: mockData });
 
     const { result } = renderHook(() => useWalletActivity('bc1p'), {
@@ -47,6 +52,6 @@ describe('useWalletActivity', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith('/api/account/txs', {
       params: { address: 'bc1p' },
     });
-    expect(result.current.data).toEqual(mockData);
+    expect(result.current.data).toEqual(mockData.activity);
   });
 });

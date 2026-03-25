@@ -23,6 +23,10 @@ import {
 import { formatCurrency } from '@/lib/formatCurrency';
 import { formatPercentage } from '@/lib/formatPercentage';
 
+const PORTFOLIO_VALUE_PLACEHOLDER = 'Unavailable';
+const EXCHANGE_RATE_UNAVAILABLE_MESSAGE =
+  'Portfolio values are temporarily unavailable because no exchange rate has been published yet.';
+
 /**
  * Converts earnings calculation failures into a user-safe portfolio message.
  */
@@ -48,7 +52,7 @@ export default function PortfolioPage() {
     .times(btc.price)
     .div(100_000_000);
   const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
-  const resolvedExchangeRate = useMemo(() => {
+  const resolvedExchangeRate = useMemo<Big | null>(() => {
     try {
       if (Number.isFinite(exchangeRate)) {
         return new Big(exchangeRate);
@@ -58,16 +62,24 @@ export default function PortfolioPage() {
         return new Big(historicRates[historicRates.length - 1]!.rate);
       }
     } catch {
-      return new Big(1);
+      return null;
     }
 
-    return new Big(1);
+    return null;
   }, [exchangeRate, historicRates]);
   const stakedBalanceBig = Big(stakedBalance);
-  const liqValue = stakedBalanceBig.times(resolvedExchangeRate);
-  const stakedValueUsd = liqValue.times(tokenPrice);
+  const hasResolvedExchangeRate = resolvedExchangeRate !== null;
+  const liqValue = resolvedExchangeRate ? stakedBalanceBig.times(resolvedExchangeRate) : null;
+  const stakedValueUsd = liqValue ? liqValue.times(tokenPrice) : null;
 
   const earningsState = useMemo(() => {
+    if (!resolvedExchangeRate) {
+      return {
+        result: createEmptyEarningsResult(),
+        error: EXCHANGE_RATE_UNAVAILABLE_MESSAGE,
+      };
+    }
+
     try {
       const multiplier = {
         input: -1,
@@ -94,7 +106,7 @@ export default function PortfolioPage() {
       };
     } catch (error) {
       return {
-        result: createEmptyEarningsResult(resolvedExchangeRate),
+        result: createEmptyEarningsResult(),
         error: getPortfolioEarningsErrorMessage(error),
       };
     }
@@ -176,7 +188,7 @@ export default function PortfolioPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center space-y-3">
         <Card className="relative w-full space-y-1">
           <div className="absolute top-3 right-11">
-            {earnings.total.gt(0) && (
+            {hasResolvedExchangeRate && earnings.total.gt(0) && (
               <ShareButton
                 decimals={rune.decimals}
                 tokenAmount={earnings.total.toString()}
@@ -196,16 +208,20 @@ export default function PortfolioPage() {
           <CardContent className="flex items-center space-x-2 px-2">
             <TokenLogo logo={rune.symbol} variant="primary" size={40} />
             <span className="text-4xl font-semibold">
-              {formatCurrency(earnings.total.toString(), rune.decimals)}
+              {hasResolvedExchangeRate
+                ? formatCurrency(earnings.total.toString(), rune.decimals)
+                : PORTFOLIO_VALUE_PLACEHOLDER}
             </span>
-            {earnings.percentage.gt(0) && (
+            {hasResolvedExchangeRate && earnings.percentage.gt(0) && (
               <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
                 +{formatCurrency(earnings.percentage.toString())}%
               </div>
             )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD
+            {hasResolvedExchangeRate
+              ? `$${formatCurrency(earnings.total.times(tokenPrice).toString())} USD`
+              : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
           </div>
           {earningsState.error && (
             <div className="px-2 text-xs font-medium text-amber-600">{earningsState.error}</div>
@@ -223,11 +239,15 @@ export default function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl font-semibold">
-                {formatCurrency(liqValue.toString(), rune.decimals)}
+                {liqValue
+                  ? formatCurrency(liqValue.toString(), rune.decimals)
+                  : PORTFOLIO_VALUE_PLACEHOLDER}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedValueUsd.toString())} USD
+              {stakedValueUsd
+                ? `$${formatCurrency(stakedValueUsd.toString())} USD`
+                : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
             </div>
           </Card>
 
@@ -245,7 +265,9 @@ export default function PortfolioPage() {
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedValueUsd.toString())} USD
+              {stakedValueUsd
+                ? `$${formatCurrency(stakedValueUsd.toString())} USD`
+                : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
             </div>
           </Card>
 

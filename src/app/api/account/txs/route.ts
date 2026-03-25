@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 
 import { config } from '@/config/public';
-import { runeProvider } from '@/providers/rune-provider';
+import { runeProvider, type WalletActivity } from '@/providers/rune-provider';
 
 const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
 const runeId = config.sRune.id;
+
+type PortfolioActivityResponse = {
+  activity: WalletActivity[];
+  truncated: boolean;
+  originalFetchCount: number;
+  deduplicatedCount: number;
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -33,5 +40,10 @@ export async function GET(request: Request) {
       return true;
     });
 
-  return NextResponse.json(deduplicated);
+  return NextResponse.json<PortfolioActivityResponse>({
+    activity: deduplicated,
+    truncated: activity.length === PORTFOLIO_ACTIVITY_HISTORY_COUNT,
+    originalFetchCount: activity.length,
+    deduplicatedCount: deduplicated.length,
+  });
 }

@@ -98,12 +98,17 @@ export const computeEarnings = (
   }
 
   const rate = rates[rates.length - 1].value;
-  const unrealized = [...slots].reduce((acc, slot) => {
-    return acc.plus(slot.value.times(rate.minus(slot.rate)));
-  }, zero);
+  const accumulated = [...slots].reduce(
+    (acc, slot) => ({
+      unrealized: acc.unrealized.plus(slot.value.times(rate.minus(slot.rate))),
+      totalValue: acc.totalValue.plus(slot.value),
+    }),
+    { unrealized: zero, totalValue: zero },
+  );
 
+  const unrealized = accumulated.unrealized;
   const total = realized.plus(unrealized);
-  const totalValue = [...slots].reduce((acc, slot) => acc.plus(slot.value), zero);
+  const totalValue = accumulated.totalValue;
   const percentage = totalValue.gt(0)
     ? total
         .times(100)

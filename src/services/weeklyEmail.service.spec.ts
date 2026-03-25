@@ -104,6 +104,19 @@ describe('runWeeklyEmailCron', () => {
   });
 
   it('uses the shared rune price resolver when sending weekly emails', async () => {
+    mocks.runeProvider.runes.walletActivity.mockResolvedValue({
+      data: [
+        {
+          timestamp: '2026-03-19T12:00:00.000Z',
+          rune_id: publicConfig.sRune.id,
+          amount: '100',
+          decimals: 0,
+          event_type: 'output',
+        },
+      ],
+      block_height: 0,
+    });
+
     const promise = runWeeklyEmailCron();
     await vi.runAllTimersAsync();
     const result = await promise;
@@ -158,7 +171,7 @@ describe('runWeeklyEmailCron', () => {
       data: [
         {
           rune_id: publicConfig.sRune.id,
-          total_balance: address === 'bc1quserone' ? '1000' : '2000',
+          total_balance: address === 'bc1quserone' ? '3' : '12',
         },
       ],
       block_height: 100,
@@ -290,6 +303,73 @@ describe('runWeeklyEmailCron', () => {
       emailsSent: 1,
       emailsSkipped: 0,
       totalRewardsDistributed: 2.6,
+    });
+  });
+
+  it('falls back to bounded history when the recent slice does not explain the current balance', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 10n).toString();
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-10T12:00:00.000Z'),
+        block: 1,
+        balance: '10',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 2,
+        balance: '13',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '10' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ newerThan }) => ({
+      data: newerThan
+        ? [
+            {
+              timestamp: '2026-03-18T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '4',
+              decimals: 0,
+              event_type: 'output',
+            },
+          ]
+        : [
+            {
+              timestamp: '2026-03-18T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '4',
+              decimals: 0,
+              event_type: 'output',
+            },
+            {
+              timestamp: '2026-03-10T12:00:00.000Z',
+              rune_id: publicConfig.sRune.id,
+              amount: '6',
+              decimals: 0,
+              event_type: 'output',
+            },
+          ],
+      block_height: 0,
+    }));
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    const emailCall = mocks.emailService.generateWeeklyReportEmail.mock.calls[0]?.[0];
+
+    expect(mocks.runeProvider.runes.walletActivity).toHaveBeenCalledTimes(2);
+    expect(emailCall?.earnedLiq.toString()).toBe('3');
+    expect(result).toMatchObject({
+      emailsSent: 1,
+      emailsSkipped: 0,
+      totalRewardsDistributed: 3,
     });
   });
 
@@ -489,7 +569,7 @@ describe('runWeeklyEmailCron', () => {
       },
     ]);
     mocks.runeProvider.runes.walletBalances.mockResolvedValue({
-      data: [{ rune_id: publicConfig.sRune.id, total_balance: '100' }],
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '3' }],
       block_height: 100,
     });
     mocks.runeProvider.runes.walletActivity
@@ -548,7 +628,7 @@ describe('runWeeklyEmailCron', () => {
 
     mocks.db.emailSubscription.getActiveVerifiedUsers.mockResolvedValue(users);
     mocks.runeProvider.runes.walletBalances.mockResolvedValue({
-      data: [{ rune_id: publicConfig.sRune.id, total_balance: '100' }],
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '3' }],
       block_height: 100,
     });
     mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ address }) => {
@@ -608,5 +688,18 @@ describe('runWeeklyEmailCron', () => {
       emailsSent: WEEKLY_EARNINGS_CONCURRENCY + 1,
       emailsSkipped: 0,
     });
+  });
+
+  it('aborts the weekly job when db.poolBalance.getHistoric fails', async () => {
+    const historicError = new Error('historic fetch failed');
+    mocks.db.poolBalance.getHistoric.mockRejectedValue(historicError);
+
+    await expect(runWeeklyEmailCron()).rejects.toThrow('historic fetch failed');
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      'db.poolBalance.getHistoric failed for weekly email:',
+      historicError,
+    );
+    expect(mocks.emailService.generateWeeklyReportEmail).not.toHaveBeenCalled();
+    expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
   });
 });
