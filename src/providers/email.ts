@@ -270,9 +270,9 @@ export const emailService = {
     address: string;
     email: string;
     sLiqBalance: Bigish;
-    earnedLiq: number;
+    earnedLiq: Bigish;
     apy: Bigish;
-    totalRewardsDistributed: number;
+    totalRewardsDistributed: Bigish;
     stakedValue: Bigish;
   }): Promise<EmailTemplate> {
     const { address, sLiqBalance, earnedLiq, apy, totalRewardsDistributed, stakedValue } = data;
@@ -309,9 +309,9 @@ export const emailService = {
   createWeeklyReportHtml(data: {
     address: string;
     sLiqBalance: Bigish;
-    earnedLiq: number;
+    earnedLiq: Bigish;
     apy: Bigish;
-    totalRewardsDistributed: number;
+    totalRewardsDistributed: Bigish;
     stakedValue: Bigish;
     unsubscribeToken: string;
   }): string {
@@ -345,7 +345,7 @@ export const emailService = {
 
   createStakingOverviewHtml(
     sLiqBalance: Bigish,
-    earnedLiq: number,
+    earnedLiq: Bigish,
     apy: Bigish,
     stakedValue: Bigish,
   ): string {
@@ -388,7 +388,7 @@ export const emailService = {
     );
   },
 
-  createProtocolStatsHtml(totalRewardsDistributed: number): string {
+  createProtocolStatsHtml(totalRewardsDistributed: Bigish): string {
     return renderCard(
       'Protocol Stats',
       renderMetric({
@@ -419,9 +419,9 @@ export const emailService = {
   createWeeklyReportText(data: {
     address: string;
     sLiqBalance: Bigish;
-    earnedLiq: number;
+    earnedLiq: Bigish;
     apy: Bigish;
-    totalRewardsDistributed: number;
+    totalRewardsDistributed: Bigish;
     stakedValue: Bigish;
     unsubscribeToken: string;
   }): string {

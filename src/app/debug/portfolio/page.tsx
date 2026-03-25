@@ -17,12 +17,14 @@ import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/comp
 import { config } from '@/config/public';
 import { useProtocol } from '@/hooks/api/useProtocol';
 import { useWalletActivity } from '@/hooks/api/useWalletActivity';
-import { computeEarnings } from '@/lib/earnings';
+import { computeEarnings, createEmptyEarningsResult, type EarningsEntry } from '@/lib/earnings';
 import { formatCurrency } from '@/lib/formatCurrency';
 
-interface Entry {
-  block: number;
-  value: number;
+/**
+ * Normalizes debug earnings failures into a visible message.
+ */
+function getDebugEarningsErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown earnings calculation error';
 }
 
 function PortfolioPage() {
@@ -38,8 +40,8 @@ function PortfolioPage() {
     .toNumber();
 
   // State for editable tables
-  const [txs, setTxs] = useState<Entry[]>([]);
-  const [rates, setRates] = useState<Entry[]>([{ block: 0, value: 1 }]);
+  const [txs, setTxs] = useState<EarningsEntry[]>([]);
+  const [rates, setRates] = useState<EarningsEntry[]>([{ block: 0, value: new Big(1) }]);
   const [block, setBlock] = useState('399');
   const [amount, setAmount] = useState('-1100');
   const [rateBlock, setRateBlock] = useState('400');
@@ -58,7 +60,7 @@ function PortfolioPage() {
 
       const newTxs = fetchedActivity
         .map((tx) => ({
-          value: multiplier[tx.event_type] * Number(tx.amount) * 10 ** -tx.decimals,
+          value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
           block: new Date(tx.timestamp).valueOf(),
         }))
         .reverse();
@@ -71,22 +73,33 @@ function PortfolioPage() {
   useEffect(() => {
     if (!hydratedRates.current && protocol.historicRates?.length > 0) {
       const newRates = [
-        { value: 1, block: 0 },
+        { value: new Big(1), block: 0 },
         ...protocol.historicRates.map(({ rate, timestamp }) => ({
-          value: Number(rate),
+          value: new Big(rate),
           block: new Date(timestamp).valueOf(),
         })),
       ];
       setRates(newRates);
       setRateBlock(newRates[newRates.length - 1].block + 5 + '');
-      setRateAmount(newRates[newRates.length - 1].value + 0.005 + '');
+      setRateAmount(newRates[newRates.length - 1].value.plus('0.005').toString());
       hydratedRates.current = true;
     }
   }, [protocol.historicRates]);
 
-  const earnings = useMemo(() => {
-    return computeEarnings(txs, rates);
+  const earningsState = useMemo(() => {
+    try {
+      return {
+        result: computeEarnings(txs, rates),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        result: createEmptyEarningsResult(rates[rates.length - 1]?.value ?? new Big(0)),
+        error: getDebugEarningsErrorMessage(error),
+      };
+    }
   }, [txs, rates]);
+  const earnings = earningsState.result;
 
   // Memoize the data transformation
   const exchangeRateData = useMemo(() => {
@@ -133,7 +146,7 @@ function PortfolioPage() {
             data={rates
               .filter(({ block }) => block)
               .map(({ value, block }) => ({
-                rate: value,
+                rate: value.toNumber(),
                 block,
                 timestamp: block * 60 * 1000,
               }))}
@@ -163,7 +176,9 @@ function PortfolioPage() {
   );
 
   const addTx = () => {
-    const newTxs = [...txs, { block: +block, value: +amount }].sort((a, b) => a.block - b.block);
+    const newTxs = [...txs, { block: Number(block), value: new Big(amount) }].sort(
+      (a, b) => a.block - b.block,
+    );
     setTxs(newTxs);
     setBlock((block) => +block + 1 + '');
     setAmount('0');
@@ -175,12 +190,12 @@ function PortfolioPage() {
   };
 
   const addRate = () => {
-    const newRates = [...rates, { block: +rateBlock, value: +rateAmount }].sort(
+    const newRates = [...rates, { block: Number(rateBlock), value: new Big(rateAmount) }].sort(
       (a, b) => a.block - b.block,
     );
     setRates(newRates);
     setRateBlock((rateBlock) => +rateBlock + 100 + '');
-    setRateAmount((rate) => +rate + 0.1 + '');
+    setRateAmount((rate) => new Big(rate).plus('0.1').toString());
   };
 
   const removeRate = (index: number) => {
@@ -189,12 +204,22 @@ function PortfolioPage() {
   };
 
   const stakedBalance = useMemo(() => {
-    return [...earnings.slots].reduce((acc, slot) => acc + slot.value, 0);
+    return [...earnings.slots].reduce((acc, slot) => acc.plus(slot.value), new Big(0));
   }, [earnings.slots]);
 
   return (
     <TooltipProvider delayDuration={100}>
       <div className="m-4 flex w-full max-w-md flex-col items-center justify-center space-y-3 md:my-10">
+        {earningsState.error && (
+          <Card className="w-full border-red-500/40 bg-red-500/5">
+            <CardHeader className="pb-2">
+              <h3>Earnings Error</h3>
+            </CardHeader>
+            <CardContent className="px-2 pb-3 text-sm text-red-200">
+              {earningsState.error}
+            </CardContent>
+          </Card>
+        )}
         <Card className="w-full space-y-1">
           <CardHeader className="flex">
             <h3>Total Earned</h3>
@@ -210,14 +235,16 @@ function PortfolioPage() {
           <CardContent className="flex items-center space-x-2 px-2">
             <TokenLogo logo={rune.symbol} variant="primary" size={40} />
             <span className="text-4xl font-semibold">
-              {formatCurrency(earnings.total, config.rune.decimals)}
+              {formatCurrency(earnings.total.toString(), config.rune.decimals)}
             </span>
-            <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
-              +{formatCurrency(earnings.percentage)}%
-            </div>
+            {!earningsState.error && (
+              <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
+                +{formatCurrency(earnings.percentage.toString())}%
+              </div>
+            )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            ${formatCurrency(earnings.total * tokenPrice)} USD
+            ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD
           </div>
         </Card>
 
@@ -237,11 +264,11 @@ function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl">
-                {formatCurrency(stakedBalance * exchangeRate, staked.decimals)}
+                {formatCurrency(stakedBalance.times(exchangeRate).toString(), staked.decimals)}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedBalance.times(exchangeRate).times(tokenPrice).toString())} USD
             </div>
           </Card>
 
@@ -259,10 +286,12 @@ function PortfolioPage() {
             </CardHeader>
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={staked.symbol} variant="secondary" size={24} />
-              <span className="text-xl">{formatCurrency(stakedBalance, staked.decimals)}</span>
+              <span className="text-xl">
+                {formatCurrency(stakedBalance.toString(), staked.decimals)}
+              </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedBalance.times(exchangeRate).times(tokenPrice).toString())} USD
             </div>
           </Card>
         </div>
@@ -296,11 +325,11 @@ function PortfolioPage() {
                   <tbody>
                     {txs.map((tx, index) => (
                       <tr
-                        key={`tx-${index}-${tx.block}-${tx.value}`}
+                        key={`tx-${index}-${tx.block}-${tx.value.toString()}`}
                         className="border-border border-b"
                       >
                         <td className="p-2 text-sm">{tx.block}</td>
-                        <td className="p-2 text-sm">{tx.value}</td>
+                        <td className="p-2 text-sm">{tx.value.toString()}</td>
                         <td className="w-1 text-sm">
                           <Button variant="ghost" onClick={() => removeTx(index)}>
                             <Trash className="h-4 w-4" />
@@ -332,11 +361,11 @@ function PortfolioPage() {
                   <tbody>
                     {rates.map((rate, index) => (
                       <tr
-                        key={`rate-${index}-${rate.block}-${rate.value}`}
+                        key={`rate-${index}-${rate.block}-${rate.value.toString()}`}
                         className="border-border border-b"
                       >
                         <td className="p-2 text-sm">{rate.block}</td>
-                        <td className="p-2 text-sm">{rate.value}</td>
+                        <td className="p-2 text-sm">{rate.value.toString()}</td>
                         <td className="w-1 text-sm">
                           <Button variant="ghost" onClick={() => removeRate(index)}>
                             <Trash className="h-4 w-4" />
@@ -380,14 +409,18 @@ function PortfolioPage() {
               <tbody>
                 {[...earnings.slots].map((slot, index) => (
                   <tr
-                    key={`slot-${index}-${slot.block}-${slot.value}`}
+                    key={`slot-${index}-${slot.block}-${slot.value.toString()}`}
                     className="border-border border-b"
                   >
                     <td className="p-2 text-sm">{slot.block}</td>
-                    <td className="p-2 text-sm">{slot.rate}</td>
-                    <td className="p-2 text-sm">{slot.value}</td>
-                    <td className="p-2 text-sm">{formatCurrency(slot.value * slot.rate)}</td>
-                    <td className="p-2 text-sm">{formatCurrency(slot.value * earnings.rate)}</td>
+                    <td className="p-2 text-sm">{slot.rate.toString()}</td>
+                    <td className="p-2 text-sm">{slot.value.toString()}</td>
+                    <td className="p-2 text-sm">
+                      {formatCurrency(slot.value.times(slot.rate).toString())}
+                    </td>
+                    <td className="p-2 text-sm">
+                      {formatCurrency(slot.value.times(earnings.rate).toString())}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -3,7 +3,12 @@ import Big from 'big.js';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { computeApyFromHistoric } from '@/lib/apy';
-import { computeEarnings } from '@/lib/earnings';
+import { binarySearch } from '@/lib/binarySearch';
+import {
+  computeEarnings,
+  INSUFFICIENT_EARNINGS_SLOTS_MESSAGE,
+  isInsufficientEarningsSlotsError,
+} from '@/lib/earnings';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { emailService } from '@/providers/email';
@@ -27,9 +32,23 @@ type HistoricBalances = Array<{ timestamp: Date; block: number; balance: string;
 
 type WeeklyEarningsContext = {
   historic: HistoricBalances;
-  rates: Array<{ timestamp: Date; block: number; rate: number }>;
+  rates: Array<{ timestamp: Date; block: number; rate: Big }>;
+  evaluationTimestamp: number;
   sevenDaysAgoTimestamp: number;
+  earningsByAddress: Map<string, Promise<Big | null>>;
 };
+
+const WEEKLY_EARNINGS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const RECENT_WEEKLY_ACTIVITY_COUNT = 1000;
+export const MAX_WEEKLY_ACTIVITY_HISTORY_COUNT = 5000;
+export const WEEKLY_EARNINGS_CONCURRENCY = 5;
+
+/**
+ * Returns whether an activity page may be truncated because it exactly filled the requested count.
+ */
+function isPossiblyTruncatedActivityPage<T>(activity: T[], requestedCount: number): boolean {
+  return activity.length === requestedCount;
+}
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -40,18 +59,45 @@ function maskEmail(email: string): string {
   return `${local[0]}***${local.slice(-1)}@${domain}`;
 }
 
+/**
+ * Runs async work over a list with bounded concurrency while preserving result order.
+ */
+async function mapWithConcurrencyLimit<T, TResult>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
+}
+
 function getExchangeRates(historic: HistoricBalances) {
   const supply = publicConfig.sRune.supply;
+  const fallbackRate = new Big(1);
 
   return historic.reduce(
     (acc, balance: { timestamp: Date; block: number; balance: string; staked: string }) => {
       const diff = BigInt(supply) - BigInt(balance.staked);
       const rate =
         diff > 0 && Big(balance.balance).gt(0)
-          ? Big(balance.balance).div(diff.toString()).toNumber()
-          : 1;
+          ? Big(balance.balance).div(diff.toString())
+          : fallbackRate;
+      const previousRate = acc[acc.length - 1]?.rate;
 
-      if (acc[acc.length - 1]?.rate !== rate) {
+      if (!previousRate?.eq(rate)) {
         acc.push({
           timestamp: balance.timestamp,
           block: balance.block,
@@ -60,7 +106,7 @@ function getExchangeRates(historic: HistoricBalances) {
       }
       return acc;
     },
-    [] as { timestamp: Date; block: number; rate: number }[],
+    [] as { timestamp: Date; block: number; rate: Big }[],
   );
 }
 
@@ -68,13 +114,48 @@ function getExchangeRates(historic: HistoricBalances) {
  * Builds a single weekly earnings snapshot so every email computation uses the same rates and time cutoff.
  */
 function createWeeklyEarningsContext(historic: HistoricBalances): WeeklyEarningsContext {
+  const evaluationTimestamp = Date.now();
+
   return {
     historic,
     rates: getExchangeRates(historic),
-    sevenDaysAgoTimestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
+    evaluationTimestamp,
+    sevenDaysAgoTimestamp: evaluationTimestamp - WEEKLY_EARNINGS_WINDOW_MS,
+    earningsByAddress: new Map<string, Promise<Big | null>>(),
   };
 }
 
+/**
+ * Builds the rate timeline needed to evaluate earnings at a specific point in time.
+ */
+function buildRateValuesAtTimestamp(
+  context: WeeklyEarningsContext,
+  evaluationTimestamp: number,
+): Array<{ value: Big; block: number }> {
+  const fallbackRate = new Big(1);
+  const rateAtTimestamp =
+    binarySearch(context.rates, (rate) => rate.timestamp.valueOf(), evaluationTimestamp)?.rate ??
+    fallbackRate;
+  const rateValues = [
+    { value: fallbackRate, block: 0 },
+    ...context.rates
+      .filter(({ timestamp }) => timestamp.valueOf() <= evaluationTimestamp)
+      .map(({ rate, timestamp }) => ({
+        value: rate,
+        block: timestamp.valueOf(),
+      })),
+  ];
+
+  if (rateValues[rateValues.length - 1]?.block !== evaluationTimestamp) {
+    rateValues.push({ value: rateAtTimestamp, block: evaluationTimestamp });
+  }
+
+  return rateValues;
+}
+
+/**
+ * Computes weekly earnings by comparing full-history earnings now versus seven days ago.
+ */
 function calculateEarningsFromActivity(
   activity: Array<{
     timestamp: string;
@@ -91,49 +172,96 @@ function calculateEarningsFromActivity(
   } as const;
 
   const values = activity
-    .filter(
-      (tx) =>
-        new Date(tx.timestamp).valueOf() >= context.sevenDaysAgoTimestamp &&
-        tx.rune_id === publicConfig.sRune.id,
-    )
+    .filter((tx) => tx.rune_id === publicConfig.sRune.id)
     .map((tx) => {
       const mult = multiplier[tx.event_type as keyof typeof multiplier] ?? 0;
-      const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult).toNumber();
+      const value = Big(tx.amount).div(Big(10).pow(tx.decimals)).times(mult);
       return { value, block: new Date(tx.timestamp).valueOf() };
     })
     .reverse();
+  const currentValues = values.filter(({ block }) => block <= context.evaluationTimestamp);
+  const currentEarnings = computeEarnings(
+    currentValues,
+    buildRateValuesAtTimestamp(context, context.evaluationTimestamp),
+  );
+  const baselineEarnings = computeEarnings(
+    currentValues.filter(({ block }) => block <= context.sevenDaysAgoTimestamp),
+    buildRateValuesAtTimestamp(context, context.sevenDaysAgoTimestamp),
+  );
 
-  const rateValues = [
-    { value: 1, block: 0 },
-    ...context.rates.map(({ rate, timestamp }: { rate: number; timestamp: Date }) => ({
-      value: rate,
-      block: timestamp.valueOf(),
-    })),
-    { value: context.rates[context.rates.length - 1]?.rate ?? 1, block: Number.POSITIVE_INFINITY },
-  ];
-
-  return computeEarnings(values, rateValues);
+  return currentEarnings.total.minus(baselineEarnings.total);
 }
 
+/**
+ * Calculates weekly earnings using a recent-window fetch first, then a bounded history fallback.
+ */
+async function calculateBoundedWeeklyEarnings(
+  address: string,
+  context: WeeklyEarningsContext,
+): Promise<Big> {
+  const recentQuery = {
+    address,
+    rune_id: publicConfig.sRune.id,
+    count: RECENT_WEEKLY_ACTIVITY_COUNT,
+    newerThan: new Date(context.sevenDaysAgoTimestamp),
+  };
+
+  const { data: recentActivity } = await runeProvider.runes.walletActivity(recentQuery);
+
+  if (!isPossiblyTruncatedActivityPage(recentActivity, recentQuery.count)) {
+    try {
+      return calculateEarningsFromActivity(recentActivity, context);
+    } catch (error) {
+      if (!isInsufficientEarningsSlotsError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const { data: boundedHistoryActivity } = await runeProvider.runes.walletActivity({
+    address,
+    rune_id: publicConfig.sRune.id,
+    count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+  });
+
+  if (isPossiblyTruncatedActivityPage(boundedHistoryActivity, MAX_WEEKLY_ACTIVITY_HISTORY_COUNT)) {
+    throw new Error(
+      `${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE}: wallet activity hit the bounded weekly history limit`,
+    );
+  }
+
+  return calculateEarningsFromActivity(boundedHistoryActivity, context);
+}
+
+/**
+ * Loads a user's staking activity and returns their weekly earnings when reconstruction succeeds.
+ */
 async function calculateUserEarnings(
   address: string,
   context: WeeklyEarningsContext,
-): Promise<number> {
-  try {
-    const { data: activity } = await runeProvider.runes.walletActivity({
-      address,
-      rune_id: publicConfig.sRune.id,
-      count: 1000,
-      newerThan: new Date(context.sevenDaysAgoTimestamp),
-    });
-
-    const earnings = calculateEarningsFromActivity(activity, context);
-
-    return earnings.total;
-  } catch (error) {
-    logger.error(`Failed to calculate earnings for address ${address}:`, error);
-    return 0;
+): Promise<Big | null> {
+  const cached = context.earningsByAddress.get(address);
+  if (cached) {
+    return cached;
   }
+
+  const earningsPromise = (async (): Promise<Big | null> => {
+    try {
+      return await calculateBoundedWeeklyEarnings(address, context);
+    } catch (error) {
+      if (isInsufficientEarningsSlotsError(error)) {
+        logger.warn(`Skipping weekly earnings for address ${address}: ${error.message}`, error);
+      } else {
+        context.earningsByAddress.delete(address);
+        logger.error(`Failed to calculate weekly earnings for address ${address}:`, error);
+      }
+
+      return null;
+    }
+  })();
+
+  context.earningsByAddress.set(address, earningsPromise);
+  return earningsPromise;
 }
 
 function getProtocolApy(context: WeeklyEarningsContext): {
@@ -142,7 +270,12 @@ function getProtocolApy(context: WeeklyEarningsContext): {
   daily: number;
 } {
   try {
-    return computeApyFromHistoric(context.rates);
+    return computeApyFromHistoric(
+      context.rates.map(({ rate, ...entry }) => ({
+        ...entry,
+        rate: rate.toNumber(),
+      })),
+    );
   } catch (error) {
     logger.error('Failed to calculate APY:', error);
     return { yearly: 0, monthly: 0, daily: 0 };
@@ -152,29 +285,24 @@ function getProtocolApy(context: WeeklyEarningsContext): {
 async function calculateTotalRewardsDistributed(
   users: WeeklyEmailUser[],
   context: WeeklyEarningsContext,
-): Promise<number> {
+): Promise<Big> {
   try {
-    let totalRewards = new Big(0);
+    const earningsByUser = await mapWithConcurrencyLimit(
+      users,
+      WEEKLY_EARNINGS_CONCURRENCY,
+      async (user) => calculateUserEarnings(user.address, context),
+    );
 
-    for (const user of users) {
-      try {
-        const { data: activity } = await runeProvider.runes.walletActivity({
-          address: user.address,
-          rune_id: publicConfig.sRune.id,
-          count: 1000,
-          newerThan: new Date(context.sevenDaysAgoTimestamp),
-        });
-        const earnings = calculateEarningsFromActivity(activity, context);
-        totalRewards = totalRewards.plus(earnings.total);
-      } catch (error) {
-        logger.warn(`Failed to calculate rewards for user ${user.address}:`, error);
+    return earningsByUser.reduce<Big>((totalRewards, earnings) => {
+      if (earnings === null) {
+        return totalRewards;
       }
-    }
 
-    return totalRewards.toNumber();
+      return totalRewards.plus(earnings);
+    }, new Big(0));
   } catch (error) {
     logger.error('Failed to calculate total rewards distributed:', error);
-    return 0;
+    return new Big(0);
   }
 }
 
@@ -204,7 +332,7 @@ async function processUserEmail(
   tokenPrice: number,
   exchangeRate: number,
   apy: number,
-  totalRewardsDistributed: number,
+  totalRewardsDistributed: Big,
   context: WeeklyEarningsContext,
 ): Promise<{ success: boolean; skipped: boolean }> {
   try {
@@ -222,6 +350,10 @@ async function processUserEmail(
     }
 
     const earnedLiq = await calculateUserEarnings(user.address, context);
+    if (earnedLiq === null) {
+      return { success: false, skipped: true };
+    }
+
     const stakedValueBig = sLiqAmountBig.times(exchangeRate).times(tokenPriceBig);
 
     const emailTemplate = await emailService.generateWeeklyReportEmail({
@@ -277,7 +409,9 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     rateDecimal && Number.isFinite(rateDecimal) && rateDecimal > 0 ? rateDecimal : 1;
 
   const totalRewardsDistributed = await calculateTotalRewardsDistributed(users, context);
-  logger.info(`Total rewards distributed in last 7 days: ${totalRewardsDistributed} LIQ`);
+  logger.info(
+    `Total rewards distributed in last 7 days: ${totalRewardsDistributed.toString()} LIQ`,
+  );
 
   let emailsSent = 0;
   let emailsSkipped = 0;
@@ -305,6 +439,6 @@ export async function runWeeklyEmailCron(): Promise<WeeklyEmailRunResult> {
     totalUsers: users.length,
     emailsSent,
     emailsSkipped,
-    totalRewardsDistributed,
+    totalRewardsDistributed: totalRewardsDistributed.toNumber(),
   };
 }

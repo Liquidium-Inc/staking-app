@@ -15,9 +15,24 @@ import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/comp
 import { useBalance } from '@/hooks/api/useBalance';
 import { useProtocol } from '@/hooks/api/useProtocol';
 import { useWalletActivity } from '@/hooks/api/useWalletActivity';
-import { computeEarnings } from '@/lib/earnings';
+import {
+  computeEarnings,
+  createEmptyEarningsResult,
+  isInsufficientEarningsSlotsError,
+} from '@/lib/earnings';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { formatPercentage } from '@/lib/formatPercentage';
+
+/**
+ * Converts earnings calculation failures into a user-safe portfolio message.
+ */
+function getPortfolioEarningsErrorMessage(error: unknown): string {
+  if (isInsufficientEarningsSlotsError(error)) {
+    return 'Earnings are temporarily unavailable because your staking history could not be fully reconstructed.';
+  }
+
+  return 'Earnings are temporarily unavailable right now.';
+}
 
 export default function PortfolioPage() {
   const { address } = useLaserEyes();
@@ -31,38 +46,60 @@ export default function PortfolioPage() {
 
   const tokenPrice = Big(rune.priceSats ?? 0)
     .times(btc.price)
-    .div(100_000_000)
-    .toNumber();
+    .div(100_000_000);
+  const dailyYieldBig = Big(apy.daily).times(Big(stakedBalance));
+  const resolvedExchangeRate = useMemo(() => {
+    try {
+      if (Number.isFinite(exchangeRate)) {
+        return new Big(exchangeRate);
+      }
 
-  const dailyYield = apy.daily * stakedBalance;
+      if (historicRates && historicRates.length > 0) {
+        return new Big(historicRates[historicRates.length - 1]!.rate);
+      }
+    } catch {
+      return new Big(1);
+    }
 
-  const earnings = useMemo(() => {
-    const multiplier = {
-      input: -1,
-      output: 1,
-    } satisfies Record<(typeof activity)[number]['event_type'], number>;
-    const txs = activity
-      .map((tx) => ({
-        value: multiplier[tx.event_type] * Number(tx.amount) * 10 ** -tx.decimals,
-        block: new Date(tx.timestamp).valueOf(),
-      }))
-      .reverse();
-    const latestRate = Number.isFinite(exchangeRate)
-      ? exchangeRate
-      : historicRates && historicRates.length > 0
-        ? Number(historicRates[historicRates.length - 1]!.rate)
-        : 1;
-    const rates = [
-      { value: 1, block: 0 },
-      ...(historicRates?.map(({ rate, timestamp }) => ({
-        value: Number(rate),
-        block: new Date(timestamp).valueOf(),
-      })) ?? []),
-      { value: latestRate, block: Number.POSITIVE_INFINITY },
-    ];
+    return new Big(1);
+  }, [exchangeRate, historicRates]);
+  const stakedBalanceBig = Big(stakedBalance);
+  const liqValue = stakedBalanceBig.times(resolvedExchangeRate);
+  const stakedValueUsd = liqValue.times(tokenPrice);
 
-    return computeEarnings(txs, rates);
-  }, [activity, exchangeRate, historicRates]);
+  const earningsState = useMemo(() => {
+    try {
+      const multiplier = {
+        input: -1,
+        output: 1,
+      } satisfies Record<(typeof activity)[number]['event_type'], number>;
+      const txs = activity
+        .map((tx) => ({
+          value: Big(tx.amount).div(Big(10).pow(tx.decimals)).times(multiplier[tx.event_type]),
+          block: new Date(tx.timestamp).valueOf(),
+        }))
+        .reverse();
+      const rates = [
+        { value: new Big(1), block: 0 },
+        ...(historicRates?.map(({ rate, timestamp }) => ({
+          value: new Big(rate),
+          block: new Date(timestamp).valueOf(),
+        })) ?? []),
+        { value: resolvedExchangeRate, block: Number.POSITIVE_INFINITY },
+      ];
+
+      return {
+        result: computeEarnings(txs, rates),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        result: createEmptyEarningsResult(resolvedExchangeRate),
+        error: getPortfolioEarningsErrorMessage(error),
+      };
+    }
+  }, [activity, historicRates, resolvedExchangeRate]);
+  const earnings = earningsState.result;
 
   // Memoize the data transformation
   const exchangeRateData = useMemo(() => {
@@ -139,10 +176,10 @@ export default function PortfolioPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center space-y-3">
         <Card className="relative w-full space-y-1">
           <div className="absolute top-3 right-11">
-            {earnings.total > 0 && (
+            {earnings.total.gt(0) && (
               <ShareButton
                 decimals={rune.decimals}
-                tokenAmount={earnings.total}
+                tokenAmount={earnings.total.toString()}
                 tokenSymbol={'LIQ'}
               />
             )}
@@ -159,17 +196,20 @@ export default function PortfolioPage() {
           <CardContent className="flex items-center space-x-2 px-2">
             <TokenLogo logo={rune.symbol} variant="primary" size={40} />
             <span className="text-4xl font-semibold">
-              {formatCurrency(earnings.total, rune.decimals)}
+              {formatCurrency(earnings.total.toString(), rune.decimals)}
             </span>
-            {earnings.percentage > 0 && (
+            {earnings.percentage.gt(0) && (
               <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
-                +{formatCurrency(earnings.percentage)}%
+                +{formatCurrency(earnings.percentage.toString())}%
               </div>
             )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            ${formatCurrency(earnings.total * tokenPrice)} USD
+            ${formatCurrency(earnings.total.times(tokenPrice).toString())} USD
           </div>
+          {earningsState.error && (
+            <div className="px-2 text-xs font-medium text-amber-600">{earningsState.error}</div>
+          )}
         </Card>
 
         <div className="grid w-full grid-cols-2 gap-3">
@@ -183,11 +223,11 @@ export default function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl font-semibold">
-                {formatCurrency(stakedBalance * exchangeRate, rune.decimals)}
+                {formatCurrency(liqValue.toString(), rune.decimals)}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedValueUsd.toString())} USD
             </div>
           </Card>
 
@@ -205,7 +245,7 @@ export default function PortfolioPage() {
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(stakedBalance * exchangeRate * tokenPrice)} USD
+              ${formatCurrency(stakedValueUsd.toString())} USD
             </div>
           </Card>
 
@@ -219,11 +259,11 @@ export default function PortfolioPage() {
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
               <span className="text-xl font-semibold">
-                {formatCurrency(dailyYield, rune.decimals)}
+                {formatCurrency(dailyYieldBig.toString(), rune.decimals)}
               </span>
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(dailyYield * tokenPrice)} USD
+              ${formatCurrency(dailyYieldBig.times(tokenPrice).toString())} USD
             </div>
           </Card>
 
