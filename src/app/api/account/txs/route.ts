@@ -1,17 +1,29 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { config } from '@/config/public';
-import { runeProvider, type WalletActivity } from '@/providers/rune-provider';
+import { runeProvider } from '@/providers/rune-provider';
 
 const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
 const runeId = config.sRune.id;
 
-type PortfolioActivityResponse = {
-  activity: WalletActivity[];
-  truncated: boolean;
-  originalFetchCount: number;
-  deduplicatedCount: number;
-};
+const WalletActivitySchema = z.object({
+  event_type: z.enum(['output', 'input']),
+  outpoint: z.string().min(1),
+  amount: z.string().min(1),
+  timestamp: z.string().min(1),
+  rune_id: z.string().min(1),
+  decimals: z.number().int().nonnegative(),
+});
+
+const PortfolioActivityResponseSchema = z.object({
+  activity: z.array(WalletActivitySchema),
+  truncated: z.boolean(),
+  originalFetchCount: z.number(),
+  deduplicatedCount: z.number(),
+});
+
+type PortfolioActivityResponse = z.infer<typeof PortfolioActivityResponseSchema>;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -31,19 +43,19 @@ export async function GET(request: Request) {
   const only_runes = activity.filter((tx) => tx.rune_id === runeId);
 
   const keys = new Set<string>();
-  const deduplicated = only_runes
-    .filter((tx) => tx.rune_id === runeId)
-    .filter((tx) => {
-      const key = `${tx.event_type}:${tx.outpoint}`;
-      if (keys.has(key)) return false;
-      keys.add(key);
-      return true;
-    });
+  const deduplicated = only_runes.filter((tx) => {
+    const key = `${tx.event_type}:${tx.outpoint}`;
+    if (keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
 
-  return NextResponse.json<PortfolioActivityResponse>({
+  const result = PortfolioActivityResponseSchema.parse({
     activity: deduplicated,
     truncated: activity.length === PORTFOLIO_ACTIVITY_HISTORY_COUNT,
     originalFetchCount: activity.length,
     deduplicatedCount: deduplicated.length,
   });
+
+  return NextResponse.json<PortfolioActivityResponse>(result);
 }
