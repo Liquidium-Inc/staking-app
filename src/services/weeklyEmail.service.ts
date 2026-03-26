@@ -237,11 +237,11 @@ function getRawBalanceFromActivity(
 }
 
 /**
- * Verifies that the recent slice fully reconstructs the user's current sLIQ balance.
+ * Verifies that a fetched activity slice fully reconstructs the user's current sLIQ balance.
  */
-async function recentActivityExplainsCurrentBalance(
+async function activityExplainsCurrentBalance(
   address: string,
-  recentActivity: Array<{
+  activity: Array<{
     rune_id: string;
     amount: string;
     event_type: string;
@@ -249,7 +249,7 @@ async function recentActivityExplainsCurrentBalance(
   context: WeeklyEarningsContext,
 ): Promise<boolean> {
   const currentRawBalance = await getCurrentRawBalance(address, context);
-  const reconstructedRawBalance = getRawBalanceFromActivity(recentActivity);
+  const reconstructedRawBalance = getRawBalanceFromActivity(activity);
 
   return reconstructedRawBalance.eq(currentRawBalance);
 }
@@ -269,7 +269,7 @@ async function calculateBoundedWeeklyEarnings(
   };
 
   const { data: recentActivity } = await runeProvider.runes.walletActivity(recentQuery);
-  const recentActivityMatchesCurrentBalance = await recentActivityExplainsCurrentBalance(
+  const recentActivityMatchesCurrentBalance = await activityExplainsCurrentBalance(
     address,
     recentActivity,
     context,
@@ -293,14 +293,31 @@ async function calculateBoundedWeeklyEarnings(
     rune_id: publicConfig.sRune.id,
     count: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
   });
+  const boundedHistoryMayBeTruncated = isPossiblyTruncatedActivityPage(
+    boundedHistoryActivity,
+    MAX_WEEKLY_ACTIVITY_HISTORY_COUNT,
+  );
 
-  if (isPossiblyTruncatedActivityPage(boundedHistoryActivity, MAX_WEEKLY_ACTIVITY_HISTORY_COUNT)) {
+  if (
+    boundedHistoryMayBeTruncated &&
+    !(await activityExplainsCurrentBalance(address, boundedHistoryActivity, context))
+  ) {
     throw new Error(
       `${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE}: wallet activity hit the bounded weekly history limit`,
     );
   }
 
-  return calculateEarningsFromActivity(boundedHistoryActivity, context);
+  try {
+    return calculateEarningsFromActivity(boundedHistoryActivity, context);
+  } catch (error) {
+    if (boundedHistoryMayBeTruncated && isInsufficientEarningsSlotsError(error)) {
+      throw new Error(
+        `${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE}: wallet activity hit the bounded weekly history limit`,
+      );
+    }
+
+    throw error;
+  }
 }
 
 /**

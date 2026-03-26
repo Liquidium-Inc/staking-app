@@ -505,7 +505,7 @@ describe('runWeeklyEmailCron', () => {
     });
   });
 
-  it('skips weekly earnings when the bounded history page exactly fills its limit', async () => {
+  it('skips weekly earnings when an exact-limit bounded history still cannot reconstruct balance', async () => {
     const fullRecentActivity = Array.from({ length: RECENT_WEEKLY_ACTIVITY_COUNT }, () => ({
       timestamp: '2026-03-18T12:00:00.000Z',
       rune_id: publicConfig.sRune.id,
@@ -546,6 +546,62 @@ describe('runWeeklyEmailCron', () => {
       emailsSent: 0,
       emailsSkipped: 1,
       totalRewardsDistributed: 0,
+    });
+  });
+
+  it('does not skip weekly earnings when an exact-limit bounded history fully reconstructs the wallet', async () => {
+    const supply = BigInt(publicConfig.sRune.supply);
+    const sharedStaked = (supply - 5000n).toString();
+    const fullRecentActivity = Array.from({ length: RECENT_WEEKLY_ACTIVITY_COUNT }, () => ({
+      timestamp: '2026-03-18T12:00:00.000Z',
+      rune_id: publicConfig.sRune.id,
+      amount: '1',
+      decimals: 0,
+      event_type: 'output',
+    }));
+    const fullBoundedHistoryActivity = Array.from(
+      { length: MAX_WEEKLY_ACTIVITY_HISTORY_COUNT },
+      (_, index) => ({
+        timestamp: `2026-03-${String((index % 10) + 10).padStart(2, '0')}T12:00:00.000Z`,
+        rune_id: publicConfig.sRune.id,
+        amount: '1',
+        decimals: 0,
+        event_type: 'output',
+      }),
+    );
+
+    mocks.db.poolBalance.getHistoric.mockResolvedValue([
+      {
+        timestamp: new Date('2026-03-14T12:00:00.000Z'),
+        block: 1,
+        balance: '5000',
+        staked: sharedStaked,
+      },
+      {
+        timestamp: new Date('2026-03-20T12:00:00.000Z'),
+        block: 2,
+        balance: '6500',
+        staked: sharedStaked,
+      },
+    ]);
+    mocks.runeProvider.runes.walletBalances.mockResolvedValue({
+      data: [{ rune_id: publicConfig.sRune.id, total_balance: '5000' }],
+      block_height: 100,
+    });
+    mocks.runeProvider.runes.walletActivity.mockImplementation(async ({ newerThan }) => ({
+      data: newerThan ? fullRecentActivity : fullBoundedHistoryActivity,
+      block_height: 0,
+    }));
+
+    const promise = runWeeklyEmailCron();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mocks.emailService.generateWeeklyReportEmail).toHaveBeenCalledOnce();
+    expect(mocks.emailService.sendEmail).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      emailsSent: 1,
+      emailsSkipped: 0,
     });
   });
 

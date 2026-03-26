@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import React from 'react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -210,5 +210,50 @@ describe('PortfolioPage', () => {
     expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
     expect(screen.getByText('1.12818')).toBeInTheDocument();
     expect(screen.getByText('22.33%')).toBeInTheDocument();
+  });
+
+  it('renders total earned as unavailable when earnings reconstruction fails', () => {
+    mockLaserState.address = 'bc1ptestaddress';
+    mockProtocolQuery.mockReturnValue({
+      data: {
+        ...protocolData,
+        exchangeRate: 1.12818,
+      },
+      fetchStatus: 'idle',
+      dataUpdatedAt: Date.now(),
+    });
+    mockBalanceQuery.mockReturnValue({
+      data: 1,
+      fetchStatus: 'idle',
+    });
+    mockActivityQuery.mockReturnValue({
+      data: [
+        {
+          timestamp: '2026-03-19T12:00:00.000Z',
+          rune_id: config.sRune.id,
+          amount: '1',
+          decimals: 0,
+          event_type: 'input',
+          outpoint: 'tx:0',
+        },
+      ],
+      fetchStatus: 'idle',
+    });
+
+    renderPage();
+
+    const totalEarnedCard = screen.getByText('Total Earned').closest('.relative');
+
+    if (!(totalEarnedCard instanceof HTMLElement)) {
+      throw new Error('Expected Total Earned card container to be present.');
+    }
+
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Earnings are temporarily unavailable because your staking history could not be fully reconstructed.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(totalEarnedCard).queryByText('$0 USD')).not.toBeInTheDocument();
   });
 });

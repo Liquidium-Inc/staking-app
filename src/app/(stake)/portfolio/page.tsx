@@ -147,6 +147,9 @@ export default function PortfolioPage() {
     }
   }, [activity, historicRates, isEarningsLoading, resolvedExchangeRate]);
   const earnings = earningsState.result;
+  const isTotalEarnedUnavailable =
+    !isTotalEarnedLoading && (!hasResolvedExchangeRate || Boolean(earningsState.error));
+  const showTotalEarnedError = !isTotalEarnedLoading && Boolean(earningsState.error);
 
   // Memoize the data transformation
   const exchangeRateData = useMemo(() => {
@@ -223,7 +226,7 @@ export default function PortfolioPage() {
       <div className="flex w-full max-w-md flex-col items-center justify-center space-y-3">
         <Card className="relative w-full space-y-1">
           <div className="absolute top-3 right-11">
-            {hasResolvedExchangeRate && earnings.total.gt(0) && (
+            {!isTotalEarnedUnavailable && earnings.total.gt(0) && (
               <ShareButton
                 decimals={rune.decimals}
                 tokenAmount={earnings.total.toString()}
@@ -246,27 +249,33 @@ export default function PortfolioPage() {
               <ValueSkeleton className="h-10 w-44" />
             ) : (
               <span className="text-4xl font-semibold">
-                {hasResolvedExchangeRate
-                  ? formatCurrency(earnings.total.toString(), rune.decimals)
-                  : PORTFOLIO_VALUE_PLACEHOLDER}
+                {isTotalEarnedUnavailable
+                  ? PORTFOLIO_VALUE_PLACEHOLDER
+                  : hasResolvedExchangeRate
+                    ? formatCurrency(earnings.total.toString(), rune.decimals)
+                    : PORTFOLIO_VALUE_PLACEHOLDER}
               </span>
             )}
-            {hasResolvedExchangeRate && !isTotalEarnedLoading && earnings.percentage.gt(0) && (
+            {!isTotalEarnedUnavailable && earnings.percentage.gt(0) && (
               <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
                 +{formatCurrency(earnings.percentage.toString())}%
               </div>
             )}
           </CardContent>
-          <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            {isTotalEarnedLoading ? (
+          {isTotalEarnedLoading ? (
+            <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
               <ValueSkeleton className="h-3.5 w-32" />
-            ) : hasResolvedExchangeRate ? (
-              `$${formatCurrency(earnings.total.times(tokenPrice).toString())} USD`
-            ) : (
-              EXCHANGE_RATE_UNAVAILABLE_MESSAGE
-            )}
-          </div>
-          {!isTotalEarnedLoading && earningsState.error && (
+            </div>
+          ) : !isTotalEarnedUnavailable ? (
+            <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
+              {`$${formatCurrency(earnings.total.times(tokenPrice).toString())} USD`}
+            </div>
+          ) : !earningsState.error ? (
+            <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
+              {EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
+            </div>
+          ) : null}
+          {showTotalEarnedError && (
             <div className="px-2 text-xs font-medium text-amber-600">{earningsState.error}</div>
           )}
         </Card>
