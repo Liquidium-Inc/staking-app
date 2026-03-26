@@ -3,13 +3,14 @@
 import { useLaserEyes } from '@omnisat/lasereyes-react';
 import Big from 'big.js';
 import { Info } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Area, AreaChart, XAxis, YAxis, Tooltip as RechartsTooltip } from 'recharts';
 import { ResponsiveContainer } from 'recharts';
 
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { ShareButton } from '@/components/share/share-button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TokenLogo } from '@/components/ui/token';
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useBalance } from '@/hooks/api/useBalance';
@@ -22,6 +23,7 @@ import {
 } from '@/lib/earnings';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { formatPercentage } from '@/lib/formatPercentage';
+import { cn } from '@/lib/utils';
 
 const PORTFOLIO_VALUE_PLACEHOLDER = 'Unavailable';
 const EXCHANGE_RATE_UNAVAILABLE_MESSAGE =
@@ -39,14 +41,31 @@ function getPortfolioEarningsErrorMessage(error: unknown): string {
 }
 
 export default function PortfolioPage() {
-  const { address } = useLaserEyes();
-  const { data: protocol } = useProtocol();
+  const { address, isInitializing, isConnecting } = useLaserEyes((state) => ({
+    address: state.address,
+    isInitializing: state.isInitializing,
+    isConnecting: state.isConnecting,
+  }));
+  const normalizedAddress = address?.trim() ?? '';
+  const hasAddress = Boolean(normalizedAddress);
+  const isWalletLoading = isInitializing || isConnecting;
+
+  const protocolQuery = useProtocol();
+  const { data: protocol } = protocolQuery;
   const { btc, rune, staked, apy, historicRates, exchangeRate } = protocol;
+  const isProtocolLoading =
+    protocolQuery.fetchStatus === 'fetching' && protocolQuery.dataUpdatedAt === 0;
 
-  const isExchangeRateLoaded = exchangeRate !== Number.POSITIVE_INFINITY;
-
-  const { data: activity = [] } = useWalletActivity(address);
-  const { data: stakedBalance = 0 } = useBalance(address, staked.id, staked.decimals);
+  const activityQuery = useWalletActivity(normalizedAddress);
+  const stakedBalanceQuery = useBalance(normalizedAddress, staked.id, staked.decimals);
+  const activity = useMemo(() => activityQuery.data ?? [], [activityQuery.data]);
+  const stakedBalance = stakedBalanceQuery.data ?? 0;
+  const isActivityLoading =
+    hasAddress && activityQuery.data === undefined && activityQuery.fetchStatus === 'fetching';
+  const isStakedBalanceLoading =
+    hasAddress &&
+    stakedBalanceQuery.data === undefined &&
+    stakedBalanceQuery.fetchStatus === 'fetching';
 
   const tokenPrice = Big(rune.priceSats ?? 0)
     .times(btc.price)
@@ -71,8 +90,24 @@ export default function PortfolioPage() {
   const hasResolvedExchangeRate = resolvedExchangeRate !== null;
   const liqValue = resolvedExchangeRate ? stakedBalanceBig.times(resolvedExchangeRate) : null;
   const stakedValueUsd = liqValue ? liqValue.times(tokenPrice) : null;
+  const isExchangeRateUnavailable = !isProtocolLoading && !hasResolvedExchangeRate;
+  const isPositionLoading = isWalletLoading || isStakedBalanceLoading;
+  const isEarningsLoading = isPositionLoading || isActivityLoading || isProtocolLoading;
+  const isTotalEarnedLoading = isEarningsLoading;
+  const isLiqValueLoading = isPositionLoading || isProtocolLoading;
+  const isStakedValueLoading = isPositionLoading;
+  const isDailyYieldLoading = isPositionLoading || isProtocolLoading;
+  const isApyLoading = isProtocolLoading;
+  const isPriceLoading = isProtocolLoading;
 
   const earningsState = useMemo(() => {
+    if (isEarningsLoading) {
+      return {
+        result: createEmptyEarningsResult(),
+        error: null,
+      };
+    }
+
     if (!resolvedExchangeRate) {
       return {
         result: createEmptyEarningsResult(),
@@ -110,7 +145,7 @@ export default function PortfolioPage() {
         error: getPortfolioEarningsErrorMessage(error),
       };
     }
-  }, [activity, historicRates, resolvedExchangeRate]);
+  }, [activity, historicRates, isEarningsLoading, resolvedExchangeRate]);
   const earnings = earningsState.result;
 
   // Memoize the data transformation
@@ -207,23 +242,31 @@ export default function PortfolioPage() {
           </CardHeader>
           <CardContent className="flex items-center space-x-2 px-2">
             <TokenLogo logo={rune.symbol} variant="primary" size={40} />
-            <span className="text-4xl font-semibold">
-              {hasResolvedExchangeRate
-                ? formatCurrency(earnings.total.toString(), rune.decimals)
-                : PORTFOLIO_VALUE_PLACEHOLDER}
-            </span>
-            {hasResolvedExchangeRate && earnings.percentage.gt(0) && (
+            {isTotalEarnedLoading ? (
+              <ValueSkeleton className="h-10 w-44" />
+            ) : (
+              <span className="text-4xl font-semibold">
+                {hasResolvedExchangeRate
+                  ? formatCurrency(earnings.total.toString(), rune.decimals)
+                  : PORTFOLIO_VALUE_PLACEHOLDER}
+              </span>
+            )}
+            {hasResolvedExchangeRate && !isTotalEarnedLoading && earnings.percentage.gt(0) && (
               <div className="ml-auto rounded-full border-3 border-green-500 bg-green-500/20 px-2 py-1 text-xs text-green-500">
                 +{formatCurrency(earnings.percentage.toString())}%
               </div>
             )}
           </CardContent>
           <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-            {hasResolvedExchangeRate
-              ? `$${formatCurrency(earnings.total.times(tokenPrice).toString())} USD`
-              : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
+            {isTotalEarnedLoading ? (
+              <ValueSkeleton className="h-3.5 w-32" />
+            ) : hasResolvedExchangeRate ? (
+              `$${formatCurrency(earnings.total.times(tokenPrice).toString())} USD`
+            ) : (
+              EXCHANGE_RATE_UNAVAILABLE_MESSAGE
+            )}
           </div>
-          {earningsState.error && (
+          {!isTotalEarnedLoading && earningsState.error && (
             <div className="px-2 text-xs font-medium text-amber-600">{earningsState.error}</div>
           )}
         </Card>
@@ -238,16 +281,24 @@ export default function PortfolioPage() {
             </CardHeader>
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
-              <span className="text-xl font-semibold">
-                {liqValue
-                  ? formatCurrency(liqValue.toString(), rune.decimals)
-                  : PORTFOLIO_VALUE_PLACEHOLDER}
-              </span>
+              {isLiqValueLoading ? (
+                <ValueSkeleton className="h-6 w-28" />
+              ) : (
+                <span className="text-xl font-semibold">
+                  {liqValue
+                    ? formatCurrency(liqValue.toString(), rune.decimals)
+                    : PORTFOLIO_VALUE_PLACEHOLDER}
+                </span>
+              )}
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              {stakedValueUsd
-                ? `$${formatCurrency(stakedValueUsd.toString())} USD`
-                : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
+              {isLiqValueLoading ? (
+                <ValueSkeleton className="h-3.5 w-24" />
+              ) : stakedValueUsd ? (
+                `$${formatCurrency(stakedValueUsd.toString())} USD`
+              ) : (
+                EXCHANGE_RATE_UNAVAILABLE_MESSAGE
+              )}
             </div>
           </Card>
 
@@ -260,14 +311,22 @@ export default function PortfolioPage() {
             </CardHeader>
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={staked.symbol} variant="secondary" size={24} />
-              <span className="text-xl font-semibold">
-                {formatCurrency(stakedBalance, staked.decimals)}
-              </span>
+              {isStakedValueLoading ? (
+                <ValueSkeleton className="h-6 w-24" />
+              ) : (
+                <span className="text-xl font-semibold">
+                  {formatCurrency(stakedBalance, staked.decimals)}
+                </span>
+              )}
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              {stakedValueUsd
-                ? `$${formatCurrency(stakedValueUsd.toString())} USD`
-                : EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
+              {isLiqValueLoading ? (
+                <ValueSkeleton className="h-3.5 w-24" />
+              ) : stakedValueUsd ? (
+                `$${formatCurrency(stakedValueUsd.toString())} USD`
+              ) : (
+                EXCHANGE_RATE_UNAVAILABLE_MESSAGE
+              )}
             </div>
           </Card>
 
@@ -280,12 +339,20 @@ export default function PortfolioPage() {
             </CardHeader>
             <CardContent className="flex items-center space-x-2 px-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
-              <span className="text-xl font-semibold">
-                {formatCurrency(dailyYieldBig.toString(), rune.decimals)}
-              </span>
+              {isDailyYieldLoading ? (
+                <ValueSkeleton className="h-6 w-24" />
+              ) : (
+                <span className="text-xl font-semibold">
+                  {formatCurrency(dailyYieldBig.toString(), rune.decimals)}
+                </span>
+              )}
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              ${formatCurrency(dailyYieldBig.times(tokenPrice).toString())} USD
+              {isDailyYieldLoading ? (
+                <ValueSkeleton className="h-3.5 w-24" />
+              ) : (
+                `$${formatCurrency(dailyYieldBig.times(tokenPrice).toString())} USD`
+              )}
             </div>
           </Card>
 
@@ -297,10 +364,18 @@ export default function PortfolioPage() {
               </InfoTooltip>
             </CardHeader>
             <CardContent className="flex items-center space-x-2 px-2">
-              <span className="text-xl font-semibold">{formatPercentage(apy.yearly * 100)}%</span>
+              {isApyLoading ? (
+                <ValueSkeleton className="h-6 w-16" />
+              ) : (
+                <span className="text-xl font-semibold">{formatPercentage(apy.yearly * 100)}%</span>
+              )}
             </CardContent>
             <div className="flex justify-between px-2 text-xs font-semibold opacity-50">
-              {formatPercentage(apy.monthly * 100)}% per month
+              {isApyLoading ? (
+                <ValueSkeleton className="h-3.5 w-24" />
+              ) : (
+                `${formatPercentage(apy.monthly * 100)}% per month`
+              )}
             </div>
           </Card>
         </div>
@@ -316,17 +391,39 @@ export default function PortfolioPage() {
           <CardContent className="px-2">
             <div className="flex items-center space-x-2">
               <TokenLogo logo={rune.symbol} variant="primary" size={24} />
-              <span className="text-xl font-semibold">
-                {isExchangeRateLoaded ? exchangeRate.toFixed(5) : ''}
-              </span>
+              {isPriceLoading ? (
+                <ValueSkeleton className="h-6 w-20" />
+              ) : isExchangeRateUnavailable ? (
+                <span className="text-xl font-semibold">{PORTFOLIO_VALUE_PLACEHOLDER}</span>
+              ) : (
+                <span className="text-xl font-semibold">{resolvedExchangeRate?.toFixed(5)}</span>
+              )}
             </div>
-            <div className="h-16 w-full">{chart}</div>
+            {isPriceLoading ? (
+              <div className="space-y-2 pt-3">
+                <ValueSkeleton className="h-16 w-full" />
+                <ValueSkeleton className="h-3.5 w-40" />
+              </div>
+            ) : isExchangeRateUnavailable ? (
+              <div className="pt-3 text-xs font-medium text-amber-600">
+                {EXCHANGE_RATE_UNAVAILABLE_MESSAGE}
+              </div>
+            ) : (
+              <div className="h-16 w-full">{chart}</div>
+            )}
           </CardContent>
         </Card>
       </div>
     </TooltipProvider>
   );
 }
+
+/**
+ * Shared portfolio skeleton block used for loading values and supporting copy.
+ */
+const ValueSkeleton = ({ className }: { className: string }) => (
+  <Skeleton className={cn('rounded-md bg-white/12 ring-1 ring-white/8', className)} />
+);
 
 const InfoTooltip = ({ children }: { children: React.ReactNode }) => {
   const [open, setOpen] = useState(false);

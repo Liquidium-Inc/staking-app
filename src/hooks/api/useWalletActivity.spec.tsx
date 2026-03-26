@@ -19,16 +19,13 @@ describe('useWalletActivity', () => {
     vi.clearAllMocks();
   });
 
-  it('returns empty array if address is empty', async () => {
+  it('stays idle if address is empty', () => {
     const { result } = renderHook(() => useWalletActivity(''), {
       wrapper,
     });
 
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(result.current.data).toEqual([]);
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.data).toBeUndefined();
     expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 
