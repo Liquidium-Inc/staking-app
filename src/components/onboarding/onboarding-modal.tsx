@@ -1,5 +1,6 @@
 'use client';
 
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -16,21 +17,25 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import {
   AlertDialog,
   AlertDialogContent,
+  AlertDialogDescription,
   AlertDialogOverlay,
   AlertDialogPortal,
+  AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Drawer,
   DrawerClose,
   DrawerContent,
+  DrawerDescription,
   DrawerOverlay,
   DrawerPortal,
+  DrawerTitle,
 } from '@/components/ui/drawer';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 
@@ -286,6 +291,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
   };
 
   const currentSlideData = slides[currentSlide];
+  const accessibilityDescription = `Onboarding step ${currentSlide + 1} of ${slides.length}.`;
 
   const content = (
     <div className="flex h-full min-h-[510px] flex-col">
@@ -397,6 +403,10 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
         <AlertDialogPortal>
           <AlertDialogOverlay className="bg-black/80 backdrop-blur-sm" />
           <AlertDialogContent className="h-fit max-h-[90vh] min-w-xl overflow-hidden border-neutral-800 bg-neutral-950 p-0">
+            <VisuallyHidden.Root>
+              <AlertDialogTitle>{currentSlideData.title}</AlertDialogTitle>
+              <AlertDialogDescription>{accessibilityDescription}</AlertDialogDescription>
+            </VisuallyHidden.Root>
             {content}
           </AlertDialogContent>
         </AlertDialogPortal>
@@ -409,6 +419,10 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
       <DrawerPortal>
         <DrawerOverlay className="bg-black/80 backdrop-blur-sm" />
         <DrawerContent className="h-screen w-full border-neutral-800 bg-neutral-950">
+          <VisuallyHidden.Root>
+            <DrawerTitle>{currentSlideData.title}</DrawerTitle>
+            <DrawerDescription>{accessibilityDescription}</DrawerDescription>
+          </VisuallyHidden.Root>
           {content}
           <DrawerClose />
         </DrawerContent>
