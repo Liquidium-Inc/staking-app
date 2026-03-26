@@ -116,10 +116,12 @@ class CentralizedRuneProvider implements RuneProvider {
           }
 
           collected.push(
-            ...flattenWalletActivity(params.address, requestedRune, transaction).filter((entry) => {
-              if (!newerThan) return true;
-              return new Date(entry.timestamp).valueOf() >= newerThan;
-            }),
+            ...flattenWalletActivity(params.address, requestedRune, transaction, sort).filter(
+              (entry) => {
+                if (!newerThan) return true;
+                return new Date(entry.timestamp).valueOf() >= newerThan;
+              },
+            ),
           );
 
           if (collected.length >= offset + count) break;
@@ -225,6 +227,7 @@ function flattenWalletActivity(
   address: string,
   rune: KnownRune,
   transaction: Awaited<ReturnType<typeof ordiscan.rune.walletActivity>>['data'][number],
+  sort: 'newest' | 'oldest',
 ): WalletActivity[] {
   const inputs = transaction.inputs
     .filter((input) => input.address === address && input.rune === rune.name)
@@ -248,5 +251,5 @@ function flattenWalletActivity(
       decimals: rune.decimals,
     }));
 
-  return [...inputs, ...outputs];
+  return sort === 'newest' ? [...outputs, ...inputs] : [...inputs, ...outputs];
 }

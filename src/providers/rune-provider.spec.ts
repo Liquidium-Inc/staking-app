@@ -31,7 +31,7 @@ describe('runeProvider.runes.walletActivity', () => {
     vi.clearAllMocks();
   });
 
-  it('flattens Ordiscan transaction activity into wallet input/output events', async () => {
+  it('preserves spend-before-change replay order when fetching newest-first activity', async () => {
     const address = 'bc1ptest';
 
     mocks.ordiscan.rune.walletActivity.mockResolvedValue({
@@ -75,6 +75,70 @@ describe('runeProvider.runes.walletActivity', () => {
     expect(result).toEqual({
       data: [
         {
+          event_type: 'output',
+          outpoint: 'tx-1:1',
+          amount: '75',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          rune_id: config.sRune.id,
+          decimals: config.sRune.decimals,
+        },
+        {
+          event_type: 'input',
+          outpoint: 'spent-outpoint:0',
+          amount: '100',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          rune_id: config.sRune.id,
+          decimals: config.sRune.decimals,
+        },
+      ],
+      block_height: 0,
+    });
+
+    expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledWith(address, {
+      page: 1,
+      sort: 'newest',
+    });
+  });
+
+  it('keeps chronological spend-before-change ordering when fetching oldest-first activity', async () => {
+    const address = 'bc1ptest';
+
+    mocks.ordiscan.rune.walletActivity.mockResolvedValue({
+      data: [
+        {
+          txid: 'tx-1',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          runestone_messages: [],
+          inputs: [
+            {
+              address,
+              output: 'spent-outpoint:0',
+              rune: config.sRune.name,
+              rune_amount: '100',
+            },
+          ],
+          outputs: [
+            {
+              address,
+              vout: 1,
+              rune: config.sRune.name,
+              rune_amount: '75',
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await runeProvider.runes.walletActivity({
+      address,
+      rune_id: config.sRune.id,
+      count: 10,
+      order: 'asc',
+    });
+
+    expect(result).toEqual({
+      data: [
+        {
           event_type: 'input',
           outpoint: 'spent-outpoint:0',
           amount: '100',
@@ -96,7 +160,7 @@ describe('runeProvider.runes.walletActivity', () => {
 
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledWith(address, {
       page: 1,
-      sort: 'newest',
+      sort: 'oldest',
     });
   });
 
