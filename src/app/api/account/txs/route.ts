@@ -3,38 +3,33 @@ import { z } from 'zod';
 
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
-import {
-  getPortfolioActivity,
-  PORTFOLIO_ACTIVITY_HISTORY_COUNT,
-  type PortfolioActivityResponse,
-} from '@/services/portfolio-activity';
+import { getPortfolioActivity } from '@/services/portfolioActivity.service';
+
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
+const runeId = config.sRune.id;
+const ADDRESS_PATTERN =
+  config.network === 'testnet4'
+    ? /^(?:tb1[ac-hj-np-z02-9]{8,87}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/
+    : /^(?:bc1[ac-hj-np-z02-9]{8,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
 
 const AddressQuerySchema = z.object({
-  address: z
-    .string()
-    .min(1)
-    .regex(/^(bc1|tb1|[13mn2][a-zA-Z0-9]{24,59})[a-zA-Z0-9]*$/),
+  address: z.string().trim().min(1).regex(ADDRESS_PATTERN),
 });
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const parsedQuery = AddressQuerySchema.safeParse(Object.fromEntries(searchParams));
 
-  const parseResult = AddressQuerySchema.safeParse({
-    address: searchParams.get('address'),
-  });
-
-  if (!parseResult.success) {
+  if (!parsedQuery.success) {
     return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
   }
 
-  const { address } = parseResult.data;
-
   const result = await getPortfolioActivity(
-    address,
-    config.sRune.id,
+    parsedQuery.data.address,
+    runeId,
     PORTFOLIO_ACTIVITY_HISTORY_COUNT,
     runeProvider,
   );
 
-  return NextResponse.json<PortfolioActivityResponse>(result);
+  return NextResponse.json(result);
 }
