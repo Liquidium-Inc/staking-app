@@ -110,9 +110,14 @@ class CentralizedRuneProvider implements RuneProvider {
 
         for (const transaction of transactions) {
           const transactionTime = new Date(transaction.timestamp).valueOf();
-          if (sort === 'newest' && newerThan && transactionTime < newerThan) {
+          if (newerThan && transactionTime < newerThan) {
             reachedOlderTransactions = true;
-            continue;
+
+            if (sort === 'newest') {
+              continue;
+            }
+
+            break;
           }
 
           collected.push(

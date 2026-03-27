@@ -200,4 +200,42 @@ describe('runeProvider.runes.walletActivity', () => {
     });
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(1);
   });
+
+  it('stops paging once oldest-first activity falls below the requested cutoff', async () => {
+    const address = 'bc1ptest';
+    const newerThan = new Date('2026-01-10T00:00:00.000Z');
+
+    mocks.ordiscan.rune.walletActivity.mockResolvedValue({
+      data: [
+        {
+          txid: 'tx-old',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          runestone_messages: [],
+          inputs: [],
+          outputs: [
+            {
+              address,
+              vout: 0,
+              rune: config.sRune.name,
+              rune_amount: '50',
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await runeProvider.runes.walletActivity({
+      address,
+      rune_id: config.sRune.id,
+      count: 10,
+      newerThan,
+      order: 'asc',
+    });
+
+    expect(result).toEqual({
+      data: [],
+      block_height: 0,
+    });
+    expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(1);
+  });
 });

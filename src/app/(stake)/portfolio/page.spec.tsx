@@ -4,6 +4,9 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { config } from '@/config/public';
+import type { useBalance as useBalanceQuery } from '@/hooks/api/useBalance';
+import type { useProtocol as useProtocolQuery } from '@/hooks/api/useProtocol';
+import type { useWalletActivity as useActivityQuery } from '@/hooks/api/useWalletActivity';
 
 import PortfolioPage from './page';
 
@@ -13,50 +16,18 @@ type LaserState = {
   isConnecting: boolean;
 };
 
-type ProtocolQuery = {
-  data: {
-    exchangeRate: number;
-    btc: { price: number };
-    canisterAddress: string;
-    rune: {
-      id: string;
-      symbol: string;
-      decimals: number;
-      priceSats: number;
-    };
-    staked: {
-      id: string;
-      symbol: string;
-      decimals: number;
-    };
-    historicRates: Array<{ rate: number; timestamp: string; block: number }>;
-    apy: {
-      window: number;
-      monthly: number;
-      daily: number;
-      yearly: number;
-    };
-  };
-  fetchStatus: 'idle' | 'fetching';
-  dataUpdatedAt: number;
-};
+type ProtocolQuery = Pick<
+  ReturnType<typeof useProtocolQuery>,
+  'data' | 'fetchStatus' | 'dataUpdatedAt'
+>;
+type BalanceQuery = Pick<ReturnType<typeof useBalanceQuery>, 'data' | 'fetchStatus'>;
+type ActivityQuery = Pick<ReturnType<typeof useActivityQuery>, 'data' | 'fetchStatus'>;
 
-type BalanceQuery = {
-  data?: number;
-  fetchStatus: 'idle' | 'fetching';
-};
-
-type ActivityQuery = {
-  data?: Array<{
-    event_type: 'input' | 'output';
-    outpoint: string;
-    amount: string;
-    timestamp: string;
-    rune_id: string;
-    decimals: number;
-  }>;
-  fetchStatus: 'idle' | 'fetching';
-};
+const UNAVAILABLE_LABEL = 'Unavailable';
+const EXCHANGE_RATE_UNAVAILABLE_MESSAGE =
+  'Portfolio values are temporarily unavailable because no exchange rate has been published yet.';
+const EARNINGS_RECONSTRUCTION_UNAVAILABLE_MESSAGE =
+  'Earnings are temporarily unavailable because your staking history could not be fully reconstructed.';
 
 const mockLaserState: LaserState = {
   address: undefined,
@@ -120,12 +91,14 @@ const protocolData: ProtocolQuery['data'] = {
   rune: {
     id: config.rune.id,
     symbol: config.rune.symbol,
+    name: config.rune.name,
     decimals: config.rune.decimals,
     priceSats: 32,
   },
   staked: {
     id: config.sRune.id,
     symbol: config.sRune.symbol,
+    name: config.sRune.name,
     decimals: config.sRune.decimals,
   },
   historicRates: [],
@@ -180,19 +153,15 @@ describe('PortfolioPage', () => {
 
     const { container } = renderPage();
 
-    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_LABEL)).not.toBeInTheDocument();
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('renders unavailable only after the protocol has finished without a usable rate', () => {
     renderPage();
 
-    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText(
-        'Portfolio values are temporarily unavailable because no exchange rate has been published yet.',
-      ).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(UNAVAILABLE_LABEL).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(EXCHANGE_RATE_UNAVAILABLE_MESSAGE).length).toBeGreaterThan(0);
   });
 
   it('renders real values once the exchange rate is available', () => {
@@ -207,7 +176,7 @@ describe('PortfolioPage', () => {
 
     renderPage();
 
-    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_LABEL)).not.toBeInTheDocument();
     expect(screen.getByText('1.12818')).toBeInTheDocument();
     expect(screen.getByText('22.33%')).toBeInTheDocument();
   });
@@ -248,11 +217,9 @@ describe('PortfolioPage', () => {
       throw new Error('Expected Total Earned card container to be present.');
     }
 
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(within(totalEarnedCard).getByText(UNAVAILABLE_LABEL)).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Earnings are temporarily unavailable because your staking history could not be fully reconstructed.',
-      ),
+      within(totalEarnedCard).getByText(EARNINGS_RECONSTRUCTION_UNAVAILABLE_MESSAGE),
     ).toBeInTheDocument();
     expect(within(totalEarnedCard).queryByText('$0 USD')).not.toBeInTheDocument();
   });
