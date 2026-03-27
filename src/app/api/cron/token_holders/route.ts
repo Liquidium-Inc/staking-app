@@ -4,7 +4,7 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { sql, schema } from '@/db';
 import { logger } from '@/lib/logger';
-import { runeProvider } from '@/providers/rune-provider';
+import { BIS } from '@/providers/bestinslot';
 
 const STAKED_RUNE_ID = publicConfig.sRune.id;
 const MAX_COUNT = 5000;
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   let offset = 0;
   while (true) {
     logger.info(`Fetching token ${STAKED_RUNE_ID} holders with offset ${offset}`);
-    const { data, block_height } = await runeProvider.runes.holders({
+    const { data, block_height } = await BIS.runes.holders({
       rune_id: STAKED_RUNE_ID,
       count: MAX_COUNT,
       offset,

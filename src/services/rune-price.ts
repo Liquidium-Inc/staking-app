@@ -2,18 +2,12 @@ import Big from 'big.js';
 
 import { SATOSHIS_PER_BTC as SATS_PER_BTC } from '@/lib/bitcoin-units';
 import { logger } from '@/lib/logger';
-import { BIS } from '@/providers/bestinslot';
 import { coingecko, convertUsdPriceToSats } from '@/providers/coingecko';
 import { mempool } from '@/providers/mempool';
 import { ordiscan } from '@/providers/ordiscan';
 
-type RuneTickerResult = Awaited<ReturnType<typeof BIS.runes.ticker>>;
-type RuneTickerLoader = (runeId: string) => Promise<RuneTickerResult>;
-
 export interface ResolveRunePriceParams {
   runeName: string;
-  runeId: string;
-  getTicker?: RuneTickerLoader;
 }
 
 export interface RunePriceSnapshot {
@@ -26,11 +20,9 @@ export interface RunePriceSnapshot {
  */
 async function getFallbackRunePriceInSats({
   runeName,
-  runeId,
-  getTicker = (fallbackRuneId) => BIS.runes.ticker({ rune_id: fallbackRuneId }),
 }: ResolveRunePriceParams): Promise<null | number> {
-  if (!runeName.trim() || !runeId.trim()) {
-    throw new Error('runeName and runeId must be non-empty strings');
+  if (!runeName.trim()) {
+    throw new Error('runeName must be a non-empty string');
   }
 
   try {
@@ -44,21 +36,7 @@ async function getFallbackRunePriceInSats({
     logger.warn(`Ordiscan price fetch failed for ${runeName}:`, error);
   }
 
-  try {
-    logger.debug(`Falling back to Best In Slot for rune ID ${runeId}`);
-    const { data: rune } = await getTicker(runeId);
-    const bisPrice =
-      rune.avg_unit_price_in_sats && rune.avg_unit_price_in_sats > 0
-        ? rune.avg_unit_price_in_sats
-        : null;
-    if (bisPrice !== null) {
-      logger.info(`BIS fallback price for ${runeName}: ${bisPrice} sats`);
-    }
-    return bisPrice;
-  } catch (error) {
-    logger.error(`BIS price fetch also failed for ${runeId}:`, error);
-    return null;
-  }
+  return null;
 }
 
 /**

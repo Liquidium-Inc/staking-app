@@ -1,37 +1,35 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
+import { getPortfolioActivity } from '@/services/portfolioActivity.service';
 
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
 const runeId = config.sRune.id;
+const ADDRESS_PATTERN =
+  config.network === 'testnet4'
+    ? /^(?:tb1[ac-hj-np-z02-9]{8,87}|[mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/
+    : /^(?:bc1[ac-hj-np-z02-9]{8,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
+
+const AddressQuerySchema = z.object({
+  address: z.string().trim().min(1).regex(ADDRESS_PATTERN),
+});
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const address = searchParams.get('address');
+  const parsedQuery = AddressQuerySchema.safeParse(Object.fromEntries(searchParams));
 
-  if (!address) {
-    return NextResponse.json({ error: 'Missing address' }, { status: 400 });
+  if (!parsedQuery.success) {
+    return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
   }
 
-  const count = 2000;
-  const { data: activity } = await runeProvider.runes.walletActivity({
-    address,
-    rune_id: runeId,
-    count,
-  });
-  // TODO: Get all pages
+  const result = await getPortfolioActivity(
+    parsedQuery.data.address,
+    runeId,
+    PORTFOLIO_ACTIVITY_HISTORY_COUNT,
+    runeProvider,
+  );
 
-  const only_runes = activity.filter((tx) => tx.rune_id === runeId);
-
-  const keys = new Set<string>();
-  const deduplicated = only_runes
-    .filter((tx) => tx.rune_id === runeId)
-    .filter((tx) => {
-      const key = `${tx.event_type}:${tx.outpoint}`;
-      if (keys.has(key)) return false;
-      keys.add(key);
-      return true;
-    });
-
-  return NextResponse.json(deduplicated);
+  return NextResponse.json(result);
 }

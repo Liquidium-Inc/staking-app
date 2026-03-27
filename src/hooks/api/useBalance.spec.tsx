@@ -25,14 +25,16 @@ describe('useBalance', () => {
     queryClient.clear();
   });
 
-  test('returns 0 if address or tokenId is missing', async () => {
+  test('stays idle if address or tokenId is missing', () => {
     const { result } = renderHook(() => useBalance('', 'token', 8), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toBe(0);
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.data).toBeUndefined();
+    expect(mockedAxios.get).not.toHaveBeenCalled();
 
     const { result: result2 } = renderHook(() => useBalance('address', '', 8), { wrapper });
-    await waitFor(() => expect(result2.current.isSuccess).toBe(true));
-    expect(result2.current.data).toBe(0);
+    expect(result2.current.fetchStatus).toBe('idle');
+    expect(result2.current.data).toBeUndefined();
+    expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 
   test('fetches and returns the balance correctly', async () => {

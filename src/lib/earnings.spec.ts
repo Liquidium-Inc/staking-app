@@ -1,7 +1,8 @@
+import Big from 'big.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
-import { computeEarnings } from './earnings.ts';
+import { computeEarnings, INSUFFICIENT_EARNINGS_SLOTS_MESSAGE } from './earnings.ts';
 
 vi.mock('yocto-queue', () => {
   return {
@@ -31,95 +32,99 @@ vi.mock('yocto-queue', () => {
 });
 
 describe('computeEarnings', () => {
+  const expectBig = (value: Big, expected: string) => {
+    expect(value.toString()).toBe(expected);
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('should work in simple cases', async () => {
-    const values = [{ block: 100, value: 10 }];
+    const values = [{ block: 100, value: new Big(10) }];
     const apys = [
-      { block: 0, value: 1 },
-      { block: 200, value: 2 },
+      { block: 0, value: new Big(1) },
+      { block: 200, value: new Big(2) },
     ];
 
     const result = computeEarnings(values, apys);
-    expect(result).toMatchObject({
-      realized: 0,
-      unrealized: 10,
-      total: 10,
-      invested: 10,
-      percentage: 100,
-    });
+
+    expectBig(result.realized, '0');
+    expectBig(result.unrealized, '10');
+    expectBig(result.total, '10');
+    expectBig(result.invested, '10');
+    expectBig(result.percentage, '100');
   });
 
   it('calculates realized and unrealized earnings correctly', async () => {
     const values = [
-      { block: 100, value: 10 },
-      { block: 200, value: 5 },
-      { block: 300, value: -8 },
+      { block: 100, value: new Big(10) },
+      { block: 200, value: new Big(5) },
+      { block: 300, value: new Big(-8) },
     ];
 
     const apys = [
-      { block: 100, value: 0.05 },
-      { block: 200, value: 0.07 },
-      { block: 300, value: 0.1 },
+      { block: 100, value: new Big('0.05') },
+      { block: 200, value: new Big('0.07') },
+      { block: 300, value: new Big('0.1') },
     ];
 
     const result = computeEarnings(values, apys);
 
-    expect(result).toMatchObject({
-      realized: 0.4, // (8 * (0.10 - 0.05)) = 0.4
-      unrealized: 0.25, // (10-8) * (0.10 - 0.05) + 5 * (0.10 - 0.07) = 0.1 + 0.15 = 0.25
-      total: 0.65, // 0.4 + 0.25
-      invested: 0.8500000000000001, // 10 * 0.05 + 5 * 0.07 = 0.5 + 0.35 = 0.85
-      percentage: 9.285714285714286, // (0.65 * 100) / 7 (total tokens remaining)
-    });
+    expectBig(result.realized, '0.4');
+    expectBig(result.unrealized, '0.25');
+    expectBig(result.total, '0.65');
+    expectBig(result.invested, '0.85');
+    expectBig(result.percentage, '9.28571428571428571429');
   });
 
-  it('handles multiple deposits and withdrawals', async () => {
+  it('keeps decimal-heavy flows exact', async () => {
     const values = [
-      { block: 100, value: 100 },
-      { block: 200, value: 50 },
-      { block: 300, value: -30 },
-      { block: 400, value: -70 },
+      { block: 100, value: new Big('0.3') },
+      { block: 200, value: new Big('0.2') },
+      { block: 300, value: new Big('-0.1') },
     ];
 
     const apys = [
-      { block: 100, value: 0.05 },
-      { block: 200, value: 0.06 },
-      { block: 300, value: 0.07 },
-      { block: 400, value: 0.08 },
-      { block: 500, value: 0.1 },
+      { block: 100, value: new Big('0.1') },
+      { block: 200, value: new Big('0.2') },
+      { block: 300, value: new Big('0.3') },
+      { block: 400, value: new Big('0.4') },
     ];
 
     const result = computeEarnings(values, apys);
 
-    expect(result).toEqual(
-      expect.objectContaining({
-        realized: expect.any(Number),
-        unrealized: expect.any(Number),
-      }),
-    );
+    expectBig(result.realized, '0.02');
+    expectBig(result.unrealized, '0.1');
+    expectBig(result.total, '0.12');
+    expectBig(result.invested, '0.07');
+    expectBig(result.percentage, '30');
   });
 
   it('throws error when no APY found for block', () => {
-    const values = [{ block: 100, value: 10 }];
-    const apys = [{ block: 200, value: 0.05 }];
+    const values = [{ block: 100, value: new Big(10) }];
+    const apys = [{ block: 200, value: new Big('0.05') }];
 
     expect(() => computeEarnings(values, apys)).toThrow('No rate found for block 100');
   });
 
-  it.skip('throws error when not enough slots to cover withdrawal', async () => {
+  it('throws error when no rates are provided', () => {
+    expect(() => computeEarnings([], [])).toThrow('No rates provided');
+  });
+
+  it('throws error when not enough slots to cover withdrawal', async () => {
     const values = [
-      { block: 100, value: 10 },
-      { block: 200, value: -20 },
+      { block: 100, value: new Big(10) },
+      { block: 200, value: new Big(-20) },
     ];
 
     const apys = [
-      { block: 100, value: 0.05 },
-      { block: 200, value: 0.07 },
+      { block: 100, value: new Big('0.05') },
+      { block: 200, value: new Big('0.07') },
     ];
 
-    expect(() => computeEarnings(values, apys)).toThrow(/No enough slots to cover/);
+    expect(() => computeEarnings(values, apys)).toThrow(
+      new RegExp(`${INSUFFICIENT_EARNINGS_SLOTS_MESSAGE} of 20`),
+    );
   });
 });

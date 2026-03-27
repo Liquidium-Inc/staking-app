@@ -42,8 +42,69 @@ async function getRuneMarketData(runeName: string) {
   });
 }
 
+async function getRuneInfo(runeName: string) {
+  return await spanWrap('providers-ordiscan', 'getRuneInfo', async () => {
+    if (typeof runeName !== 'string' || runeName.trim().length === 0) {
+      throw new Error('Invalid rune name: must be a non-empty string');
+    }
+
+    const { data } = await api.get<{
+      data: {
+        id: string;
+        name: string;
+        formatted_name: string;
+        symbol: string;
+        decimals: number;
+        current_supply: string;
+        premined_supply: string;
+      };
+    }>(`/rune/${encodeURIComponent(runeName)}`);
+
+    return data;
+  });
+}
+
+type AddressRuneActivityParams = {
+  page?: number;
+  sort?: 'newest' | 'oldest';
+};
+
+async function getAddressRuneActivity(address: string, params: AddressRuneActivityParams = {}) {
+  return await spanWrap('providers-ordiscan', 'getAddressRuneActivity', async () => {
+    if (typeof address !== 'string' || address.trim().length === 0) {
+      throw new Error('Invalid address: must be a non-empty string');
+    }
+
+    const { data } = await api.get<{
+      data: Array<{
+        txid: string;
+        timestamp: string;
+        runestone_messages: Array<{ rune: string; type: string }>;
+        inputs: Array<{
+          address: string;
+          output: string;
+          rune: string;
+          rune_amount: string;
+        }>;
+        outputs: Array<{
+          address: string;
+          vout: number;
+          rune: string;
+          rune_amount: string;
+        }>;
+      }>;
+    }>(`/address/${encodeURIComponent(address)}/activity/runes`, {
+      params,
+    });
+
+    return data;
+  });
+}
+
 export const ordiscan = {
   rune: {
+    info: getRuneInfo,
     market: getRuneMarketData,
+    walletActivity: getAddressRuneActivity,
   },
 };
