@@ -1,6 +1,5 @@
 'use client';
 
-import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -403,10 +402,10 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
         <AlertDialogPortal>
           <AlertDialogOverlay className="bg-black/80 backdrop-blur-sm" />
           <AlertDialogContent className="h-fit max-h-[90vh] min-w-xl overflow-hidden border-neutral-800 bg-neutral-950 p-0">
-            <VisuallyHidden.Root>
+            <div className="sr-only">
               <AlertDialogTitle>{currentSlideData.title}</AlertDialogTitle>
               <AlertDialogDescription>{accessibilityDescription}</AlertDialogDescription>
-            </VisuallyHidden.Root>
+            </div>
             {content}
           </AlertDialogContent>
         </AlertDialogPortal>
@@ -419,10 +418,10 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
       <DrawerPortal>
         <DrawerOverlay className="bg-black/80 backdrop-blur-sm" />
         <DrawerContent className="h-screen w-full border-neutral-800 bg-neutral-950">
-          <VisuallyHidden.Root>
+          <div className="sr-only">
             <DrawerTitle>{currentSlideData.title}</DrawerTitle>
             <DrawerDescription>{accessibilityDescription}</DrawerDescription>
-          </VisuallyHidden.Root>
+          </div>
           {content}
           <DrawerClose />
         </DrawerContent>
