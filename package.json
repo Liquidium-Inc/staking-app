@@ -68,7 +68,7 @@
     "@types/big.js": "^6.2.2",
     "@vercel/otel": "^1.13.0",
     "autoprefixer": "^10.4.21",
-    "axios": "^1.9.0",
+    "axios": "^1.13.5",
     "big.js": "^7.0.1",
     "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^7.0.0-rc.0",
