@@ -24,11 +24,23 @@ vi.mock('@/providers/ordiscan', () => ({ ordiscan: mocks.ordiscan }));
 vi.mock('@/providers/liquidium-api', () => ({ liquidiumApi: mocks.liquidiumApi }));
 vi.mock('@/providers/bestinslot', () => ({ BIS: mocks.bestInSlot }));
 
-import { runeProvider } from './rune-provider';
+import { MAX_WALLET_ACTIVITY_PAGES, runeProvider } from './rune-provider';
 
 describe('runeProvider.runes.walletActivity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('does not call Ordiscan when the requested count is zero', async () => {
+    await expect(
+      runeProvider.runes.walletActivity({
+        address: 'bc1ptest',
+        rune_id: config.sRune.id,
+        count: 0,
+      }),
+    ).resolves.toEqual({ data: [], block_height: 0 });
+
+    expect(mocks.ordiscan.rune.walletActivity).not.toHaveBeenCalled();
   });
 
   it('preserves spend-before-change replay order when fetching newest-first activity', async () => {
@@ -237,5 +249,25 @@ describe('runeProvider.runes.walletActivity', () => {
       block_height: 0,
     });
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after the fixed page budget when full pages contain no matching events', async () => {
+    mocks.ordiscan.rune.walletActivity.mockResolvedValue({
+      data: Array.from({ length: 100 }, (_, index) => ({
+        txid: `tx-${index}`,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        inputs: [],
+        outputs: [],
+      })),
+    });
+
+    const result = await runeProvider.runes.walletActivity({
+      address: 'wallet-address',
+      rune_id: config.sRune.id,
+      count: 500,
+    });
+
+    expect(result.data).toEqual([]);
+    expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(MAX_WALLET_ACTIVITY_PAGES);
   });
 });

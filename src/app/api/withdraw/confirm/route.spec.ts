@@ -105,6 +105,11 @@ describe('POST /api/withdraw/confirm', () => {
     mocks.redis.utxo.lock.mockResolvedValue(true);
     mocks.redis.utxo.extend.mockResolvedValue(true);
     mocks.redis.utxo.free.mockResolvedValue(true);
+    mocks.db.unstake.getByTxid.mockResolvedValue({
+      id: 1,
+      txid: mockTxId,
+      address: user.address,
+    });
 
     // Create a mock PSBT with the correct retention address
     mockPsbt = new bitcoin.Psbt({ network: bitcoin.networks.testnet });
@@ -147,6 +152,40 @@ describe('POST /api/withdraw/confirm', () => {
     expect(json.error).toBe('Unstake tx not found');
   });
 
+  it('rejects a stored unstake owned by a different wallet', async () => {
+    mocks.db.unstake.getByTxid.mockResolvedValueOnce({
+      id: 1,
+      txid: mockTxId,
+      address: 'different-address',
+    });
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: user.address,
+        psbt: mockPsbt.toBase64(),
+      }),
+    };
+
+    const response = await POST(req as unknown as NextRequest);
+
+    expect(response.status).toBe(404);
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired withdrawal input reservations before canister work', async () => {
+    mocks.redis.utxo.extend.mockResolvedValueOnce(false);
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: user.address,
+        psbt: mockPsbt.toBase64(),
+      }),
+    };
+
+    const response = await POST(req as unknown as NextRequest);
+
+    expect(response.status).toBe(409);
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
+  });
+
   it('returns 400 if sender is not the owner', async () => {
     mocks.mempool.transactions.getTx.mockResolvedValue({
       txid: mockTxId,
@@ -173,6 +212,10 @@ describe('POST /api/withdraw/confirm', () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe('Sender is not the owner of the tx');
+    expect(mocks.redis.utxo.free).toHaveBeenCalledWith(
+      [`${Buffer.from(mockTxId, 'hex').reverse().toString('hex')}:0`],
+      user.address,
+    );
   });
 
   it('returns 400 if transaction is not a retention output', async () => {
@@ -279,5 +322,6 @@ describe('POST /api/withdraw/confirm', () => {
 
     expect(mocks.mempool.transactions.postTx).toHaveBeenCalled();
     expect(mocks.db.unstake.update).toHaveBeenCalledWith([1], { claimTx: expect.any(String) });
+    expect(mocks.redis.utxo.free).not.toHaveBeenCalled();
   });
 });

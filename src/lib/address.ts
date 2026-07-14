@@ -24,3 +24,28 @@ export function addressesMatch(
     return normalizedA === normalizedB;
   }
 }
+
+export function publicKeyOwnsAddress(
+  publicKeyHex: string,
+  address: string,
+  network: bitcoin.Network = getBitcoinNetwork(),
+): boolean {
+  const publicKey = Buffer.from(publicKeyHex, 'hex');
+  const candidates: string[] = [];
+
+  try {
+    const taproot = bitcoin.payments.p2tr({ pubkey: bitcoin.toXOnly(publicKey), network }).address;
+    if (taproot) candidates.push(taproot);
+  } catch {}
+
+  if (publicKey.length !== 32) {
+    try {
+      const segwit = bitcoin.payments.p2wpkh({ pubkey: publicKey, network });
+      if (segwit.address) candidates.push(segwit.address);
+      const nestedSegwit = bitcoin.payments.p2sh({ redeem: segwit, network }).address;
+      if (nestedSegwit) candidates.push(nestedSegwit);
+    } catch {}
+  }
+
+  return candidates.some((candidate) => addressesMatch(candidate, address, network));
+}

@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
   values: vi.fn(),
   from: vi.fn(),
   orderBy: vi.fn(),
+  limit: vi.fn(),
   onConflictDoUpdate: vi.fn(),
   drizzle: {
-    asc: vi.fn((col) => ({ type: 'asc', column: col })),
+    desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
       {
@@ -22,7 +23,7 @@ const mocks = vi.hoisted(() => ({
 
 // Mock drizzle-orm functions
 vi.mock('drizzle-orm', () => ({
-  asc: mocks.drizzle.asc,
+  desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
 
@@ -47,7 +48,8 @@ describe('poolBalance service', () => {
     mocks.values.mockReturnValue({ onConflictDoUpdate: mocks.onConflictDoUpdate });
     mocks.onConflictDoUpdate.mockResolvedValue(undefined);
     mocks.from.mockReturnValue({ orderBy: mocks.orderBy });
-    mocks.orderBy.mockResolvedValue([]);
+    mocks.orderBy.mockReturnValue({ limit: mocks.limit });
+    mocks.limit.mockResolvedValue([]);
   });
 
   describe('insert', () => {
@@ -79,14 +81,15 @@ describe('poolBalance service', () => {
         { staked: '2000', balance: '6000', block: 1001 },
       ];
 
-      mocks.orderBy.mockResolvedValue(mockBalances);
+      mocks.limit.mockResolvedValue([...mockBalances].reverse());
 
       const result = await poolBalance.getHistoric();
 
       expect(result).toEqual(mockBalances);
       expect(sql.select).toHaveBeenCalled();
       expect(mocks.from).toHaveBeenCalledWith(poolBalances);
-      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'asc', column: poolBalances.block });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: poolBalances.block });
+      expect(mocks.limit).toHaveBeenCalledWith(4320);
     });
   });
 });

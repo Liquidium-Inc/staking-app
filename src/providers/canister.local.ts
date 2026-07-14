@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
@@ -54,7 +56,11 @@ export class CanisterMockedService implements PublicMethods<CanisterService> {
   private static deriveWallet(secret: string, network = bitcoin.networks.bitcoin) {
     const secretKey = Buffer.from(secret, 'hex');
     const ECPair = ECPairFactory(ecc);
-    const keyPair = ECPair.fromPrivateKey(secretKey, { network });
+    const keyPair = ECPair.fromPrivateKey(secretKey, {
+      compressed: true,
+      network,
+      rng: (size = 32) => randomBytes(size),
+    });
     const { address } = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
     if (!address) throw new Error('Invalid address');
     return { address, publicKey: Buffer.from(keyPair.publicKey).toString('hex'), keyPair };

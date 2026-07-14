@@ -10,14 +10,16 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   set: vi.fn(),
   limit: vi.fn(),
+  orderBy: vi.fn(),
   drizzle: {
-    and: vi.fn((a, b) => ({ type: 'and', conditions: [a, b] })),
+    and: vi.fn((...conditions) => ({ type: 'and', conditions })),
     eq: vi.fn((col, val) => ({ type: 'eq', column: col, value: val })),
     isNull: vi.fn((col) => ({ type: 'isNull', column: col })),
     isNotNull: vi.fn((col) => ({ type: 'isNotNull', column: col })),
     inArray: vi.fn((col, vals) => ({ type: 'inArray', column: col, values: vals })),
     or: vi.fn((...conditions) => ({ type: 'or', conditions })),
     gte: vi.fn((col, val) => ({ type: 'gte', column: col, value: val })),
+    desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
       {
@@ -36,6 +38,7 @@ vi.mock('drizzle-orm', () => ({
   inArray: mocks.drizzle.inArray,
   or: mocks.drizzle.or,
   gte: mocks.drizzle.gte,
+  desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
 
@@ -62,7 +65,8 @@ describe('unstake service', () => {
     vi.clearAllMocks();
 
     mocks.values.mockResolvedValue(undefined);
-    mocks.where.mockResolvedValue([]);
+    mocks.where.mockReturnValue({ orderBy: mocks.orderBy });
+    mocks.orderBy.mockReturnValue({ limit: mocks.limit });
     mocks.from.mockReturnValue({ where: mocks.where });
     mocks.set.mockReturnValue({ where: mocks.where });
     mocks.limit.mockResolvedValue([]);
@@ -99,7 +103,7 @@ describe('unstake service', () => {
         },
       ];
 
-      mocks.where.mockResolvedValue(mockPendingUnstakes);
+      mocks.limit.mockResolvedValue(mockPendingUnstakes);
 
       const result = await unstake.getPendingsOf(address);
 
@@ -113,6 +117,8 @@ describe('unstake service', () => {
           { type: 'isNull', column: unstakes.claimTx },
         ],
       });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(50);
     });
   });
 
@@ -131,7 +137,7 @@ describe('unstake service', () => {
         },
       ];
 
-      mocks.where.mockResolvedValue(mockUnstakes);
+      mocks.limit.mockResolvedValue(mockUnstakes);
 
       const result = await unstake.getAfterBlock(blockNumber);
 
@@ -141,14 +147,22 @@ describe('unstake service', () => {
       expect(mocks.where).toHaveBeenCalledWith({
         type: 'or',
         conditions: [
-          { type: 'isNull', column: unstakes.block },
+          {
+            type: 'and',
+            conditions: [
+              { type: 'isNull', column: unstakes.block },
+              { type: 'gte', column: unstakes.timestamp, value: expect.any(Date) },
+            ],
+          },
           { type: 'gte', column: unstakes.block, value: blockNumber },
         ],
       });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(100);
     });
   });
 
-  describe('getWithdrawAfterBlock', () => {
+  describe('getWithdrawAfterBlockForAddress', () => {
     test('should get withdrawals after specified block', async () => {
       const blockNumber = 1000;
       const mockWithdraws = [
@@ -164,9 +178,9 @@ describe('unstake service', () => {
         },
       ];
 
-      mocks.where.mockResolvedValue(mockWithdraws);
+      mocks.limit.mockResolvedValue(mockWithdraws);
 
-      const result = await unstake.getWithdrawAfterBlock(blockNumber);
+      const result = await unstake.getWithdrawAfterBlockForAddress(blockNumber, 'test-address');
 
       expect(result).toEqual(mockWithdraws);
       expect(sql.select).toHaveBeenCalled();
@@ -174,6 +188,7 @@ describe('unstake service', () => {
       expect(mocks.where).toHaveBeenCalledWith({
         type: 'and',
         conditions: [
+          { type: 'eq', column: unstakes.address, value: 'test-address' },
           { type: 'isNotNull', column: unstakes.claimTx },
           {
             type: 'or',
@@ -184,6 +199,38 @@ describe('unstake service', () => {
           },
         ],
       });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(50);
+    });
+  });
+
+  describe('getWithdrawAfterBlock', () => {
+    test('bounds the monitor query and excludes stale unconfirmed claims', async () => {
+      const blockNumber = 1000;
+
+      await unstake.getWithdrawAfterBlock(blockNumber);
+
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'isNotNull', column: unstakes.claimTx },
+          {
+            type: 'or',
+            conditions: [
+              {
+                type: 'and',
+                conditions: [
+                  { type: 'isNull', column: unstakes.claimTxBlock },
+                  { type: 'gte', column: unstakes.timestamp, value: expect.any(Date) },
+                ],
+              },
+              { type: 'gte', column: unstakes.claimTxBlock, value: blockNumber },
+            ],
+          },
+        ],
+      });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(100);
     });
   });
 

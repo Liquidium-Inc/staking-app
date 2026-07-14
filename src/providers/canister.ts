@@ -56,7 +56,7 @@ export class CanisterService {
         return await this.call(method, psbt, attempt + 1);
       }
 
-      return parsed;
+      return bindCanisterResponse(method, psbt, parsed, this.network);
     });
   }
 
@@ -173,5 +173,25 @@ function parseCanisterResponse(method: CanisterMethod, payload: unknown): Canist
 
     const snippet = trimmed.slice(0, 200);
     throw new Error(`Canister ${method} response parse failed: ${snippet}`, { cause: error });
+  }
+}
+
+export function bindCanisterResponse(
+  method: CanisterMethod,
+  requestedPsbtBase64: string,
+  response: CanisterResponse,
+  network: bitcoin.Network,
+): CanisterResponse {
+  if (response.error) return response;
+
+  try {
+    const requested = bitcoin.Psbt.fromBase64(requestedPsbtBase64, { network });
+    const returned = bitcoin.Psbt.fromBase64(response.signed_psbt, { network });
+    requested.combine(returned);
+    return { ...response, signed_psbt: requested.toBase64() };
+  } catch (error) {
+    throw new Error(`Canister ${method} returned a PSBT for a different transaction`, {
+      cause: error,
+    });
   }
 }

@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => ({
   RunePSBT: {
     build: vi.fn(),
   },
+  db: {
+    unstake: { getByTxid: vi.fn() },
+  },
+  redis: {
+    utxo: { lock: vi.fn(), free: vi.fn() },
+  },
 }));
 
 const requireSessionMock = vi.hoisted(() =>
@@ -45,6 +51,8 @@ vi.mock('@/providers/bestinslot', () => ({
 vi.mock('@/providers/mempool', () => ({
   mempool: mocks.mempool,
 }));
+vi.mock('@/db', () => ({ db: mocks.db }));
+vi.mock('@/providers/redis', () => ({ redis: mocks.redis }));
 
 vi.mock('@/server/auth/session', () => ({
   requireSession: requireSessionMock,
@@ -55,11 +63,16 @@ const getUser = () => {
   const network = bitcoin.networks.testnet;
   const ECPair = ECPairFactory(ecc);
   const keyPair = ECPair.makeRandom({ network });
-  const paymentAddress = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network }).address;
+  const paymentKeyPair = ECPair.makeRandom({ network });
+  const paymentAddress = bitcoin.payments.p2wpkh({
+    pubkey: paymentKeyPair.publicKey,
+    network,
+  }).address;
   const address = bitcoin.payments.p2tr({ pubkey: toXOnly(keyPair.publicKey), network }).address;
   return {
     keyPair: keyPair,
     publicKey: Buffer.from(keyPair.publicKey).toString('hex'),
+    paymentPublicKey: Buffer.from(paymentKeyPair.publicKey).toString('hex'),
     address: address || '',
     paymentAddress: paymentAddress || '',
     network,
@@ -78,6 +91,9 @@ describe('POST /api/withdraw', () => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       lastActiveAt: new Date(),
     });
+    mocks.db.unstake.getByTxid.mockResolvedValue({ address: user.address });
+    mocks.redis.utxo.lock.mockResolvedValue(true);
+    mocks.redis.utxo.free.mockResolvedValue(true);
   });
 
   it('returns 400 if body is invalid', async () => {
@@ -104,6 +120,39 @@ describe('POST /api/withdraw', () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe('Sender is not the owner of the tx');
+  });
+
+  it('rejects an unstake workflow owned by a different wallet', async () => {
+    mocks.db.unstake.getByTxid.mockResolvedValueOnce({ address: 'different-address' });
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        txid: 'txid1',
+        sender: { address: user.address, public: user.publicKey },
+      }),
+    } as unknown as NextRequest;
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(404);
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
+  });
+
+  it('rejects a protocol-controlled fee payer', async () => {
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        txid: 'txid1',
+        sender: { address: user.address, public: user.publicKey },
+        payer: { address: canister.address, public: user.publicKey },
+      }),
+    } as unknown as NextRequest;
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'Fee payer must be controlled by the authenticated wallet',
+    });
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
   });
 
   it('returns 400 if no UTXOs found', async () => {
@@ -160,14 +209,27 @@ describe('POST /api/withdraw', () => {
     mocks.BIS.mempool.cardinalUTXOs.mockResolvedValue({
       data: [{ txid: 'utxo1', vout: 0, value: 10000000, address: user.paymentAddress }],
     });
-    const psbt = new bitcoin.Psbt();
+    const retentionInputHash = Buffer.alloc(32, 1);
+    const payerInputHash = Buffer.alloc(32, 2);
+    const psbt = new bitcoin.Psbt()
+      .addInput({
+        hash: retentionInputHash,
+        index: 1,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 2_000n },
+      })
+      .addInput({
+        hash: payerInputHash,
+        index: 0,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 10_000n },
+      })
+      .addOutput({ script: Buffer.from([0x51]), value: 11_000n });
     mocks.RunePSBT.build.mockResolvedValueOnce(psbt);
 
     const req = {
       json: vi.fn().mockResolvedValue({
         txid: 'txid1',
         sender: { address: user.address, public: user.publicKey },
-        payer: { address: user.paymentAddress, public: user.publicKey },
+        payer: { address: user.paymentAddress, public: user.paymentPublicKey },
         feeRate: 5,
       }),
     } as unknown as NextRequest;
@@ -179,6 +241,16 @@ describe('POST /api/withdraw', () => {
     expect(json.payer.address).toEqual(user.paymentAddress);
     expect(json.feeRate).toBe(5);
     expect(Array.isArray(json.toSign)).toBe(true);
+    expect(mocks.redis.utxo.lock).toHaveBeenCalledWith(
+      `${retentionInputHash.toString('hex')}:1`,
+      user.address,
+      180,
+    );
+    expect(mocks.redis.utxo.lock).toHaveBeenCalledWith(
+      `${payerInputHash.toString('hex')}:0`,
+      user.address,
+      180,
+    );
   });
 
   it('returns 500 on unexpected error', async () => {

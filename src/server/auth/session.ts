@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 
 const SESSION_COOKIE_NAME = 'wallet_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -89,6 +90,16 @@ export async function requireSession(req: NextRequest) {
   const session = await getSessionFromRequest(req);
   if (!session) throw new UnauthorizedError();
   return session;
+}
+
+export async function authorizeAddressRequest(req: NextRequest, address: string) {
+  try {
+    const session = await requireSession(req);
+    return addressesMatch(session.address, address);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return false;
+    throw error;
+  }
 }
 
 export const sessionCookieName = SESSION_COOKIE_NAME;

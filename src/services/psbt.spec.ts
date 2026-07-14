@@ -9,6 +9,7 @@ import { vi, describe, test, expect } from 'vitest';
 import { config as publicConfig } from '@/config/public';
 import { RunePSBTInput } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
+import { redis } from '@/providers/redis';
 
 import { PSBTService } from './psbt';
 
@@ -176,6 +177,131 @@ describe('PSBTService', () => {
       const psbt = bitcoin.Psbt.fromBase64(response.psbt);
       expect(psbt.data.inputs.length).toBeGreaterThan(0);
       expect(psbt.data.outputs.length).toBeGreaterThan(0);
+    });
+
+    test('releases protocol UTXO locks when later input selection fails', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+      const lockedTxid = randomHex(64);
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${lockedTxid}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['1000'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [
+                {
+                  wallet_addr: user.address,
+                  output: `${randomHex(64)}:0`,
+                  rune_ids: [runeId],
+                  balances: ['1'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
+        { address: canister.address, amount: 500n, rune_id: stakedId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toThrow(PSBTService.NotEnoughBalanceError);
+      expect(redis.utxo.free).toHaveBeenCalledWith([`${lockedTxid}:0`], user.address);
+    });
+
+    test('preserves the PSBT failure when lock cleanup also fails', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+      const lockedTxid = randomHex(64);
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${lockedTxid}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['1000'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+      vi.mocked(redis.utxo.free).mockRejectedValueOnce(new Error('cleanup failed'));
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
+        { address: canister.address, amount: 500n, rune_id: stakedId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toBeInstanceOf(PSBTService.NotEnoughBalanceError);
+      expect(redis.utxo.free).toHaveBeenCalledWith([`${lockedTxid}:0`], user.address);
+    });
+
+    test('releases partially acquired protocol locks when target selection fails', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+      const firstTxid = randomHex(64);
+      const secondTxid = randomHex(64);
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${firstTxid}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['300'],
+                  confirmations: 99,
+                  value: 546,
+                },
+                {
+                  wallet_addr: canister.address,
+                  output: `${secondTxid}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['300'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+      vi.mocked(redis.utxo.lock).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
+        { address: canister.address, amount: 500n, rune_id: stakedId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toThrow(PSBTService.NotEnoughLiquidityError);
+      expect(redis.utxo.free).toHaveBeenCalledWith([`${firstTxid}:0`], user.address);
     });
   });
 });

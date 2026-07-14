@@ -7,7 +7,9 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
+import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
+import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
@@ -22,7 +24,7 @@ const body = z.object({
   }),
   amount: z.string().regex(/^\d+$/).transform(BigInt),
   sAmount: z.string().regex(/^\d+$/).transform(BigInt),
-  feeRate: z.number().min(0).optional(),
+  feeRate: z.number().int().min(1).max(MAX_FEE_RATE_SATS_PER_VBYTE).optional(),
   payer: z
     .object({
       public: z.string(),
@@ -69,10 +71,7 @@ export const POST = async (req: NextRequest) => {
 
       // Unlock UTXOs that were locked during PSBT building
       const tempPsbt = bitcoin.Psbt.fromBase64(unsignedPsbt);
-      const utxos = tempPsbt.txInputs.map((input) => {
-        const txid = Buffer.from(input.hash).reverse().toString('hex');
-        return `${txid}:${input.index}`;
-      });
+      const utxos = getPsbtInputOutpointsForAddress(tempPsbt, canister.address, canister.network);
 
       try {
         await redis.utxo.free(utxos, sender.address);
@@ -119,6 +118,9 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (error instanceof FeePolicyError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     logger.error(error as Error);
     if (error instanceof PSBTService.NotEnoughBalanceError)

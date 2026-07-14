@@ -1,11 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { config } from '@/config/public';
 import { runeProvider } from '@/providers/rune-provider';
+import { authorizeAddressRequest } from '@/server/auth/session';
 import { getPortfolioActivity } from '@/services/portfolioActivity.service';
 
-const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 5000;
+const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 500;
 const runeId = config.sRune.id;
 const ADDRESS_PATTERN =
   config.network === 'testnet4'
@@ -16,12 +17,16 @@ const AddressQuerySchema = z.object({
   address: z.string().trim().min(1).regex(ADDRESS_PATTERN),
 });
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const parsedQuery = AddressQuerySchema.safeParse(Object.fromEntries(searchParams));
 
   if (!parsedQuery.success) {
     return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
+  }
+
+  if (!(await authorizeAddressRequest(request, parsedQuery.data.address))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const result = await getPortfolioActivity(

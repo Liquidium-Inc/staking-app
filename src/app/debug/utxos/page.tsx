@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import Big from 'big.js';
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Props as RectangleProps } from 'recharts/types/shape/Rectangle';
 
-import type { GET as Assigned } from '@/app/api/protocol/utxos/assigned/route';
 import type { GET as UTXOs } from '@/app/api/protocol/utxos/route';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -17,15 +17,16 @@ const runeId = config.rune.id;
 const stakedId = config.sRune.id;
 
 // Helper function to handle log scale, avoiding log(0)
-const safeLog = (value: number) => {
-  if (value <= 0) return 0;
-  return Math.log10(value);
+const safeLog = (value: Big) => {
+  if (value.lte(0)) return 0;
+  const [coefficient, exponent = '0'] = value.toExponential(15).split('e');
+  return Math.log10(Number(coefficient)) + Number(exponent);
 };
 
 // Helper function to format numbers with proper handling of zero values
-const formatNumber = (value: number) => {
-  if (value === 0) return '0';
-  return value.toLocaleString();
+const formatNumber = (value: string) => {
+  if (value === '0') return value;
+  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
 const CustomBar = (props: RectangleProps & { payload?: any }) => {
@@ -60,7 +61,7 @@ const CustomBar = (props: RectangleProps & { payload?: any }) => {
         width={width * 2}
         height={adjustedHeight}
         fill={payload?.block == null ? `url(#${patternId})` : fill}
-        stroke={payload?.isAssigned ? '#ef4444' : fill} // red-500 when assigned
+        stroke={fill}
         strokeWidth={2}
       />
     </g>
@@ -75,41 +76,33 @@ export default function SignerPage() {
     refetchInterval: 5000,
   });
 
-  const { data: assigned } = useQuery<ApiOutput<typeof Assigned>>({
-    queryKey: ['assigned'],
-    queryFn: () => fetch('/api/protocol/utxos/assigned').then((res) => res.json()),
-    refetchInterval: 1000,
-  });
-
   const data = useMemo(() => {
-    const assignedMap = new Map(assigned?.map((e) => [e.utxo, e.address]));
     const data = utxos?.data
       .map((utxo) => {
         const output = `${utxo.txid}:${utxo.vout}`;
-        const isAssigned = assignedMap.has(output);
-        const amount = +utxo.amounts[utxo.rune_ids?.findIndex((id) => id === runeId) ?? -1] || 0;
-        const sAmount = +utxo.amounts[utxo.rune_ids?.findIndex((id) => id === stakedId) ?? -1] || 0;
+        const amount = new Big(
+          utxo.amounts[utxo.rune_ids?.findIndex((id) => id === runeId) ?? -1] ?? 0,
+        );
+        const sAmount = new Big(
+          utxo.amounts[utxo.rune_ids?.findIndex((id) => id === stakedId) ?? -1] ?? 0,
+        );
 
-        const shouldHide = hideZeroValues && amount === 0 && sAmount === 0;
+        const shouldHide = hideZeroValues && amount.eq(0) && sAmount.eq(0);
 
         return {
           id: output,
           shouldHide,
-          assignedTo: assignedMap.get(output),
-          originalAmount: amount,
-          originalSAmount: sAmount,
-          amount: amount,
-          sAmount: sAmount,
+          originalAmount: amount.toFixed(0),
+          originalSAmount: sAmount.toFixed(0),
           block: utxo.block_height,
           amountLog: safeLog(amount),
           sAmountLog: -safeLog(sAmount),
           others: utxo.rune_ids?.filter((id) => id !== runeId && id !== stakedId),
-          isAssigned,
         };
       })
       .filter((d) => !d.shouldHide);
     return data;
-  }, [utxos, assigned, hideZeroValues]);
+  }, [utxos, hideZeroValues]);
 
   // Sort data by amount and sAmount
   const sortedData = useMemo(() => {
@@ -125,9 +118,7 @@ export default function SignerPage() {
 
   const maxValue = useMemo(() => {
     if (!sortedData.length) return 0;
-    return Math.max(
-      ...sortedData.map((d) => Math.max(safeLog(d.originalAmount), safeLog(d.originalSAmount))),
-    );
+    return Math.max(...sortedData.map((d) => Math.max(d.amountLog, Math.abs(d.sAmountLog))));
   }, [sortedData]);
 
   return (
@@ -138,9 +129,8 @@ export default function SignerPage() {
             <div>
               <h3 className="text-lg font-semibold">UTXO Distribution (Log Scale)</h3>
               <p className="text-muted-foreground text-sm">
-                Green bars (top) represent amount, blue bars (bottom) represent sAmount. Red outline
-                indicates assigned UTXOs. Values are shown in logarithmic scale for better
-                visibility.
+                Green bars (top) represent amount and blue bars (bottom) represent sAmount. Values
+                are shown in logarithmic scale for better visibility.
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -185,11 +175,6 @@ export default function SignerPage() {
                     return (
                       <div className="bg-background rounded-lg border p-2 shadow-lg">
                         <p className="font-mono text-xs">{data.id}</p>
-                        {data.assignedTo && (
-                          <p className="text-muted-foreground text-xs">
-                            Assigned to: {data.assignedTo}
-                          </p>
-                        )}
                         <p className="text-xs">Amount: {formatNumber(data.originalAmount)}</p>
                         <p className="text-xs">sAmount: {formatNumber(data.originalSAmount)}</p>
                         {data.block && <p className="text-xs">Block: {data.block}</p>}
