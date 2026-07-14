@@ -99,6 +99,8 @@ class CentralizedRuneProvider implements RuneProvider {
         0,
         Math.min(params.count ?? MAX_WALLET_ACTIVITY_RESULTS, MAX_WALLET_ACTIVITY_RESULTS - offset),
       );
+      if (count === 0) return { data: [], block_height: 0 };
+
       const sort = params.order === 'asc' ? 'oldest' : 'newest';
       const newerThan = params.newerThan?.valueOf();
       const collected: WalletActivity[] = [];

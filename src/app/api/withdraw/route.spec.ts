@@ -209,7 +209,20 @@ describe('POST /api/withdraw', () => {
     mocks.BIS.mempool.cardinalUTXOs.mockResolvedValue({
       data: [{ txid: 'utxo1', vout: 0, value: 10000000, address: user.paymentAddress }],
     });
-    const psbt = new bitcoin.Psbt();
+    const retentionInputHash = Buffer.alloc(32, 1);
+    const payerInputHash = Buffer.alloc(32, 2);
+    const psbt = new bitcoin.Psbt()
+      .addInput({
+        hash: retentionInputHash,
+        index: 1,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 2_000n },
+      })
+      .addInput({
+        hash: payerInputHash,
+        index: 0,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 10_000n },
+      })
+      .addOutput({ script: Buffer.from([0x51]), value: 11_000n });
     mocks.RunePSBT.build.mockResolvedValueOnce(psbt);
 
     const req = {
@@ -228,6 +241,16 @@ describe('POST /api/withdraw', () => {
     expect(json.payer.address).toEqual(user.paymentAddress);
     expect(json.feeRate).toBe(5);
     expect(Array.isArray(json.toSign)).toBe(true);
+    expect(mocks.redis.utxo.lock).toHaveBeenCalledWith(
+      `${retentionInputHash.toString('hex')}:1`,
+      user.address,
+      180,
+    );
+    expect(mocks.redis.utxo.lock).toHaveBeenCalledWith(
+      `${payerInputHash.toString('hex')}:0`,
+      user.address,
+      180,
+    );
   });
 
   it('returns 500 on unexpected error', async () => {

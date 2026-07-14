@@ -1,5 +1,7 @@
 import * as bitcoin from 'bitcoinjs-lib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { mempool } from '@/providers/mempool';
 
 import {
   MAX_ABSOLUTE_FEE_SATS,
@@ -7,6 +9,8 @@ import {
   assertAbsoluteFeeWithinPolicy,
   assertFeeRateWithinPolicy,
   calculatePsbtFee,
+  FeePolicyError,
+  resolveFeeRate,
 } from './fee-rate';
 
 describe('fee policy', () => {
@@ -35,5 +39,17 @@ describe('fee policy', () => {
     expect(() => assertAbsoluteFeeWithinPolicy(MAX_ABSOLUTE_FEE_SATS + 1n)).toThrow(
       'Absolute fee exceeds',
     );
+  });
+
+  it('preserves policy errors from an unsafe fee estimate', async () => {
+    vi.spyOn(mempool.fees, 'getFeesRecommended').mockResolvedValueOnce({
+      fastestFee: MAX_FEE_RATE_SATS_PER_VBYTE,
+      halfHourFee: 1,
+      hourFee: 1,
+      economyFee: 1,
+      minimumFee: 1,
+    });
+
+    await expect(resolveFeeRate()).rejects.toBeInstanceOf(FeePolicyError);
   });
 });

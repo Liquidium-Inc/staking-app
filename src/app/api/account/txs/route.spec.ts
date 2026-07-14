@@ -15,6 +15,10 @@ vi.mock('@/services/portfolioActivity.service', () => ({
 }));
 vi.mock('@/server/auth/session', () => ({
   requireSession: mock.requireSession,
+  authorizeAddressRequest: async (request: NextRequest, address: string) => {
+    const session = await mock.requireSession(request);
+    return session.address === address;
+  },
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 

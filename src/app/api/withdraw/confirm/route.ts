@@ -14,13 +14,14 @@ import {
   formatBroadcastErrorMessage,
 } from '@/lib/error-codes';
 import {
+  FeePolicyError,
   assertAbsoluteFeeWithinPolicy,
   assertFeeRateWithinPolicy,
   calculatePsbtFee,
 } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
-import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
+import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
 import { TelemetryScope } from '@/lib/telemetry';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
@@ -31,6 +32,14 @@ const inputSchema = z.object({
   sender: z.string(),
   psbt: z.string(),
 });
+const errorResponseSchema = z.object({ error: z.string(), code: z.string().optional() });
+const successResponseSchema = z.object({
+  fee: z.string(),
+  feeRate: z.number(),
+  psbt: z.string(),
+  tx: z.string(),
+  txid: z.string(),
+});
 
 bitcoin.initEccLib(ecc);
 
@@ -40,6 +49,8 @@ export async function POST(req: NextRequest) {
   let captured = false;
   let sender: string | undefined;
   let unstakeTxId: string | undefined;
+  let extendedOutpoints: string[] = [];
+  let broadcastSucceeded = false;
   try {
     const session = await requireSession(req);
     const { success, data, error } = inputSchema.safeParse(await req.json());
@@ -66,22 +77,21 @@ export async function POST(req: NextRequest) {
 
     const entry = await db.unstake.getByTxid(unstakeTxIdValue);
     if (!entry || !addressesMatch(entry.address, senderAddress)) {
-      return NextResponse.json({ error: 'Unstake not found' }, { status: 404 });
+      return NextResponse.json(errorResponseSchema.parse({ error: 'Unstake not found' }), {
+        status: 404,
+      });
     }
 
     assertAbsoluteFeeWithinPolicy(calculatePsbtFee(psbt));
 
-    const retentionOutpoints = getPsbtInputOutpointsForAddress(
-      psbt,
-      canister.retention,
-      canister.network,
-    );
-    if (!(await redis.utxo.extend(retentionOutpoints, senderAddress, 300))) {
+    const inputOutpoints = getPsbtInputOutpoints(psbt);
+    if (!(await redis.utxo.extend(inputOutpoints, senderAddress, 300))) {
       return NextResponse.json(
-        { error: 'Withdrawal inputs are no longer reserved' },
+        errorResponseSchema.parse({ error: 'Withdrawal inputs are no longer reserved' }),
         { status: 409 },
       );
     }
+    extendedOutpoints = inputOutpoints;
 
     const unstakeTx = await mempool.transactions.getTx({ txid: unstakeTxIdValue });
     if (!unstakeTx) return NextResponse.json({ error: 'Unstake tx not found' }, { status: 404 });
@@ -134,6 +144,7 @@ export async function POST(req: NextRequest) {
     logger.info(`broadcasting tx with fee ${feeRate} sat/vbyte`);
     try {
       await mempool.transactions.postTx({ txhex: tx.toHex() });
+      broadcastSucceeded = true;
     } catch (e) {
       // Collect upstream axios response details
       const axiosResponse = (
@@ -210,16 +221,23 @@ export async function POST(req: NextRequest) {
     logger.debug(`updating transaction ${tx.getId()} into db`);
     await db.unstake.update([entry.id], { claimTx: tx.getId() });
 
-    return NextResponse.json({
-      fee: signedPsbt.getFee() + '',
-      feeRate,
-      psbt: signedPsbt.toBase64(),
-      tx: tx.toHex(),
-      txid: tx.getId(),
-    });
+    return NextResponse.json(
+      successResponseSchema.parse({
+        fee: signedPsbt.getFee() + '',
+        feeRate,
+        psbt: signedPsbt.toBase64(),
+        tx: tx.toHex(),
+        txid: tx.getId(),
+      }),
+    );
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (error instanceof FeePolicyError) {
+      return NextResponse.json(errorResponseSchema.parse({ error: error.message }), {
+        status: 400,
+      });
     }
     if (axios.isAxiosError(error)) {
       if (!captured) {
@@ -255,6 +273,14 @@ export async function POST(req: NextRequest) {
     });
     logger.error(error as Error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } finally {
+    if (!broadcastSucceeded && sender && extendedOutpoints.length > 0) {
+      try {
+        await redis.utxo.free(extendedOutpoints, sender);
+      } catch (cleanupError) {
+        logger.warn('Failed to release withdrawal input reservations', { cleanupError });
+      }
+    }
   }
 }
 

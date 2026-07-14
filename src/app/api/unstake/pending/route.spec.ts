@@ -1,3 +1,4 @@
+import { NextRequest } from 'next/server';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mock = vi.hoisted(() => ({
@@ -25,6 +26,10 @@ vi.mock('@/db', () => ({
 }));
 vi.mock('@/server/auth/session', () => ({
   requireSession: mock.requireSession,
+  authorizeAddressRequest: async (request: NextRequest, address: string) => {
+    const session = await mock.requireSession(request);
+    return session.address === address;
+  },
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
@@ -41,7 +46,7 @@ describe('GET /api/unstake/pending', () => {
   });
 
   it('should return 400 if address is missing', async () => {
-    const request = new Request('http://localhost/api/unstake/pending');
+    const request = new NextRequest('http://localhost/api/unstake/pending');
     const response = await GET(request);
 
     expect(response.status).toBe(400);
@@ -50,12 +55,14 @@ describe('GET /api/unstake/pending', () => {
 
   it('rejects a session for a different wallet before provider work', async () => {
     mock.requireSession.mockResolvedValueOnce({ address: 'different-address' });
-    const request = new Request('http://localhost/api/unstake/pending?address=test-address');
+    const request = new NextRequest('http://localhost/api/unstake/pending?address=test-address');
 
     const response = await GET(request);
 
     expect(response.status).toBe(401);
+    expect(mock.mempool.blocks.getBlocksTipHeight).not.toHaveBeenCalled();
     expect(mock.db.unstake.getPendingsOf).not.toHaveBeenCalled();
+    expect(mock.db.unstake.getWithdrawAfterBlockForAddress).not.toHaveBeenCalled();
     expect(mock.mempool.transactions.getTx).not.toHaveBeenCalled();
   });
 
@@ -77,7 +84,7 @@ describe('GET /api/unstake/pending', () => {
       return Promise.resolve(txs[unstakes.findIndex((unstake) => unstake.txid === txid)]);
     });
 
-    const request = new Request(`http://localhost/api/unstake/pending?address=${address}`);
+    const request = new NextRequest(`http://localhost/api/unstake/pending?address=${address}`);
     const response = await GET(request);
     const data = await response.json();
 
@@ -151,7 +158,7 @@ describe('GET /api/unstake/pending', () => {
       return Promise.resolve(null);
     });
 
-    const request = new Request(`http://localhost/api/unstake/pending?address=${address}`);
+    const request = new NextRequest(`http://localhost/api/unstake/pending?address=${address}`);
     const response = await GET(request);
     const data = await response.json();
 
@@ -253,7 +260,7 @@ describe('GET /api/unstake/pending', () => {
       return Promise.resolve(null);
     });
 
-    const request = new Request(`http://localhost/api/unstake/pending?address=${address}`);
+    const request = new NextRequest(`http://localhost/api/unstake/pending?address=${address}`);
     const response = await GET(request);
     const data = await response.json();
 
@@ -311,7 +318,7 @@ describe('GET /api/unstake/pending', () => {
     mock.db.unstake.getWithdrawAfterBlockForAddress.mockResolvedValue(withdrawalCandidates);
     mock.mempool.transactions.getTx.mockResolvedValue(baseTx);
 
-    const request = new Request(`http://localhost/api/unstake/pending?address=${address}`);
+    const request = new NextRequest(`http://localhost/api/unstake/pending?address=${address}`);
     const response = await GET(request);
     const data = await response.json();
 

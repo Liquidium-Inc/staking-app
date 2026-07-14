@@ -51,12 +51,14 @@ export function calculatePsbtFee(psbt: bitcoin.Psbt) {
 export const resolveFeeRate = async (providedFeeRate?: number) => {
   if (providedFeeRate != null) return assertFeeRateWithinPolicy(providedFeeRate);
 
+  let feeResponse: Awaited<ReturnType<typeof mempool.fees.getFeesRecommended>>;
   try {
-    const feeResponse = await mempool.fees.getFeesRecommended();
-    return assertFeeRateWithinPolicy(feeResponse.fastestFee + 1);
+    feeResponse = await mempool.fees.getFeesRecommended();
   } catch (error) {
     throw new FeeRateResolutionError('Fee rate estimation failed', {
       cause: error instanceof Error ? error : undefined,
     });
   }
+
+  return assertFeeRateWithinPolicy(feeResponse.fastestFee + 1);
 };

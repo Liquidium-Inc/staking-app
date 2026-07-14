@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import Big from 'big.js';
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Props as RectangleProps } from 'recharts/types/shape/Rectangle';
@@ -16,15 +17,16 @@ const runeId = config.rune.id;
 const stakedId = config.sRune.id;
 
 // Helper function to handle log scale, avoiding log(0)
-const safeLog = (value: number) => {
-  if (value <= 0) return 0;
-  return Math.log10(value);
+const safeLog = (value: Big) => {
+  if (value.lte(0)) return 0;
+  const [coefficient, exponent = '0'] = value.toExponential(15).split('e');
+  return Math.log10(Number(coefficient)) + Number(exponent);
 };
 
 // Helper function to format numbers with proper handling of zero values
-const formatNumber = (value: number) => {
-  if (value === 0) return '0';
-  return value.toLocaleString();
+const formatNumber = (value: string) => {
+  if (value === '0') return value;
+  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
 const CustomBar = (props: RectangleProps & { payload?: any }) => {
@@ -78,18 +80,20 @@ export default function SignerPage() {
     const data = utxos?.data
       .map((utxo) => {
         const output = `${utxo.txid}:${utxo.vout}`;
-        const amount = +utxo.amounts[utxo.rune_ids?.findIndex((id) => id === runeId) ?? -1] || 0;
-        const sAmount = +utxo.amounts[utxo.rune_ids?.findIndex((id) => id === stakedId) ?? -1] || 0;
+        const amount = new Big(
+          utxo.amounts[utxo.rune_ids?.findIndex((id) => id === runeId) ?? -1] ?? 0,
+        );
+        const sAmount = new Big(
+          utxo.amounts[utxo.rune_ids?.findIndex((id) => id === stakedId) ?? -1] ?? 0,
+        );
 
-        const shouldHide = hideZeroValues && amount === 0 && sAmount === 0;
+        const shouldHide = hideZeroValues && amount.eq(0) && sAmount.eq(0);
 
         return {
           id: output,
           shouldHide,
-          originalAmount: amount,
-          originalSAmount: sAmount,
-          amount: amount,
-          sAmount: sAmount,
+          originalAmount: amount.toFixed(0),
+          originalSAmount: sAmount.toFixed(0),
           block: utxo.block_height,
           amountLog: safeLog(amount),
           sAmountLog: -safeLog(sAmount),
@@ -114,9 +118,7 @@ export default function SignerPage() {
 
   const maxValue = useMemo(() => {
     if (!sortedData.length) return 0;
-    return Math.max(
-      ...sortedData.map((d) => Math.max(safeLog(d.originalAmount), safeLog(d.originalSAmount))),
-    );
+    return Math.max(...sortedData.map((d) => Math.max(d.amountLog, Math.abs(d.sAmountLog))));
   }, [sortedData]);
 
   return (

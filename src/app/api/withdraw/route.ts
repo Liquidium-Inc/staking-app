@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { addressesMatch, publicKeyOwnsAddress } from '@/lib/address';
 import {
+  FeePolicyError,
   MAX_FEE_RATE_SATS_PER_VBYTE,
   assertAbsoluteFeeWithinPolicy,
   calculatePsbtFee,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT } from '@/lib/psbt';
+import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
@@ -30,6 +32,14 @@ const body = z.object({
   feeRate: z.number().int().min(1).max(MAX_FEE_RATE_SATS_PER_VBYTE).optional(),
   payer: z.object({ public: z.string(), address: z.string() }).optional(),
 });
+const errorResponseSchema = z.object({ error: z.string() });
+const withdrawResponseSchema = z.object({
+  sender: z.object({ public: z.string(), address: z.string() }),
+  payer: z.object({ public: z.string(), address: z.string() }),
+  feeRate: z.number(),
+  psbt: z.string(),
+  toSign: z.array(z.object({ index: z.number(), address: z.string() })),
+});
 
 export const POST = async (req: NextRequest) => {
   try {
@@ -44,6 +54,11 @@ export const POST = async (req: NextRequest) => {
     try {
       feeRate = await resolveFeeRate(data.feeRate);
     } catch (error) {
+      if (error instanceof FeePolicyError) {
+        return NextResponse.json(errorResponseSchema.parse({ error: error.message }), {
+          status: 400,
+        });
+      }
       logger.error('Fee rate estimation failed', {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -65,14 +80,19 @@ export const POST = async (req: NextRequest) => {
       )
     ) {
       return NextResponse.json(
-        { error: 'Fee payer must be controlled by the authenticated wallet' },
+        errorResponseSchema.parse({
+          error: 'Fee payer must be controlled by the authenticated wallet',
+        }),
         { status: 400 },
       );
     }
 
     const unstake = await db.unstake.getByTxid(txid);
     if (!unstake || !addressesMatch(unstake.address, sender.address)) {
-      return NextResponse.json({ error: 'Unstake transaction not found' }, { status: 404 });
+      return NextResponse.json(
+        errorResponseSchema.parse({ error: 'Unstake transaction not found' }),
+        { status: 404 },
+      );
     }
 
     const outpoints = await getPayerUTXOs(payer);
@@ -164,33 +184,39 @@ export const POST = async (req: NextRequest) => {
     const psbt = await runePsbt.build(feeRate);
     assertAbsoluteFeeWithinPolicy(calculatePsbtFee(psbt));
 
-    const acquiredRetentionOutpoints: string[] = [];
-    for (const utxo of utxos) {
-      const outpoint = `${txid}:${utxo.index}`;
+    const acquiredOutpoints: string[] = [];
+    for (const outpoint of getPsbtInputOutpoints(psbt)) {
       if (!(await redis.utxo.lock(outpoint, sender.address, 180))) {
-        await redis.utxo.free(acquiredRetentionOutpoints, sender.address);
+        await redis.utxo.free(acquiredOutpoints, sender.address);
         return NextResponse.json(
-          { error: 'Withdrawal inputs are already reserved' },
+          errorResponseSchema.parse({ error: 'Withdrawal inputs are already reserved' }),
           { status: 409 },
         );
       }
-      acquiredRetentionOutpoints.push(outpoint);
+      acquiredOutpoints.push(outpoint);
     }
 
     const toSign = runePsbt.inputs
       .map((x, i) => ({ index: i, address: x.address }))
       .filter((x) => [sender.address, payer.address].includes(x.address));
 
-    return NextResponse.json({
-      sender,
-      payer,
-      feeRate,
-      psbt: psbt.toBase64(),
-      toSign,
-    });
+    return NextResponse.json(
+      withdrawResponseSchema.parse({
+        sender,
+        payer,
+        feeRate,
+        psbt: psbt.toBase64(),
+        toSign,
+      }),
+    );
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (error instanceof FeePolicyError) {
+      return NextResponse.json(errorResponseSchema.parse({ error: error.message }), {
+        status: 400,
+      });
     }
     logger.error(error as Error);
     if (error instanceof Error && error.message === 'Insufficient balance') {

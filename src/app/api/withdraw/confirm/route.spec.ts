@@ -212,6 +212,10 @@ describe('POST /api/withdraw/confirm', () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe('Sender is not the owner of the tx');
+    expect(mocks.redis.utxo.free).toHaveBeenCalledWith(
+      [`${Buffer.from(mockTxId, 'hex').reverse().toString('hex')}:0`],
+      user.address,
+    );
   });
 
   it('returns 400 if transaction is not a retention output', async () => {
@@ -318,5 +322,6 @@ describe('POST /api/withdraw/confirm', () => {
 
     expect(mocks.mempool.transactions.postTx).toHaveBeenCalled();
     expect(mocks.db.unstake.update).toHaveBeenCalledWith([1], { claimTx: expect.any(String) });
+    expect(mocks.redis.utxo.free).not.toHaveBeenCalled();
   });
 });

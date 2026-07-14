@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { addressesMatch } from '@/lib/address';
 import { mapWithConcurrencyLimit } from '@/lib/async';
 import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import type { TxInfo } from '@/lib/types';
 import { mempool } from '@/providers/mempool';
-import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { authorizeAddressRequest } from '@/server/auth/session';
 
 const MEMPOOL_LOOKUP_CONCURRENCY = 6;
 
@@ -19,16 +18,8 @@ export async function GET(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Missing address' }, { status: 400 });
   const { address } = parsed.data;
 
-  try {
-    const session = await requireSession(request);
-    if (!addressesMatch(session.address, address)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    throw error;
+  if (!(await authorizeAddressRequest(request, address))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const last_block = await mempool.blocks.getBlocksTipHeight();

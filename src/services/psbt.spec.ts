@@ -223,6 +223,42 @@ describe('PSBTService', () => {
       expect(redis.utxo.free).toHaveBeenCalledWith([`${lockedTxid}:0`], user.address);
     });
 
+    test('preserves the PSBT failure when lock cleanup also fails', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+      const lockedTxid = randomHex(64);
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${lockedTxid}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['1000'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+      vi.mocked(redis.utxo.free).mockRejectedValueOnce(new Error('cleanup failed'));
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
+        { address: canister.address, amount: 500n, rune_id: stakedId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toBeInstanceOf(PSBTService.NotEnoughBalanceError);
+      expect(redis.utxo.free).toHaveBeenCalledWith([`${lockedTxid}:0`], user.address);
+    });
+
     test('releases partially acquired protocol locks when target selection fails', async () => {
       const runeId = publicConfig.rune.id;
       const stakedId = publicConfig.sRune.id;

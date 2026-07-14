@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { config } from '@/config/config';
 import { db } from '@/db';
 import { getBitcoinNetwork } from '@/lib/bitcoin-network';
+import { getTrustedClientIp } from '@/lib/client-ip';
 import { consumeFixedWindowRateLimit } from '@/lib/fixed-window-rate-limit';
 import { logger } from '@/lib/logger';
 import { redis } from '@/providers/redis';
@@ -16,6 +17,7 @@ const requestSchema = z.object({
     message: 'Invalid address',
   }),
 });
+const errorResponseSchema = z.object({ error: z.string() });
 
 const NONCE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const CHALLENGE_RATE_LIMIT_WINDOW_MS = NONCE_TTL_MS;
@@ -65,10 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { address } = parsed.data;
-    const clientIP =
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      req.headers.get('x-real-ip') ||
-      'unknown';
+    const clientIP = getTrustedClientIp(req);
     const [ipAllowed, addressAllowed] = await Promise.all([
       consumeLimit(`${CHALLENGE_RATE_LIMIT_PREFIX}ip:${clientIP}`, CHALLENGE_IP_LIMIT),
       consumeLimit(`${CHALLENGE_RATE_LIMIT_PREFIX}address:${address}`, CHALLENGE_ADDRESS_LIMIT),
@@ -76,12 +75,14 @@ export async function POST(req: NextRequest) {
 
     if (ipAllowed === null || addressAllowed === null) {
       return NextResponse.json(
-        { error: 'Wallet authentication is temporarily unavailable' },
+        errorResponseSchema.parse({ error: 'Wallet authentication is temporarily unavailable' }),
         { status: 503 },
       );
     }
     if (!ipAllowed || !addressAllowed) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+      return NextResponse.json(errorResponseSchema.parse({ error: 'Too many requests' }), {
+        status: 429,
+      });
     }
 
     const nonce = randomUUID();

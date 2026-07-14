@@ -327,7 +327,13 @@ export class PSBTService {
         toSign,
       };
     } catch (error) {
-      await redis.utxo.free(lockedTargetOutpoints, source.address);
+      try {
+        await redis.utxo.free(lockedTargetOutpoints, source.address);
+      } catch (cleanupError) {
+        logger.warn('Failed to release protocol UTXO locks after PSBT build failure', {
+          cleanupError,
+        });
+      }
       throw error;
     }
   }

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { addressesMatch } from '@/lib/address';
+import { getTrustedClientIp } from '@/lib/client-ip';
 import { checkEmailSubscriptionRateLimit, EmailRateLimitResult } from '@/lib/email-rate-limit';
 import { logger } from '@/lib/logger';
 import { emailService } from '@/providers/email';
@@ -23,25 +24,23 @@ const subscribeSchema = z.object({
     message: 'You must agree to the privacy policy',
   }),
 });
+const rateLimitResponseSchema = z.object({ success: z.literal(false), error: z.string() });
 
 export async function POST(req: NextRequest) {
   try {
     // Rate limiting check
-    const clientIP =
-      req.headers.get('x-forwarded-for')?.split(',')[0] ||
-      req.headers.get('x-real-ip') ||
-      'unknown';
+    const clientIP = getTrustedClientIp(req);
 
     const rateLimitResult = await checkEmailSubscriptionRateLimit(clientIP);
     if (rateLimitResult !== EmailRateLimitResult.Allowed) {
       return NextResponse.json(
-        {
+        rateLimitResponseSchema.parse({
           success: false,
           error:
             rateLimitResult === EmailRateLimitResult.Limited
               ? 'Too many requests. Please try again later.'
               : 'Email subscriptions are temporarily unavailable.',
-        },
+        }),
         { status: rateLimitResult === EmailRateLimitResult.Limited ? 429 : 503 },
       );
     }

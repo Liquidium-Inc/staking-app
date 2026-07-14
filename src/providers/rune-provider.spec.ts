@@ -31,6 +31,18 @@ describe('runeProvider.runes.walletActivity', () => {
     vi.clearAllMocks();
   });
 
+  it('does not call Ordiscan when the requested count is zero', async () => {
+    await expect(
+      runeProvider.runes.walletActivity({
+        address: 'bc1ptest',
+        rune_id: config.sRune.id,
+        count: 0,
+      }),
+    ).resolves.toEqual({ data: [], block_height: 0 });
+
+    expect(mocks.ordiscan.rune.walletActivity).not.toHaveBeenCalled();
+  });
+
   it('preserves spend-before-change replay order when fetching newest-first activity', async () => {
     const address = 'bc1ptest';
 

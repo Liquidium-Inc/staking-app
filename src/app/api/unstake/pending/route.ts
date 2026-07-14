@@ -8,7 +8,7 @@ import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import type { TxInfo } from '@/lib/types';
 import { mempool } from '@/providers/mempool';
-import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { authorizeAddressRequest } from '@/server/auth/session';
 
 const MEMPOOL_LOOKUP_CONCURRENCY = 4;
 
@@ -18,16 +18,8 @@ export async function GET(request: NextRequest) {
 
   if (!address) return NextResponse.json({ error: 'Missing address' }, { status: 400 });
 
-  try {
-    const session = await requireSession(request);
-    if (!addressesMatch(session.address, address)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    throw error;
+  if (!(await authorizeAddressRequest(request, address))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const last_block = await mempool.blocks.getBlocksTipHeight();
@@ -68,10 +60,8 @@ export async function GET(request: NextRequest) {
     withdrawing,
     MEMPOOL_LOOKUP_CONCURRENCY,
     async ({ txid, claimTx }) => {
-      const [baseTx, claimTxInfo] = await Promise.all([
-        mempool.transactions.getTx({ txid }),
-        claimTx ? mempool.transactions.getTx({ txid: claimTx }) : Promise.resolve(null),
-      ]);
+      const baseTx = await mempool.transactions.getTx({ txid });
+      const claimTxInfo = claimTx ? await mempool.transactions.getTx({ txid: claimTx }) : null;
       return { baseTx, claimTxInfo };
     },
   );

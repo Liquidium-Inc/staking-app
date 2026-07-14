@@ -7,7 +7,7 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
-import { MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
+import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
 import { canister } from '@/providers/canister';
@@ -118,6 +118,9 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (error instanceof FeePolicyError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     logger.error(error as Error);
     if (error instanceof PSBTService.NotEnoughBalanceError)

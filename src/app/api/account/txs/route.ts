@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { config } from '@/config/public';
-import { addressesMatch } from '@/lib/address';
 import { runeProvider } from '@/providers/rune-provider';
-import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { authorizeAddressRequest } from '@/server/auth/session';
 import { getPortfolioActivity } from '@/services/portfolioActivity.service';
 
 const PORTFOLIO_ACTIVITY_HISTORY_COUNT = 500;
@@ -26,16 +25,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
   }
 
-  try {
-    const session = await requireSession(request);
-    if (!addressesMatch(session.address, parsedQuery.data.address)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    throw error;
+  if (!(await authorizeAddressRequest(request, parsedQuery.data.address))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const result = await getPortfolioActivity(
