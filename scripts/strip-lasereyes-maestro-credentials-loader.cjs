@@ -24,30 +24,38 @@ function findEmbeddedMaestroCredentialRanges(source) {
   return ranges;
 }
 
-function findEmbeddedMaestroCredentialRangesInSourceMap(source) {
-  const sourceMap = JSON.parse(source);
-  const ranges = [];
+function countEmbeddedMaestroCredentialsInSourceMap(source) {
+  let sourceMap;
+  try {
+    sourceMap = JSON.parse(source);
+  } catch (error) {
+    throw new Error(`Failed to parse source map for credential scan: ${error.message}`, {
+      cause: error,
+    });
+  }
 
-  function collectSourceMapRanges(map) {
+  let credentialCount = 0;
+
+  function countSourceMapCredentials(map) {
     if (!map || typeof map !== 'object') return;
 
     if (Array.isArray(map.sourcesContent)) {
       for (const sourceContent of map.sourcesContent) {
         if (typeof sourceContent === 'string') {
-          ranges.push(...findEmbeddedMaestroCredentialRanges(sourceContent));
+          credentialCount += findEmbeddedMaestroCredentialRanges(sourceContent).length;
         }
       }
     }
 
     if (Array.isArray(map.sections)) {
       for (const section of map.sections) {
-        collectSourceMapRanges(section?.map);
+        countSourceMapCredentials(section?.map);
       }
     }
   }
 
-  collectSourceMapRanges(sourceMap);
-  return ranges;
+  countSourceMapCredentials(sourceMap);
+  return credentialCount;
 }
 
 function stripLaserEyesMaestroCredentials(source) {
@@ -69,5 +77,5 @@ function stripLaserEyesMaestroCredentials(source) {
 
 module.exports = stripLaserEyesMaestroCredentials;
 module.exports.findEmbeddedMaestroCredentialRanges = findEmbeddedMaestroCredentialRanges;
-module.exports.findEmbeddedMaestroCredentialRangesInSourceMap =
-  findEmbeddedMaestroCredentialRangesInSourceMap;
+module.exports.countEmbeddedMaestroCredentialsInSourceMap =
+  countEmbeddedMaestroCredentialsInSourceMap;

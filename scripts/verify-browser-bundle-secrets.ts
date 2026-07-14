@@ -6,12 +6,10 @@ import { logger } from '../src/lib/logger';
 
 const browserChunksDirectory = join(process.cwd(), '.next', 'static', 'chunks');
 const require = createRequire(import.meta.url);
-const { findEmbeddedMaestroCredentialRanges, findEmbeddedMaestroCredentialRangesInSourceMap } =
+const { findEmbeddedMaestroCredentialRanges, countEmbeddedMaestroCredentialsInSourceMap } =
   require('./strip-lasereyes-maestro-credentials-loader.cjs') as {
     findEmbeddedMaestroCredentialRanges: (source: string) => Array<{ start: number; end: number }>;
-    findEmbeddedMaestroCredentialRangesInSourceMap: (
-      source: string,
-    ) => Array<{ start: number; end: number }>;
+    countEmbeddedMaestroCredentialsInSourceMap: (source: string) => number;
   };
 
 async function collectJavaScriptArtifacts(directory: string): Promise<string[]> {
@@ -36,11 +34,11 @@ const exposedArtifacts: string[] = [];
 
 for (const artifactPath of artifactPaths) {
   const source = await readFile(artifactPath, 'utf8');
-  const credentialRanges = artifactPath.endsWith('.js.map')
-    ? findEmbeddedMaestroCredentialRangesInSourceMap(source)
-    : findEmbeddedMaestroCredentialRanges(source);
+  const credentialCount = artifactPath.endsWith('.js.map')
+    ? countEmbeddedMaestroCredentialsInSourceMap(source)
+    : findEmbeddedMaestroCredentialRanges(source).length;
 
-  if (credentialRanges.length > 0) {
+  if (credentialCount > 0) {
     exposedArtifacts.push(artifactPath);
   }
 }

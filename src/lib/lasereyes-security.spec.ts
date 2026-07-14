@@ -9,9 +9,7 @@ const stripLaserEyesMaestroCredentials =
     source: string,
   ) => string) & {
     findEmbeddedMaestroCredentialRanges: (source: string) => Array<{ start: number; end: number }>;
-    findEmbeddedMaestroCredentialRangesInSourceMap: (
-      source: string,
-    ) => Array<{ start: number; end: number }>;
+    countEmbeddedMaestroCredentialsInSourceMap: (source: string) => number;
   };
 
 function createLaserEyesSource(mainnetKey: string, testnetKey: string) {
@@ -64,7 +62,13 @@ describe('LaserEyes Maestro credential sanitization', () => {
     });
 
     expect(
-      stripLaserEyesMaestroCredentials.findEmbeddedMaestroCredentialRangesInSourceMap(sourceMap),
-    ).toHaveLength(2);
+      stripLaserEyesMaestroCredentials.countEmbeddedMaestroCredentialsInSourceMap(sourceMap),
+    ).toBe(2);
+  });
+
+  it('reports malformed source maps clearly', () => {
+    expect(() =>
+      stripLaserEyesMaestroCredentials.countEmbeddedMaestroCredentialsInSourceMap('{'),
+    ).toThrow('Failed to parse source map for credential scan');
   });
 });
