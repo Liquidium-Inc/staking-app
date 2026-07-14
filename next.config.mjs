@@ -1,4 +1,9 @@
 import createMDX from '@next/mdx';
+import { fileURLToPath } from 'node:url';
+
+const laserEyesCredentialStripper = fileURLToPath(
+  new URL('./scripts/strip-lasereyes-maestro-credentials-loader.cjs', import.meta.url),
+);
 
 const withMDX = createMDX({
   // Support both .mdx and .md if needed, safe with Turbopack
@@ -23,6 +28,15 @@ const nextConfig = {
   experimental: {
     // Enable Rust-based MDX compiler for Turbopack
     mdxRs: true,
+  },
+  webpack(config) {
+    // predev/prebuild sanitize Turbopack inputs; this also strips stale webpack-cached sources.
+    config.module.rules.push({
+      test: /@omnisat[\\/]lasereyes-(?:core|react)[\\/]dist[\\/]index\.(?:js|umd\.cjs)$/,
+      use: [laserEyesCredentialStripper],
+    });
+
+    return config;
   },
   async redirects() {
     return [

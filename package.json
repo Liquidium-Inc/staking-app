@@ -5,14 +5,18 @@
   "type": "module",
   "packageManager": "pnpm@10.15.1",
   "scripts": {
+    "predev": "npm run sanitize:lasereyes",
     "dev": "next dev --turbopack",
+    "prebuild": "npm run sanitize:lasereyes",
     "build": "next build",
-    "postbuild": "if [ \"$GENERATE_SOURCEMAPS\" = \"true\" ]; then posthog-cli sourcemap inject --directory .next && if [ -n \"$POSTHOG_CLI_TOKEN\" ] && [ -n \"$POSTHOG_CLI_ENV_ID\" ]; then posthog-cli sourcemap upload --directory .next; else echo 'Skipping PostHog sourcemap upload: POSTHOG_CLI_TOKEN or POSTHOG_CLI_ENV_ID not set'; fi; fi",
+    "postbuild": "npm run check:browser-secrets && if [ \"$GENERATE_SOURCEMAPS\" = \"true\" ]; then posthog-cli sourcemap inject --directory .next && if [ -n \"$POSTHOG_CLI_TOKEN\" ] && [ -n \"$POSTHOG_CLI_ENV_ID\" ]; then posthog-cli sourcemap upload --directory .next; else echo 'Skipping PostHog sourcemap upload: POSTHOG_CLI_TOKEN or POSTHOG_CLI_ENV_ID not set'; fi; fi",
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
     "test": "vitest",
     "prepare": "husky install",
+    "sanitize:lasereyes": "node --import tsx scripts/sanitize-lasereyes-maestro-credentials.ts",
+    "check:browser-secrets": "node --import tsx scripts/verify-browser-bundle-secrets.ts",
     "secretlint": "secretlint \"**/*\" --maskSecrets"
   },
   "prettier": {
