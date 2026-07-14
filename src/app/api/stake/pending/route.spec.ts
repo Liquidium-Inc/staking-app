@@ -8,16 +8,24 @@ const mock = vi.hoisted(() => ({
   db: {
     stake: { getPendingsOf: vi.fn() },
   },
+  requireSession: vi.fn(),
 }));
 
 vi.mock('@/providers/mempool', () => ({ mempool: mock.mempool }));
 vi.mock('@/db', () => ({ db: mock.db }));
+vi.mock('@/server/auth/session', () => ({
+  requireSession: mock.requireSession,
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
 
 import { GET } from './route';
 
 describe('GET /api/stake/pending', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mock.requireSession.mockImplementation(async (request: Request) => ({
+      address: new URL(request.url).searchParams.get('address'),
+    }));
   });
 
   it('should return 400 if address is missing', async () => {
@@ -26,6 +34,17 @@ describe('GET /api/stake/pending', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Missing address' });
+  });
+
+  it('rejects a session for a different wallet before provider work', async () => {
+    mock.requireSession.mockResolvedValueOnce({ address: 'different-address' });
+    const request = new Request('http://localhost/api/stake/pending?address=test-address');
+
+    const response = await GET(request);
+
+    expect(response.status).toBe(401);
+    expect(mock.db.stake.getPendingsOf).not.toHaveBeenCalled();
+    expect(mock.mempool.transactions.getTx).not.toHaveBeenCalled();
   });
 
   it('should return pending stakes for an address', async () => {

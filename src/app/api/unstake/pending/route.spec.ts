@@ -8,9 +8,10 @@ const mock = vi.hoisted(() => ({
   db: {
     unstake: {
       getPendingsOf: vi.fn(),
-      getWithdrawAfterBlock: vi.fn(),
+      getWithdrawAfterBlockForAddress: vi.fn(),
     },
   },
+  requireSession: vi.fn(),
 }));
 
 vi.mock('@/providers/mempool', () => ({ mempool: mock.mempool }));
@@ -18,9 +19,13 @@ vi.mock('@/db', () => ({
   db: {
     unstake: {
       getPendingsOf: mock.db.unstake.getPendingsOf,
-      getWithdrawAfterBlock: mock.db.unstake.getWithdrawAfterBlock,
+      getWithdrawAfterBlockForAddress: mock.db.unstake.getWithdrawAfterBlockForAddress,
     },
   },
+}));
+vi.mock('@/server/auth/session', () => ({
+  requireSession: mock.requireSession,
+  UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
 import { GET } from './route';
@@ -28,8 +33,11 @@ import { GET } from './route';
 describe('GET /api/unstake/pending', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mock.requireSession.mockImplementation(async (request: Request) => ({
+      address: new URL(request.url).searchParams.get('address'),
+    }));
     // Default: return empty withdrawals
-    mock.db.unstake.getWithdrawAfterBlock.mockResolvedValue([]);
+    mock.db.unstake.getWithdrawAfterBlockForAddress.mockResolvedValue([]);
   });
 
   it('should return 400 if address is missing', async () => {
@@ -38,6 +46,17 @@ describe('GET /api/unstake/pending', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Missing address' });
+  });
+
+  it('rejects a session for a different wallet before provider work', async () => {
+    mock.requireSession.mockResolvedValueOnce({ address: 'different-address' });
+    const request = new Request('http://localhost/api/unstake/pending?address=test-address');
+
+    const response = await GET(request);
+
+    expect(response.status).toBe(401);
+    expect(mock.db.unstake.getPendingsOf).not.toHaveBeenCalled();
+    expect(mock.mempool.transactions.getTx).not.toHaveBeenCalled();
   });
 
   it('should return pending unstakes for an address', async () => {
@@ -121,7 +140,7 @@ describe('GET /api/unstake/pending', () => {
 
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(lastBlock);
     mock.db.unstake.getPendingsOf.mockResolvedValue([]); // No pending unstakes
-    mock.db.unstake.getWithdrawAfterBlock.mockResolvedValue(withdrawalCandidates);
+    mock.db.unstake.getWithdrawAfterBlockForAddress.mockResolvedValue(withdrawalCandidates);
 
     // Mock getTx to return different data based on txid
     mock.mempool.transactions.getTx.mockImplementation(({ txid }) => {
@@ -181,7 +200,10 @@ describe('GET /api/unstake/pending', () => {
 
     expect(mock.mempool.blocks.getBlocksTipHeight).toHaveBeenCalledTimes(1);
     expect(mock.db.unstake.getPendingsOf).toHaveBeenCalledWith(address);
-    expect(mock.db.unstake.getWithdrawAfterBlock).toHaveBeenCalledWith(lastBlock);
+    expect(mock.db.unstake.getWithdrawAfterBlockForAddress).toHaveBeenCalledWith(
+      lastBlock,
+      address,
+    );
     expect(mock.mempool.transactions.getTx).toHaveBeenCalledTimes(4); // 2 base txs + 2 claim txs
     expect(mock.mempool.transactions.getTx).toHaveBeenCalledWith({ txid: 'withdraw-tx1' });
     expect(mock.mempool.transactions.getTx).toHaveBeenCalledWith({ txid: 'withdraw-tx2' });
@@ -222,7 +244,7 @@ describe('GET /api/unstake/pending', () => {
 
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(lastBlock);
     mock.db.unstake.getPendingsOf.mockResolvedValue(unstakes);
-    mock.db.unstake.getWithdrawAfterBlock.mockResolvedValue(withdrawalCandidates);
+    mock.db.unstake.getWithdrawAfterBlockForAddress.mockResolvedValue(withdrawalCandidates);
 
     mock.mempool.transactions.getTx.mockImplementation(({ txid }) => {
       if (txid === 'unstake-tx1') return Promise.resolve(unstakeTx);
@@ -286,7 +308,7 @@ describe('GET /api/unstake/pending', () => {
 
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(lastBlock);
     mock.db.unstake.getPendingsOf.mockResolvedValue([]);
-    mock.db.unstake.getWithdrawAfterBlock.mockResolvedValue(withdrawalCandidates);
+    mock.db.unstake.getWithdrawAfterBlockForAddress.mockResolvedValue(withdrawalCandidates);
     mock.mempool.transactions.getTx.mockResolvedValue(baseTx);
 
     const request = new Request(`http://localhost/api/unstake/pending?address=${address}`);

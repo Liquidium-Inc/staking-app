@@ -1,37 +1,43 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
+import { mapWithConcurrencyLimit } from '@/lib/async';
 import { logger } from '@/lib/logger';
 import { pick } from '@/lib/pick';
 import type { TxInfo } from '@/lib/types';
 import { mempool } from '@/providers/mempool';
-type UnstakeCandidate = { address: string; txid: string; claimTx: string | null };
+import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
-function isUnstakeCandidate(u: unknown): u is UnstakeCandidate {
-  return (
-    typeof u === 'object' &&
-    u !== null &&
-    typeof (u as { address?: unknown }).address === 'string' &&
-    typeof (u as { txid?: unknown }).txid === 'string' &&
-    'claimTx' in u &&
-    ((u as { claimTx?: unknown }).claimTx === null ||
-      typeof (u as { claimTx?: unknown }).claimTx === 'string')
-  );
-}
+const MEMPOOL_LOOKUP_CONCURRENCY = 4;
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const address = searchParams.get('address');
 
   if (!address) return NextResponse.json({ error: 'Missing address' }, { status: 400 });
 
+  try {
+    const session = await requireSession(request);
+    if (!addressesMatch(session.address, address)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    throw error;
+  }
+
   const last_block = await mempool.blocks.getBlocksTipHeight();
 
   // 1) Unstakes that have not yet been claimed
   const unstakes = await db.unstake.getPendingsOf(address);
-  const unstakeBaseTxResults = await Promise.allSettled(
-    unstakes.map(({ txid }) => mempool.transactions.getTx({ txid })),
+  const unstakeBaseTxResults = await mapWithConcurrencyLimit(
+    unstakes,
+    MEMPOOL_LOOKUP_CONCURRENCY,
+    ({ txid }) => mempool.transactions.getTx({ txid }),
   );
 
   const pendingEntries = unstakeBaseTxResults
@@ -54,45 +60,27 @@ export async function GET(request: Request) {
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   // 2) Withdrawals in progress (claimTx exists but not yet settled)
-  const maybeGetWithdrawAfterBlock = (
-    db.unstake as { getWithdrawAfterBlock?: (block: number) => Promise<unknown[]> }
-  ).getWithdrawAfterBlock;
+  const withdrawing = (
+    await db.unstake.getWithdrawAfterBlockForAddress(last_block, address)
+  ).filter((candidate) => addressesMatch(candidate.address, address) && candidate.claimTx);
 
-  const maybeGetAfterBlock = (
-    db.unstake as { getAfterBlock?: (block: number) => Promise<unknown[]> }
-  ).getAfterBlock;
-
-  const rawCandidates: unknown[] = maybeGetWithdrawAfterBlock
-    ? await maybeGetWithdrawAfterBlock(last_block)
-    : typeof maybeGetAfterBlock === 'function'
-      ? await maybeGetAfterBlock(last_block)
-      : [];
-  const candidates = (rawCandidates as unknown[]).filter(isUnstakeCandidate);
-  const withdrawing = candidates.filter((u) => u.address === address && !!u.claimTx);
-
-  const withdrawingBaseTxResults = await Promise.allSettled(
-    withdrawing.map(({ txid }) => mempool.transactions.getTx({ txid })),
-  );
-  const withdrawingClaimTxResults = await Promise.allSettled(
-    withdrawing.map(({ claimTx }) =>
-      claimTx ? mempool.transactions.getTx({ txid: claimTx }) : Promise.resolve(null),
-    ),
+  const withdrawingTxResults = await mapWithConcurrencyLimit(
+    withdrawing,
+    MEMPOOL_LOOKUP_CONCURRENCY,
+    async ({ txid, claimTx }) => {
+      const [baseTx, claimTxInfo] = await Promise.all([
+        mempool.transactions.getTx({ txid }),
+        claimTx ? mempool.transactions.getTx({ txid: claimTx }) : Promise.resolve(null),
+      ]);
+      return { baseTx, claimTxInfo };
+    },
   );
 
-  const withdrawingEntries = withdrawingBaseTxResults
+  const withdrawingEntries = withdrawingTxResults
     .map((result, i) => {
       if (result.status === 'fulfilled') {
-        const tx = result.value as TxInfo;
-        const claimResult = withdrawingClaimTxResults[i];
-        const claimTxInfo =
-          claimResult.status === 'fulfilled' ? (claimResult.value as TxInfo | null) : null;
-
-        if (claimResult.status === 'rejected') {
-          logger.warn('Failed to fetch claim transaction data', {
-            claimTxid: withdrawing[i].claimTx,
-            error: claimResult.reason,
-          });
-        }
+        const tx = result.value.baseTx as TxInfo;
+        const claimTxInfo = result.value.claimTxInfo as TxInfo | null;
 
         return {
           ...pick(tx, 'fee', 'locktime', 'size', 'status'),

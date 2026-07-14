@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   where: vi.fn(),
   from: vi.fn(),
   set: vi.fn(),
+  orderBy: vi.fn(),
+  limit: vi.fn(),
   drizzle: {
     and: vi.fn((a, b) => ({ type: 'and', conditions: [a, b] })),
     eq: vi.fn((col, val) => ({ type: 'eq', column: col, value: val })),
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     inArray: vi.fn((col, vals) => ({ type: 'inArray', column: col, values: vals })),
     or: vi.fn((...conditions) => ({ type: 'or', conditions })),
     gte: vi.fn((col, val) => ({ type: 'gte', column: col, value: val })),
+    desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
       {
@@ -33,6 +36,7 @@ vi.mock('drizzle-orm', () => ({
   inArray: mocks.drizzle.inArray,
   or: mocks.drizzle.or,
   gte: mocks.drizzle.gte,
+  desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
 
@@ -56,7 +60,9 @@ describe('stake service', () => {
     vi.clearAllMocks();
 
     mocks.values.mockResolvedValue(undefined);
-    mocks.where.mockResolvedValue([]);
+    mocks.where.mockReturnValue({ orderBy: mocks.orderBy });
+    mocks.orderBy.mockReturnValue({ limit: mocks.limit });
+    mocks.limit.mockResolvedValue([]);
     mocks.from.mockReturnValue({ where: mocks.where });
     mocks.set.mockReturnValue({ where: mocks.where });
   });
@@ -90,7 +96,7 @@ describe('stake service', () => {
         },
       ];
 
-      mocks.where.mockResolvedValue(mockPendingStakes);
+      mocks.limit.mockResolvedValue(mockPendingStakes);
 
       const result = await stake.getPendingsOf(address);
 
@@ -104,6 +110,8 @@ describe('stake service', () => {
           { type: 'isNull', column: stakes.block },
         ],
       });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(50);
     });
   });
 
@@ -122,7 +130,7 @@ describe('stake service', () => {
         },
       ];
 
-      mocks.where.mockResolvedValue(mockStakes);
+      mocks.limit.mockResolvedValue(mockStakes);
 
       const result = await stake.getAfterBlock(blockNumber);
 
@@ -132,10 +140,18 @@ describe('stake service', () => {
       expect(mocks.where).toHaveBeenCalledWith({
         type: 'or',
         conditions: [
-          { type: 'isNull', column: stakes.block },
+          {
+            type: 'and',
+            conditions: [
+              { type: 'isNull', column: stakes.block },
+              { type: 'gte', column: stakes.timestamp, value: expect.any(Date) },
+            ],
+          },
           { type: 'gte', column: stakes.block, value: blockNumber },
         ],
       });
+      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
+      expect(mocks.limit).toHaveBeenCalledWith(100);
     });
   });
 

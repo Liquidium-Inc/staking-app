@@ -3,12 +3,19 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { addressesMatch } from '@/lib/address';
-import { resolveFeeRate } from '@/lib/fee-rate';
+import { db } from '@/db';
+import { addressesMatch, publicKeyOwnsAddress } from '@/lib/address';
+import {
+  MAX_FEE_RATE_SATS_PER_VBYTE,
+  assertAbsoluteFeeWithinPolicy,
+  calculatePsbtFee,
+  resolveFeeRate,
+} from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
+import { redis } from '@/providers/redis';
 import { runeProvider } from '@/providers/rune-provider';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
@@ -20,7 +27,7 @@ const HTTP_STATUS_BAD_GATEWAY = 502;
 const body = z.object({
   txid: z.string(),
   sender: z.object({ public: z.string(), address: z.string() }),
-  feeRate: z.number().min(0).optional(),
+  feeRate: z.number().int().min(1).max(MAX_FEE_RATE_SATS_PER_VBYTE).optional(),
   payer: z.object({ public: z.string(), address: z.string() }).optional(),
 });
 
@@ -48,6 +55,24 @@ export const POST = async (req: NextRequest) => {
 
     if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (
+      !publicKeyOwnsAddress(sender.public, sender.address, canister.network) ||
+      !publicKeyOwnsAddress(payer.public, payer.address, canister.network) ||
+      [canister.address, canister.retention].some((address) =>
+        addressesMatch(address, payer.address, canister.network),
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Fee payer must be controlled by the authenticated wallet' },
+        { status: 400 },
+      );
+    }
+
+    const unstake = await db.unstake.getByTxid(txid);
+    if (!unstake || !addressesMatch(unstake.address, sender.address)) {
+      return NextResponse.json({ error: 'Unstake transaction not found' }, { status: 404 });
     }
 
     const outpoints = await getPayerUTXOs(payer);
@@ -137,6 +162,20 @@ export const POST = async (req: NextRequest) => {
     });
 
     const psbt = await runePsbt.build(feeRate);
+    assertAbsoluteFeeWithinPolicy(calculatePsbtFee(psbt));
+
+    const acquiredRetentionOutpoints: string[] = [];
+    for (const utxo of utxos) {
+      const outpoint = `${txid}:${utxo.index}`;
+      if (!(await redis.utxo.lock(outpoint, sender.address, 180))) {
+        await redis.utxo.free(acquiredRetentionOutpoints, sender.address);
+        return NextResponse.json(
+          { error: 'Withdrawal inputs are already reserved' },
+          { status: 409 },
+        );
+      }
+      acquiredRetentionOutpoints.push(outpoint);
+    }
 
     const toSign = runePsbt.inputs
       .map((x, i) => ({ index: i, address: x.address }))

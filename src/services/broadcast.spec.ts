@@ -2,12 +2,13 @@ import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 import { toXOnly } from 'bitcoinjs-lib/src/psbt/bip371';
 import { ECPairFactory } from 'ecpair';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 import { config } from '@/config/public';
 import { RunePSBT, RunePSBTInput } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
+import { redis } from '@/providers/redis';
 
 import { BroadcastService } from './broadcast';
 
@@ -80,6 +81,13 @@ const makeInput = (payload: Partial<RunePSBTInput>): RunePSBTInput => ({
 describe('BroadcastService', () => {
   const user = getUser();
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(redis.utxo.extend).mockResolvedValue(true);
+    vi.mocked(redis.utxo.free).mockResolvedValue(true);
+    vi.mocked(mempool.transactions.postTx).mockResolvedValue(undefined);
+  });
+
   describe('stake', () => {
     it('should be able to create a new instance', () => {
       const service = new BroadcastService(new bitcoin.Psbt(), 'stake');
@@ -136,6 +144,9 @@ describe('BroadcastService', () => {
         const service = new BroadcastService(psbt, 'stake');
         const result = await service.broadcast();
         expect(mempool.transactions.postTx).toHaveBeenCalledWith({ txhex: result.tx });
+        expect(redis.utxo.extend).toHaveBeenCalledTimes(2);
+        expect(redis.utxo.extend).toHaveBeenLastCalledWith(expect.any(Array), user.address, 300);
+        expect(redis.utxo.lock).not.toHaveBeenCalled();
         expect(result).toBeDefined();
       });
     });

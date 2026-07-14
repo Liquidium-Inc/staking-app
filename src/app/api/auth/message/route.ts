@@ -1,16 +1,53 @@
 import { randomUUID } from 'crypto';
 
+import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { config } from '@/config/config';
 import { db } from '@/db';
+import { getBitcoinNetwork } from '@/lib/bitcoin-network';
+import { consumeFixedWindowRateLimit } from '@/lib/fixed-window-rate-limit';
 import { logger } from '@/lib/logger';
+import { redis } from '@/providers/redis';
 
 const requestSchema = z.object({
-  address: z.string().min(1, 'Address is required'),
+  address: z.string().trim().min(1, 'Address is required').refine(isNetworkAddress, {
+    message: 'Invalid address',
+  }),
 });
 
 const NONCE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const CHALLENGE_RATE_LIMIT_WINDOW_MS = NONCE_TTL_MS;
+const CHALLENGE_IP_LIMIT = 20;
+const CHALLENGE_ADDRESS_LIMIT = 5;
+const CHALLENGE_RATE_LIMIT_PREFIX = 'rate-limit:wallet-challenge:';
+
+function isNetworkAddress(address: string) {
+  try {
+    bitcoin.address.toOutputScript(address, getBitcoinNetwork());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function consumeLimit(key: string, maximum: number): Promise<boolean | null> {
+  const redisClient = redis.client;
+  if (!redisClient) return config.env === 'production' ? null : true;
+
+  try {
+    const count = await consumeFixedWindowRateLimit(
+      redisClient,
+      key,
+      CHALLENGE_RATE_LIMIT_WINDOW_MS,
+    );
+    return count <= maximum;
+  } catch (error) {
+    logger.error('Wallet challenge rate limit failed', { error, key });
+    return config.env === 'production' ? null : true;
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +65,24 @@ export async function POST(req: NextRequest) {
     }
 
     const { address } = parsed.data;
+    const clientIP =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      'unknown';
+    const [ipAllowed, addressAllowed] = await Promise.all([
+      consumeLimit(`${CHALLENGE_RATE_LIMIT_PREFIX}ip:${clientIP}`, CHALLENGE_IP_LIMIT),
+      consumeLimit(`${CHALLENGE_RATE_LIMIT_PREFIX}address:${address}`, CHALLENGE_ADDRESS_LIMIT),
+    ]);
+
+    if (ipAllowed === null || addressAllowed === null) {
+      return NextResponse.json(
+        { error: 'Wallet authentication is temporarily unavailable' },
+        { status: 503 },
+      );
+    }
+    if (!ipAllowed || !addressAllowed) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
 
     const nonce = randomUUID();
     const message = formatMessage(address, nonce);

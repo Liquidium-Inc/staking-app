@@ -10,6 +10,7 @@ import {
   formatBroadcastErrorMessage,
   type BroadcastErrorCode,
 } from '@/lib/error-codes';
+import { assertAbsoluteFeeWithinPolicy, assertFeeRateWithinPolicy } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
@@ -142,7 +143,7 @@ export class BroadcastService {
       (input) => `${Buffer.from(input.hash.toReversed()).toString('hex')}:${input.index}`,
     );
 
-    if (!(await redis.utxo.extend(utxos, sender, 180)))
+    if (!(await redis.utxo.extend(utxos, sender, 300)))
       throw new BroadcastService.TransactionExpired();
 
     return utxos;
@@ -179,6 +180,7 @@ export class BroadcastService {
 
   async broadcast() {
     let [sender, utxos] = ['' as string, [] as string[]] as const;
+    let broadcastAccepted = false;
     try {
       const { psbt, runestone } = this;
       this.assertRunestone(runestone);
@@ -223,16 +225,17 @@ export class BroadcastService {
 
       const tx = signedPsbt.extractTransaction();
       const feeRate = signedPsbt.getFeeRate();
+      assertFeeRateWithinPolicy(feeRate);
+      assertAbsoluteFeeWithinPolicy(signedPsbt.getFee());
+
+      if (!(await redis.utxo.extend(utxos, sender, 300))) {
+        throw new BroadcastService.TransactionExpired();
+      }
 
       logger.info(`broadcasting tx with fee ${feeRate} sat/vbyte`);
       try {
         await mempool.transactions.postTx({ txhex: tx.toHex() });
-
-        // Lock UTXOs for 5 minutes after successful broadcast to prevent double-spending
-        logger.debug(`locking ${utxos.length} UTXOs for 5 minutes after broadcast`);
-        for (const utxo of utxos) {
-          await redis.utxo.lock(utxo, sender, 300); // 300 seconds = 5 minutes
-        }
+        broadcastAccepted = true;
       } catch (error) {
         // Check for known mempool error patterns and map to error codes
         const errorData = (error as { response?: { data?: string } })?.response?.data;
@@ -281,7 +284,7 @@ export class BroadcastService {
         txid: tx.getId(),
       };
     } catch (error) {
-      await redis.utxo.free(utxos, sender);
+      if (!broadcastAccepted) await redis.utxo.free(utxos, sender);
       throw error;
     }
   }

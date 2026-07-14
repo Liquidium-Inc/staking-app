@@ -54,6 +54,9 @@ type WalletActivityQuery = AddressId &
   Partial<RuneId> &
   Partial<SortBy<'ts'>> & { runes_filter_only_wallet?: boolean; newerThan?: Date };
 
+export const MAX_WALLET_ACTIVITY_PAGES = 10;
+export const MAX_WALLET_ACTIVITY_RESULTS = 500;
+
 export interface RuneProvider {
   runes: {
     walletBalances(
@@ -91,14 +94,17 @@ class CentralizedRuneProvider implements RuneProvider {
         return { data: [], block_height: 0 };
       }
 
-      const offset = params.offset ?? 0;
-      const count = params.count ?? 2000;
+      const offset = Math.max(0, Math.min(params.offset ?? 0, MAX_WALLET_ACTIVITY_RESULTS));
+      const count = Math.max(
+        0,
+        Math.min(params.count ?? MAX_WALLET_ACTIVITY_RESULTS, MAX_WALLET_ACTIVITY_RESULTS - offset),
+      );
       const sort = params.order === 'asc' ? 'oldest' : 'newest';
       const newerThan = params.newerThan?.valueOf();
       const collected: WalletActivity[] = [];
       let page = 1;
 
-      while (collected.length < offset + count) {
+      while (collected.length < offset + count && page <= MAX_WALLET_ACTIVITY_PAGES) {
         const { data: transactions } = await ordiscan.rune.walletActivity(params.address, {
           page,
           sort,

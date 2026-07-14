@@ -105,6 +105,11 @@ describe('POST /api/withdraw/confirm', () => {
     mocks.redis.utxo.lock.mockResolvedValue(true);
     mocks.redis.utxo.extend.mockResolvedValue(true);
     mocks.redis.utxo.free.mockResolvedValue(true);
+    mocks.db.unstake.getByTxid.mockResolvedValue({
+      id: 1,
+      txid: mockTxId,
+      address: user.address,
+    });
 
     // Create a mock PSBT with the correct retention address
     mockPsbt = new bitcoin.Psbt({ network: bitcoin.networks.testnet });
@@ -145,6 +150,40 @@ describe('POST /api/withdraw/confirm', () => {
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toBe('Unstake tx not found');
+  });
+
+  it('rejects a stored unstake owned by a different wallet', async () => {
+    mocks.db.unstake.getByTxid.mockResolvedValueOnce({
+      id: 1,
+      txid: mockTxId,
+      address: 'different-address',
+    });
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: user.address,
+        psbt: mockPsbt.toBase64(),
+      }),
+    };
+
+    const response = await POST(req as unknown as NextRequest);
+
+    expect(response.status).toBe(404);
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired withdrawal input reservations before canister work', async () => {
+    mocks.redis.utxo.extend.mockResolvedValueOnce(false);
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: user.address,
+        psbt: mockPsbt.toBase64(),
+      }),
+    };
+
+    const response = await POST(req as unknown as NextRequest);
+
+    expect(response.status).toBe(409);
+    expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
   });
 
   it('returns 400 if sender is not the owner', async () => {

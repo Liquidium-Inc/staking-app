@@ -4,42 +4,13 @@ import { z } from 'zod';
 
 import { db, EMAIL_TOKEN_PURPOSE } from '@/db';
 import { addressesMatch } from '@/lib/address';
+import { checkEmailSubscriptionRateLimit, EmailRateLimitResult } from '@/lib/email-rate-limit';
 import { logger } from '@/lib/logger';
 import { emailService } from '@/providers/email';
-import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const RATE_LIMIT_MAX_REQUESTS = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const RATE_LIMIT_KEY_PREFIX = 'rate-limit:subscribe:';
-
-async function checkRateLimit(ip: string): Promise<boolean> {
-  const redisClient = redis.client;
-
-  if (!redisClient) {
-    // Redis is optional, so skip strict enforcing in non-production setups.
-    return true;
-  }
-
-  const key = `${RATE_LIMIT_KEY_PREFIX}${ip}`;
-
-  try {
-    const requestCount = await redisClient.incr(key);
-
-    if (requestCount === 1) {
-      await redisClient.pexpire(key, RATE_LIMIT_WINDOW_MS);
-    }
-
-    return requestCount <= RATE_LIMIT_MAX_REQUESTS;
-  } catch (error) {
-    logger.error('Rate limit check failed', { error, key });
-    // Fail open to avoid blocking users if Redis is unavailable.
-    return true;
-  }
-}
 
 const subscribeSchema = z.object({
   address: z.string().min(1, 'Address is required'),
@@ -61,10 +32,17 @@ export async function POST(req: NextRequest) {
       req.headers.get('x-real-ip') ||
       'unknown';
 
-    if (!(await checkRateLimit(clientIP))) {
+    const rateLimitResult = await checkEmailSubscriptionRateLimit(clientIP);
+    if (rateLimitResult !== EmailRateLimitResult.Allowed) {
       return NextResponse.json(
-        { success: false, error: 'Too many requests. Please try again later.' },
-        { status: 429 },
+        {
+          success: false,
+          error:
+            rateLimitResult === EmailRateLimitResult.Limited
+              ? 'Too many requests. Please try again later.'
+              : 'Email subscriptions are temporarily unavailable.',
+        },
+        { status: rateLimitResult === EmailRateLimitResult.Limited ? 429 : 503 },
       );
     }
 

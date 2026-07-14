@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { config } from '@/config/public';
@@ -7,10 +7,15 @@ import { GET } from './route';
 
 const mock = vi.hoisted(() => ({
   getPortfolioActivity: vi.fn(),
+  requireSession: vi.fn(),
 }));
 
 vi.mock('@/services/portfolioActivity.service', () => ({
   getPortfolioActivity: mock.getPortfolioActivity,
+}));
+vi.mock('@/server/auth/session', () => ({
+  requireSession: mock.requireSession,
+  UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
 describe('GET', () => {
@@ -22,11 +27,12 @@ describe('GET', () => {
   const mockRequest = (address?: string) => {
     const url = new URL('http://localhost/api/account/txs');
     if (address) url.searchParams.set('address', address);
-    return { url: url.toString() } as Request;
+    return new NextRequest(url);
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mock.requireSession.mockResolvedValue({ address: validAddress });
   });
 
   it('returns 400 if address is missing', async () => {
@@ -86,8 +92,17 @@ describe('GET', () => {
     expect(mock.getPortfolioActivity).toHaveBeenCalledWith(
       validAddress,
       config.sRune.id,
-      5000,
+      500,
       expect.any(Object),
     );
+  });
+
+  it('rejects a session for a different wallet before provider work', async () => {
+    mock.requireSession.mockResolvedValueOnce({ address: 'different-address' });
+
+    const response = await GET(mockRequest(validAddress));
+
+    expect(response.status).toBe(401);
+    expect(mock.getPortfolioActivity).not.toHaveBeenCalled();
   });
 });

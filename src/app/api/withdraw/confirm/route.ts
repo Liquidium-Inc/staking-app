@@ -13,8 +13,14 @@ import {
   MEMPOOL_ERROR_PATTERNS,
   formatBroadcastErrorMessage,
 } from '@/lib/error-codes';
+import {
+  assertAbsoluteFeeWithinPolicy,
+  assertFeeRateWithinPolicy,
+  calculatePsbtFee,
+} from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
+import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
 import { TelemetryScope } from '@/lib/telemetry';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
@@ -57,6 +63,25 @@ export async function POST(req: NextRequest) {
     if (unstakeTxIdResult instanceof NextResponse) return unstakeTxIdResult;
     unstakeTxId = unstakeTxIdResult;
     const unstakeTxIdValue = unstakeTxIdResult;
+
+    const entry = await db.unstake.getByTxid(unstakeTxIdValue);
+    if (!entry || !addressesMatch(entry.address, senderAddress)) {
+      return NextResponse.json({ error: 'Unstake not found' }, { status: 404 });
+    }
+
+    assertAbsoluteFeeWithinPolicy(calculatePsbtFee(psbt));
+
+    const retentionOutpoints = getPsbtInputOutpointsForAddress(
+      psbt,
+      canister.retention,
+      canister.network,
+    );
+    if (!(await redis.utxo.extend(retentionOutpoints, senderAddress, 300))) {
+      return NextResponse.json(
+        { error: 'Withdrawal inputs are no longer reserved' },
+        { status: 409 },
+      );
+    }
 
     const unstakeTx = await mempool.transactions.getTx({ txid: unstakeTxIdValue });
     if (!unstakeTx) return NextResponse.json({ error: 'Unstake tx not found' }, { status: 404 });
@@ -101,25 +126,14 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    const entry = await db.unstake.getByTxid(unstakeTx.txid);
-    if (!entry) return NextResponse.json({ error: 'Unstake not found' }, { status: 400 });
-
     const tx = signedPsbt.extractTransaction();
     const feeRate = signedPsbt.getFeeRate();
+    assertAbsoluteFeeWithinPolicy(signedPsbt.getFee());
+    assertFeeRateWithinPolicy(feeRate);
 
     logger.info(`broadcasting tx with fee ${feeRate} sat/vbyte`);
     try {
       await mempool.transactions.postTx({ txhex: tx.toHex() });
-
-      // Lock UTXOs for 5 minutes after successful broadcast to prevent double-spending
-      const utxos = signedPsbt.txInputs.map((input) => {
-        const txid = Buffer.from(input.hash).reverse().toString('hex');
-        return `${txid}:${input.index}`;
-      });
-      logger.debug(`locking ${utxos.length} UTXOs for 5 minutes after broadcast`);
-      for (const utxo of utxos) {
-        await redis.utxo.lock(utxo, sender, 300); // 300 seconds = 5 minutes
-      }
     } catch (e) {
       // Collect upstream axios response details
       const axiosResponse = (

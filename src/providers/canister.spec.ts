@@ -1,3 +1,4 @@
+import * as bitcoin from 'bitcoinjs-lib';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { canister, CanisterService } from './canister';
@@ -45,9 +46,16 @@ describe('CanisterService', () => {
 
   describe('stake', () => {
     it('should process stake transaction successfully', async () => {
-      const mockPsbt = 'mock-psbt';
+      const psbt = new bitcoin.Psbt({ network: canister.network })
+        .addInput({
+          hash: '00'.repeat(32),
+          index: 0,
+          witnessUtxo: { script: Buffer.from([0x51]), value: 1_000n },
+        })
+        .addOutput({ script: Buffer.from([0x51]), value: 500n });
+      const mockPsbt = psbt.toBase64();
       const mockResponse = JSON.stringify({
-        signed_psbt: 'signed-psbt',
+        signed_psbt: mockPsbt,
         debug: {},
       });
 
@@ -56,9 +64,34 @@ describe('CanisterService', () => {
       const result = await canisterService.stake(mockPsbt);
 
       expect(result).toEqual({
-        signed_psbt: 'signed-psbt',
+        signed_psbt: mockPsbt,
         debug: {},
       });
+    });
+
+    it('rejects a response for a different unsigned transaction', async () => {
+      const requested = new bitcoin.Psbt({ network: canister.network })
+        .addInput({
+          hash: '00'.repeat(32),
+          index: 0,
+          witnessUtxo: { script: Buffer.from([0x51]), value: 1_000n },
+        })
+        .addOutput({ script: Buffer.from([0x51]), value: 500n });
+      const returned = new bitcoin.Psbt({ network: canister.network })
+        .addInput({
+          hash: '00'.repeat(32),
+          index: 0,
+          witnessUtxo: { script: Buffer.from([0x51]), value: 1_000n },
+        })
+        .addOutput({ script: Buffer.from([0x51]), value: 499n });
+
+      mocks.Actor.stake.mockResolvedValue(
+        JSON.stringify({ signed_psbt: returned.toBase64(), debug: {} }),
+      );
+
+      await expect(canisterService.stake(requested.toBase64())).rejects.toThrow(
+        'returned a PSBT for a different transaction',
+      );
     });
 
     it('should throw error on invalid PSBT result', async () => {

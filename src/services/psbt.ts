@@ -1,7 +1,7 @@
 import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 
-import { resolveFeeRate } from '@/lib/fee-rate';
+import { assertAbsoluteFeeWithinPolicy, calculatePsbtFee, resolveFeeRate } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { RunePSBT, type RunePSBTInput as PSBTInput } from '@/lib/psbt';
 import { selectRuneUtxos, type UTXO } from '@/lib/utxo-selection';
@@ -249,69 +249,86 @@ export class PSBTService {
     });
     const runePsbt = new RunePSBT(network).setPayer(...utxos.payer);
 
-    const lock = (e: PSBTInput) => redis.utxo.lock(`${e.hash}:${e.index}`, source.address, 180);
-    const targetInputs = await this.addInputs(
-      target.amount,
-      utxos.target,
-      target.rune_id,
-      feeRate,
-      lock,
-    );
-    if (!targetInputs) throw new PSBTService.NotEnoughLiquidityError();
-    runePsbt.addInput(...targetInputs);
-
-    const sourceInputs = await this.addInputs(source.amount, utxos.source, source.rune_id, feeRate);
-    if (!sourceInputs) {
-      logger.debug('Insufficient staked balance to cover requested amount', {
-        available: utxos.source
-          .reduce((a, b) => a + (b.runes[source.rune_id] || BigInt(0)), BigInt(0))
-          .toString(),
-        requested: source.amount.toString(),
-      });
-      throw new PSBTService.NotEnoughBalanceError(
-        'Not enough staked balance to unstake the requested amount',
-      );
-    }
-    runePsbt.addInput(...sourceInputs);
-
-    runePsbt.addOutput(
-      ...this.splitRemainder(runePsbt, target, utxos.target.length, true),
-      { address: target.retention || target.address, runes: { [source.rune_id]: source.amount } },
-      ...this.splitRemainder(runePsbt, source, utxos.source.length, false),
-      { address: source.retention || source.address, runes: { [target.rune_id]: target.amount } },
-    );
-
-    let psbt;
+    const lockedTargetOutpoints: string[] = [];
+    const lock = async (input: PSBTInput) => {
+      const outpoint = `${input.hash}:${input.index}`;
+      const acquired = await redis.utxo.lock(outpoint, source.address, 180);
+      if (acquired) lockedTargetOutpoints.push(outpoint);
+      return acquired;
+    };
     try {
-      psbt = await runePsbt.build(feeRate);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Insufficient balance')) {
-        logger.debug('Insufficient BTC balance to pay network fees', {
-          payerConfirmed: utxos.payer.filter((u) => !!u.block_height).length,
-          payerTotal: utxos.payer.length,
+      const targetInputs = await this.addInputs(
+        target.amount,
+        utxos.target,
+        target.rune_id,
+        feeRate,
+        lock,
+      );
+      if (!targetInputs) throw new PSBTService.NotEnoughLiquidityError();
+      runePsbt.addInput(...targetInputs);
+
+      const sourceInputs = await this.addInputs(
+        source.amount,
+        utxos.source,
+        source.rune_id,
+        feeRate,
+      );
+      if (!sourceInputs) {
+        logger.debug('Insufficient staked balance to cover requested amount', {
+          available: utxos.source
+            .reduce((a, b) => a + (b.runes[source.rune_id] || BigInt(0)), BigInt(0))
+            .toString(),
+          requested: source.amount.toString(),
         });
-        throw new PSBTService.NotEnoughBalanceError('Insufficient BTC to pay network fees');
+        throw new PSBTService.NotEnoughBalanceError(
+          'Not enough staked balance to unstake the requested amount',
+        );
       }
+      runePsbt.addInput(...sourceInputs);
+
+      runePsbt.addOutput(
+        ...this.splitRemainder(runePsbt, target, utxos.target.length, true),
+        { address: target.retention || target.address, runes: { [source.rune_id]: source.amount } },
+        ...this.splitRemainder(runePsbt, source, utxos.source.length, false),
+        { address: source.retention || source.address, runes: { [target.rune_id]: target.amount } },
+      );
+
+      let psbt;
+      try {
+        psbt = await runePsbt.build(feeRate);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Insufficient balance')) {
+          logger.debug('Insufficient BTC balance to pay network fees', {
+            payerConfirmed: utxos.payer.filter((u) => !!u.block_height).length,
+            payerTotal: utxos.payer.length,
+          });
+          throw new PSBTService.NotEnoughBalanceError('Insufficient BTC to pay network fees');
+        }
+        throw error;
+      }
+      assertAbsoluteFeeWithinPolicy(calculatePsbtFee(psbt));
+
+      const toSign = runePsbt.inputs
+        .map((x, i) => ({ index: i, address: x.address }))
+        .filter((x) => [source.address, payer.address].includes(x.address));
+
+      logger.debug('Prepared PSBT inputs for signing', {
+        inputs: toSign.map(
+          (x) => `${runePsbt.inputs[x.index].hash}:${runePsbt.inputs[x.index].index}`,
+        ),
+        inputsToSign: toSign.length,
+        payerInputs: toSign.filter((x) => x.address === payer.address).length,
+        sourceInputs: toSign.filter((x) => x.address === source.address).length,
+      });
+
+      return {
+        feeRate,
+        psbt: psbt.toBase64(),
+        toSign,
+      };
+    } catch (error) {
+      await redis.utxo.free(lockedTargetOutpoints, source.address);
       throw error;
     }
-
-    const toSign = runePsbt.inputs
-      .map((x, i) => ({ index: i, address: x.address }))
-      .filter((x) => [source.address, payer.address].includes(x.address));
-
-    logger.debug('Prepared PSBT inputs for signing', {
-      inputs: toSign.map(
-        (x) => `${runePsbt.inputs[x.index].hash}:${runePsbt.inputs[x.index].index}`,
-      ),
-      inputsToSign: toSign.length,
-      payerInputs: toSign.filter((x) => x.address === payer.address).length,
-      sourceInputs: toSign.filter((x) => x.address === source.address).length,
-    });
-
-    return {
-      feeRate,
-      psbt: psbt.toBase64(),
-      toSign,
-    };
   }
 }
