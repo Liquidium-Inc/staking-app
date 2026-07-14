@@ -2,11 +2,16 @@ import { readdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
+import { logger } from '../src/lib/logger';
+
 const browserChunksDirectory = join(process.cwd(), '.next', 'static', 'chunks');
 const require = createRequire(import.meta.url);
-const { findEmbeddedMaestroCredentialRanges } =
+const { findEmbeddedMaestroCredentialRanges, findEmbeddedMaestroCredentialRangesInSourceMap } =
   require('./strip-lasereyes-maestro-credentials-loader.cjs') as {
     findEmbeddedMaestroCredentialRanges: (source: string) => Array<{ start: number; end: number }>;
+    findEmbeddedMaestroCredentialRangesInSourceMap: (
+      source: string,
+    ) => Array<{ start: number; end: number }>;
   };
 
 async function collectJavaScriptArtifacts(directory: string): Promise<string[]> {
@@ -31,7 +36,11 @@ const exposedArtifacts: string[] = [];
 
 for (const artifactPath of artifactPaths) {
   const source = await readFile(artifactPath, 'utf8');
-  if (findEmbeddedMaestroCredentialRanges(source).length > 0) {
+  const credentialRanges = artifactPath.endsWith('.js.map')
+    ? findEmbeddedMaestroCredentialRangesInSourceMap(source)
+    : findEmbeddedMaestroCredentialRanges(source);
+
+  if (credentialRanges.length > 0) {
     exposedArtifacts.push(artifactPath);
   }
 }
@@ -42,4 +51,4 @@ if (exposedArtifacts.length > 0) {
   );
 }
 
-console.log(`Browser artifacts checked for embedded Maestro credentials: ${artifactPaths.length}`);
+logger.info(`Browser artifacts checked for embedded Maestro credentials: ${artifactPaths.length}`);

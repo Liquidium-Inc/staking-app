@@ -24,6 +24,32 @@ function findEmbeddedMaestroCredentialRanges(source) {
   return ranges;
 }
 
+function findEmbeddedMaestroCredentialRangesInSourceMap(source) {
+  const sourceMap = JSON.parse(source);
+  const ranges = [];
+
+  function collectSourceMapRanges(map) {
+    if (!map || typeof map !== 'object') return;
+
+    if (Array.isArray(map.sourcesContent)) {
+      for (const sourceContent of map.sourcesContent) {
+        if (typeof sourceContent === 'string') {
+          ranges.push(...findEmbeddedMaestroCredentialRanges(sourceContent));
+        }
+      }
+    }
+
+    if (Array.isArray(map.sections)) {
+      for (const section of map.sections) {
+        collectSourceMapRanges(section?.map);
+      }
+    }
+  }
+
+  collectSourceMapRanges(sourceMap);
+  return ranges;
+}
+
 function stripLaserEyesMaestroCredentials(source) {
   const ranges = findEmbeddedMaestroCredentialRanges(source);
 
@@ -32,8 +58,8 @@ function stripLaserEyesMaestroCredentials(source) {
     throw new Error(`Expected two embedded Maestro credentials, found ${ranges.length}`);
   }
 
-  return ranges
-    .toReversed()
+  return [...ranges]
+    .reverse()
     .reduce(
       (sanitizedSource, range) =>
         sanitizedSource.slice(0, range.start) + sanitizedSource.slice(range.end),
@@ -43,3 +69,5 @@ function stripLaserEyesMaestroCredentials(source) {
 
 module.exports = stripLaserEyesMaestroCredentials;
 module.exports.findEmbeddedMaestroCredentialRanges = findEmbeddedMaestroCredentialRanges;
+module.exports.findEmbeddedMaestroCredentialRangesInSourceMap =
+  findEmbeddedMaestroCredentialRangesInSourceMap;

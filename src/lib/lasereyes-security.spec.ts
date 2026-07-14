@@ -9,6 +9,9 @@ const stripLaserEyesMaestroCredentials =
     source: string,
   ) => string) & {
     findEmbeddedMaestroCredentialRanges: (source: string) => Array<{ start: number; end: number }>;
+    findEmbeddedMaestroCredentialRangesInSourceMap: (
+      source: string,
+    ) => Array<{ start: number; end: number }>;
   };
 
 function createLaserEyesSource(mainnetKey: string, testnetKey: string) {
@@ -40,5 +43,28 @@ describe('LaserEyes Maestro credential sanitization', () => {
     expect(() => stripLaserEyesMaestroCredentials(source)).toThrow(
       'Expected two embedded Maestro credentials, found 1',
     );
+  });
+
+  it('detects a credential literal at the search window boundary', () => {
+    const credentialLiteral = `"${MAINNET_TEST_KEY}"`;
+    const source = `${credentialLiteral}${'x'.repeat(512 - credentialLiteral.length)}${MAESTRO_API_URL}`;
+
+    expect(
+      stripLaserEyesMaestroCredentials.findEmbeddedMaestroCredentialRanges(source),
+    ).toHaveLength(1);
+  });
+
+  it('detects credentials embedded in source map sourcesContent', () => {
+    const sourceMap = JSON.stringify({
+      version: 3,
+      sources: ['lasereyes.js'],
+      names: [],
+      mappings: '',
+      sourcesContent: [createLaserEyesSource(MAINNET_TEST_KEY, TESTNET_TEST_KEY)],
+    });
+
+    expect(
+      stripLaserEyesMaestroCredentials.findEmbeddedMaestroCredentialRangesInSourceMap(sourceMap),
+    ).toHaveLength(2);
   });
 });

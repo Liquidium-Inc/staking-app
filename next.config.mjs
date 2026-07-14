@@ -30,6 +30,7 @@ const nextConfig = {
     mdxRs: true,
   },
   webpack(config) {
+    // predev/prebuild sanitize Turbopack inputs; this also strips stale webpack-cached sources.
     config.module.rules.push({
       test: /@omnisat[\\/]lasereyes-(?:core|react)[\\/]dist[\\/]index\.(?:js|umd\.cjs)$/,
       use: [laserEyesCredentialStripper],
