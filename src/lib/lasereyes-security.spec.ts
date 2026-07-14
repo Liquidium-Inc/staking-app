@@ -52,6 +52,15 @@ describe('LaserEyes Maestro credential sanitization', () => {
     ).toHaveLength(1);
   });
 
+  it('deduplicates credentials found near repeated Maestro URLs', () => {
+    const source = `const mainnet="${MAINNET_TEST_KEY}",first="${MAESTRO_API_URL}",testnet="${TESTNET_TEST_KEY}",second="${MAESTRO_API_URL}";`;
+    const result = stripLaserEyesMaestroCredentials(source);
+
+    expect(result).not.toContain(MAINNET_TEST_KEY);
+    expect(result).not.toContain(TESTNET_TEST_KEY);
+    expect(result.split(MAESTRO_API_URL)).toHaveLength(3);
+  });
+
   it('detects credentials embedded in source map sourcesContent', () => {
     const sourceMap = JSON.stringify({
       version: 3,

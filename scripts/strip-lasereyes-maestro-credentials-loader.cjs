@@ -4,6 +4,7 @@ const API_KEY_LITERAL_PATTERN = /(["'])([A-Za-z0-9_-]{32})\1/g;
 
 function findEmbeddedMaestroCredentialRanges(source) {
   const ranges = [];
+  const seenRanges = new Set();
   let searchFrom = 0;
 
   while (searchFrom < source.length) {
@@ -15,7 +16,13 @@ function findEmbeddedMaestroCredentialRanges(source) {
 
     for (const match of window.matchAll(API_KEY_LITERAL_PATTERN)) {
       const start = windowStart + match.index + 1;
-      ranges.push({ start, end: start + match[2].length });
+      const end = start + match[2].length;
+      const rangeKey = `${start}:${end}`;
+
+      if (!seenRanges.has(rangeKey)) {
+        seenRanges.add(rangeKey);
+        ranges.push({ start, end });
+      }
     }
 
     searchFrom = apiUrlIndex + MAESTRO_MAINNET_API_URL.length;
