@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 
+import * as ecc from '@bitcoinerlab/secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -11,6 +12,8 @@ import { getTrustedClientIp } from '@/lib/client-ip';
 import { consumeFixedWindowRateLimit } from '@/lib/fixed-window-rate-limit';
 import { logger } from '@/lib/logger';
 import { redis } from '@/providers/redis';
+
+bitcoin.initEccLib(ecc);
 
 const requestSchema = z.object({
   address: z.string().trim().min(1, 'Address is required').refine(isNetworkAddress, {

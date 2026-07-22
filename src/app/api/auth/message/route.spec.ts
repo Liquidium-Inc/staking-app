@@ -35,7 +35,7 @@ import { POST } from './route';
 describe('POST /api/auth/message', () => {
   const validAddress =
     publicConfig.network === 'testnet4'
-      ? 'tb1qxgmgsyq62pgsz7xclvpnv2lal00l8pz220uw2z'
+      ? 'tb1pa792alwwtswh7zdumzq435s0v4n5m0rhkljvegr3sahp8vwunj4q94s0sk'
       : 'bc1pkkfwul773ujrlr5f5wq6auzxpw4uals4anj4z95k0nf0qx7s5vpq4nrtw7';
 
   const request = (address: string) =>
