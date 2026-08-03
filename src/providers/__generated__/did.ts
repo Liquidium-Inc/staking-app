@@ -1,4 +1,4 @@
-export const idlFactory: import('@dfinity/candid').IDL.InterfaceFactory = ({ IDL }) => {
+export const idlFactory: import('@icp-sdk/core/candid').IDL.InterfaceFactory = ({ IDL }) => {
   const FingerprintInfo = IDL.Record({ fingerprint: IDL.Text });
   const PoolInfo = IDL.Record({
     xpub: IDL.Text,

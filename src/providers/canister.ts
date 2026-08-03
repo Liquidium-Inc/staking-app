@@ -1,5 +1,5 @@
-import { HttpAgent, Actor } from '@dfinity/agent';
-import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
+import { HttpAgent, Actor } from '@icp-sdk/core/agent';
+import { Secp256k1KeyIdentity } from '@icp-sdk/core/identity/secp256k1';
 import { trace } from '@opentelemetry/api';
 import * as bitcoin from 'bitcoinjs-lib';
 
@@ -28,8 +28,8 @@ export class CanisterService {
       const agent = HttpAgent.createSync({ host, fetch });
       return Actor.createActor(idlFactory, { agent, canisterId });
     }
-    const { buffer } = Uint8Array.from(Buffer.from(secret, 'hex'));
-    const identity = Secp256k1KeyIdentity.fromSecretKey(buffer);
+    const secretKey = Uint8Array.from(Buffer.from(secret, 'hex'));
+    const identity = Secp256k1KeyIdentity.fromSecretKey(secretKey);
     const agent = HttpAgent.createSync({ host, fetch, identity });
     return Actor.createActor(idlFactory, { agent, canisterId });
   }

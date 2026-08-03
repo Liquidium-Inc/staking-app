@@ -1,6 +1,7 @@
 import createMDX from '@next/mdx';
 import { fileURLToPath } from 'node:url';
 
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const laserEyesCredentialStripper = fileURLToPath(
   new URL('./scripts/strip-lasereyes-maestro-credentials-loader.cjs', import.meta.url),
 );
@@ -17,14 +18,11 @@ const withMDX = createMDX({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: projectRoot,
   // Only generate browser source maps when explicitly enabled (per PostHog docs)
   productionBrowserSourceMaps: process.env.GENERATE_SOURCEMAPS === 'true',
   // Enable MDX pages alongside TS/JS
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
-  eslint: {
-    // Ensure Next looks under the src/ directory for lintable files
-    dirs: ['src'],
-  },
   experimental: {
     // Enable Rust-based MDX compiler for Turbopack
     mdxRs: true,

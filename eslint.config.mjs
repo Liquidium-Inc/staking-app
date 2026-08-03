@@ -1,18 +1,19 @@
-import { FlatCompat } from '@eslint/eslintrc';
-const compat = new FlatCompat({
-  // import.meta.dirname is available after Node.js v20.11.0
-  baseDirectory: import.meta.dirname,
-});
-const eslintConfig = [
-  ...compat.config({
-    root: true,
-    ignorePatterns: ['!src/**/*', 'src/scripts/**/*'],
-    extends: ['next/core-web-vitals', 'next/typescript', 'plugin:prettier/recommended'],
-    plugins: ['import'],
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
+import prettierRecommended from 'eslint-plugin-prettier/recommended';
+
+export default defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  prettierRecommended,
+  {
+    files: ['src/**/*.{js,jsx,ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-empty-object-type': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'react-hooks/set-state-in-effect': 'warn',
       'import/order': [
         'warn',
         {
@@ -25,6 +26,6 @@ const eslintConfig = [
         },
       ],
     },
-  }),
-];
-export default eslintConfig;
+  },
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'src/scripts/**']),
+]);

@@ -9,6 +9,11 @@ export default defineConfig(() => {
 
   return {
     plugins: [],
+    oxc: {
+      jsx: {
+        runtime: 'automatic',
+      },
+    },
     test: {
       globals: true,
       coverage: {

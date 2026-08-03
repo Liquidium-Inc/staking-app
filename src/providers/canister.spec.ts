@@ -20,12 +20,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Mock dependencies
-vi.mock('@dfinity/agent', () => ({
+vi.mock('@icp-sdk/core/agent', () => ({
   HttpAgent: mocks.HttpAgent,
   Actor: { createActor: vi.fn().mockReturnValue(mocks.Actor) },
 }));
 
-vi.mock('@dfinity/identity-secp256k1', () => ({
+vi.mock('@icp-sdk/core/identity/secp256k1', () => ({
   Secp256k1KeyIdentity: mocks.Secp256k1KeyIdentity,
 }));
 

@@ -37,13 +37,15 @@ const requireSessionMock = vi.hoisted(() =>
 );
 
 vi.mock('@/lib/psbt', () => ({
-  RunePSBT: vi.fn().mockImplementation(() => ({
-    setPayer: vi.fn().mockReturnThis(),
-    addInput: vi.fn().mockReturnThis(),
-    addOutput: vi.fn().mockReturnThis(),
-    build: mocks.RunePSBT.build,
-    inputs: [],
-  })),
+  RunePSBT: vi.fn(function RunePSBTMock() {
+    return {
+      setPayer: vi.fn().mockReturnThis(),
+      addInput: vi.fn().mockReturnThis(),
+      addOutput: vi.fn().mockReturnThis(),
+      build: mocks.RunePSBT.build,
+      inputs: [],
+    };
+  }),
 }));
 vi.mock('@/providers/bestinslot', () => ({
   BIS: mocks.BIS,

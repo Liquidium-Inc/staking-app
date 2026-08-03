@@ -56,7 +56,9 @@ vi.mock('@/services/psbt', async (importOriginal) => {
   const mod = await importOriginal<{ PSBTService: unknown }>();
   return {
     PSBTService: Object.assign(
-      vi.fn().mockImplementation(() => ({ build: mock.build })),
+      vi.fn(function PSBTServiceMock() {
+        return { build: mock.build };
+      }),
       mod.PSBTService,
     ),
   };
