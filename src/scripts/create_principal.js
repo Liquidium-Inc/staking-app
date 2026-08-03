@@ -1,8 +1,7 @@
-const dotenv = require('dotenv');
+import { Secp256k1KeyIdentity } from '@icp-sdk/core/identity/secp256k1';
+import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env' });
-
-const { Secp256k1KeyIdentity } = require('@dfinity/identity-secp256k1');
 
 const revealSecret =
   process.argv.includes('--reveal-secret') || process.env.PRINT_SECRET?.toLowerCase() === 'true';

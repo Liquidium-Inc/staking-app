@@ -1,7 +1,8 @@
-const { tryDecodeRunestone } = require('@magiceden-oss/runestone-lib');
-const { argv } = require('process');
-const bitcoin = require('bitcoinjs-lib');
-const dotenv = require('dotenv');
+import { argv } from 'node:process';
+
+import { tryDecodeRunestone } from '@magiceden-oss/runestone-lib';
+import * as bitcoin from 'bitcoinjs-lib';
+import dotenv from 'dotenv';
 
 dotenv.config();
 

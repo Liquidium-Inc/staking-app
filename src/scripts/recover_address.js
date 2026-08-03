@@ -1,4 +1,4 @@
-const bitcoin = require('bitcoinjs-lib');
+import * as bitcoin from 'bitcoinjs-lib';
 
 const address = 'tb1qxgmgsyq62pgsz7xclvpnv2lal00l8pz220uw2z';
 
