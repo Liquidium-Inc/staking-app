@@ -8,7 +8,7 @@ import type { POST as SEND_HANDLER } from '@/app/api/unstake/confirm/route';
 import type { POST as PSBT_HANDLER } from '@/app/api/unstake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
-import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import { TransactionStage } from '@/lib/transaction-errors';
 import type { ApiOutput } from '@/utils/api-output';
@@ -77,22 +77,15 @@ export const useUnstakeMutation = () => {
         }>(error)
           ? error.response?.data
           : undefined;
-        const responseError =
-          responseData && typeof responseData.error === 'string' ? responseData.error : undefined;
         const responseErrorCode =
           responseData && typeof responseData.error_code === 'string'
             ? responseData.error_code
             : responseData && typeof responseData.code === 'string'
               ? responseData.code
               : undefined;
-        const fallbackResponseError =
-          axios.isAxiosError(error) && error.response?.data != null
-            ? String(error.response.data)
-            : undefined;
-        const errorMessage =
-          responseError ??
-          fallbackResponseError ??
-          (error instanceof Error ? error.message : 'Cannot unstake');
+        const fallbackMessage =
+          error instanceof Error && error.message ? error.message : 'Cannot unstake';
+        const errorMessage = getApiErrorMessage(responseData, fallbackMessage);
         capture('unstake_request_failed', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),

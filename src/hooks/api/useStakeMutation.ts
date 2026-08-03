@@ -8,7 +8,7 @@ import type { POST as SEND_HANDLER } from '@/app/api/stake/confirm/route';
 import type { POST as PSBT_HANDLER } from '@/app/api/stake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
-import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import { TransactionStage } from '@/lib/transaction-errors';
 import type { ApiOutput } from '@/utils/api-output';
@@ -78,16 +78,9 @@ export const useStakeMutation = () => {
         }>(error)
           ? error.response?.data
           : undefined;
-        let errorMessage: string;
-        if (axios.isAxiosError(error)) {
-          if (typeof responseData?.error === 'string') {
-            errorMessage = responseData.error;
-          } else {
-            errorMessage = error.response?.data + '';
-          }
-        } else {
-          errorMessage = error instanceof Error ? error.message : 'Cannot stake';
-        }
+        const fallbackMessage =
+          error instanceof Error && error.message ? error.message : 'Cannot stake';
+        const errorMessage = getApiErrorMessage(responseData, fallbackMessage);
 
         capture('stake_failed', {
           amount: amount.toString(),

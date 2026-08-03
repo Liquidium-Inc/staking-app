@@ -148,9 +148,9 @@ describe('useStakeMutation', () => {
     const { result } = renderHook(() => useStakeMutation(), { wrapper });
     await expect(
       result.current.mutateAsync({ amount: new Big(100), stakedAmount: new Big(50) }),
-    ).rejects.toThrow('[object Object]');
+    ).rejects.toThrow('bar');
     expect(toastMock.error).toHaveBeenCalledWith(
-      'Please retry or try again later.\n[object Object].',
+      'Please retry or try again later.\nbar.',
       expect.objectContaining({
         id: 'toast-id',
         style: { whiteSpace: 'pre-line' },
