@@ -10,7 +10,7 @@ export default defineConfig([
   {
     files: ['src/**/*.{js,jsx,ts,tsx}'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-empty-object-type': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'react-hooks/set-state-in-effect': 'warn',
