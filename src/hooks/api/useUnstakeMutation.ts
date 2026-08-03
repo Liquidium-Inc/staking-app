@@ -10,6 +10,7 @@ import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
+import { TransactionStage } from '@/lib/transaction-errors';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useUnstakeMutation = () => {
@@ -29,7 +30,8 @@ export const useUnstakeMutation = () => {
       stakedAmount: Big | string | number;
     }) => {
       const toastId = toast.loading('Unstaking...');
-      let stage = 'prepare_unstake';
+      let stage: (typeof TransactionStage)[keyof typeof TransactionStage] =
+        TransactionStage.PrepareUnstake;
       try {
         toast.loading(GENERATING_TRANSACTION_TOAST.title, {
           id: toastId,
@@ -43,7 +45,7 @@ export const useUnstakeMutation = () => {
           sAmount: stakedAmount.toString(),
         });
 
-        stage = 'sign_unstake';
+        stage = TransactionStage.SignUnstake;
         toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
@@ -55,7 +57,7 @@ export const useUnstakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        stage = 'confirm_unstake';
+        stage = TransactionStage.ConfirmUnstake;
         toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/unstake/confirm',

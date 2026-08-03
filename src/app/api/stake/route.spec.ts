@@ -136,7 +136,11 @@ describe('POST', () => {
       amount: '1000',
       sAmount: '2000',
     };
-    const req = { json: vi.fn().mockResolvedValue(validBody) } as unknown as NextRequest;
+    const req = new NextRequest('http://localhost/api/stake', {
+      method: 'POST',
+      body: JSON.stringify(validBody),
+      headers: { 'content-type': 'application/json' },
+    });
 
     mock.build.mockRejectedValue(new PSBTService.NotEnoughBalanceError('not enough'));
 
@@ -152,7 +156,11 @@ describe('POST', () => {
       amount: '1000',
       sAmount: '2000',
     };
-    const req = { json: vi.fn().mockResolvedValue(validBody) } as unknown as NextRequest;
+    const req = new NextRequest('http://localhost/api/stake', {
+      method: 'POST',
+      body: JSON.stringify(validBody),
+      headers: { 'content-type': 'application/json' },
+    });
 
     mock.build.mockRejectedValue(new PSBTService.MixedRuneUtxoError());
 

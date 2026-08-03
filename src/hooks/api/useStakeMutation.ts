@@ -10,6 +10,7 @@ import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
+import { TransactionStage } from '@/lib/transaction-errors';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useStakeMutation = () => {
@@ -29,7 +30,8 @@ export const useStakeMutation = () => {
     }) => {
       const toastId = toast.loading('Staking...');
       const finalFeeRate = 'feeRate' in window ? window.feeRate : selectedRate;
-      let stage = 'prepare_stake';
+      let stage: (typeof TransactionStage)[keyof typeof TransactionStage] =
+        TransactionStage.PrepareStake;
       try {
         toast.loading(GENERATING_TRANSACTION_TOAST.title, {
           id: toastId,
@@ -44,7 +46,7 @@ export const useStakeMutation = () => {
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
 
-        stage = 'sign_stake';
+        stage = TransactionStage.SignStake;
         toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
@@ -56,7 +58,7 @@ export const useStakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
-        stage = 'confirm_stake';
+        stage = TransactionStage.ConfirmStake;
         toast.loading('Sending transaction...', { id: toastId, description: '' });
         const response = await axios.post<ApiOutput<typeof SEND_HANDLER>>('/api/stake/confirm', {
           psbt: signedPsbt.signedPsbtBase64,
