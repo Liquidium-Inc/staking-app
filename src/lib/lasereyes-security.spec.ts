@@ -1,5 +1,7 @@
 import { createRequire } from 'node:module';
 
+import { describe, expect, it } from 'vitest';
+
 const MAESTRO_API_URL = 'https://xbt-mainnet.gomaestro-api.org/v0';
 const MAINNET_TEST_KEY = 'a'.repeat(32);
 const TESTNET_TEST_KEY = 'b'.repeat(32);

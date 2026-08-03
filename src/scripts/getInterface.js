@@ -1,8 +1,9 @@
-// obtenerInterfaz.js
-const { HttpAgent, fetchCandid, Actor } = require('@dfinity/agent');
-const fs = require('fs/promises');
+import { writeFile } from 'node:fs/promises';
 
-require('dotenv').config();
+import { Actor, fetchCandid, HttpAgent } from '@icp-sdk/core/agent';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const canisterId = process.env.CANISTER_ID;
 const ICP_HOST = 'https://icp-api.io';
@@ -17,7 +18,7 @@ async function main() {
       did_to_js: IDL.Func([IDL.Text], [IDL.Opt(IDL.Text)], ['query']),
     });
 
-  const agent = new HttpAgent({ host: ICP_HOST, fetch });
+  const agent = await HttpAgent.create({ host: ICP_HOST, fetch });
 
   const did = await fetchCandid(canisterId, agent);
   console.log(did);
@@ -29,7 +30,11 @@ async function main() {
 
   const js = await actor.did_to_js(did);
 
-  await fs.writeFile('did.js', js);
+  if (js.length === 0) {
+    throw new Error('Canister returned no JavaScript interface');
+  }
+
+  await writeFile('did.js', js[0]);
 }
 
 main();

@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     if (!queryResult.success) {
       return NextResponse.redirect(
         new URL(
-          `/?error=${encodeURIComponent(queryResult.error.errors[0]?.message ?? 'Invalid parameters')}`,
+          `/?error=${encodeURIComponent(queryResult.error.issues[0]?.message ?? 'Invalid parameters')}`,
           req.url,
         ),
       );
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     if (!bodyResult.success) {
       const response = errorResponseSchema.parse({
         success: false,
-        error: bodyResult.error.errors[0]?.message ?? 'Invalid request body',
+        error: bodyResult.error.issues[0]?.message ?? 'Invalid request body',
       });
       return NextResponse.json(response, { status: 400 });
     }

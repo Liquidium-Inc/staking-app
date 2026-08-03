@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-export function middleware(_req: NextRequest) {
+export function proxy(_req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
     return new NextResponse('Not Found', { status: 404 });
   }

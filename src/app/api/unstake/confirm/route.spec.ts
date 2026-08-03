@@ -52,7 +52,9 @@ vi.mock('@/services/broadcast', async (importOriginal) => {
   const mod = await importOriginal<{ BroadcastService: unknown }>();
   return {
     BroadcastService: Object.assign(
-      vi.fn().mockImplementation(() => ({ broadcast: mock.broadcast })),
+      vi.fn(function BroadcastServiceMock() {
+        return { broadcast: mock.broadcast };
+      }),
       mod.BroadcastService,
     ),
   };

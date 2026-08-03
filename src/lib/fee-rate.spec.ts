@@ -46,7 +46,6 @@ describe('fee policy', () => {
       fastestFee: MAX_FEE_RATE_SATS_PER_VBYTE,
       halfHourFee: 1,
       hourFee: 1,
-      economyFee: 1,
       minimumFee: 1,
     });
 

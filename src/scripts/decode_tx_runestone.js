@@ -1,6 +1,7 @@
-const { tryDecodeRunestone } = require('@magiceden-oss/runestone-lib');
-const { argv } = require('process');
-const mempool = require('@mempool/mempool.js');
+import { argv } from 'node:process';
+
+import { tryDecodeRunestone } from '@magiceden-oss/runestone-lib';
+import mempool from '@mempool/mempool.js';
 
 const client = new mempool({
   hostname: 'mempool.space/testnet4',

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     if (!queryResult.success) {
       return NextResponse.redirect(
         new URL(
-          `/?error=${encodeURIComponent(queryResult.error.errors[0]?.message ?? 'Invalid token')}`,
+          `/?error=${encodeURIComponent(queryResult.error.issues[0]?.message ?? 'Invalid token')}`,
           req.url,
         ),
       );

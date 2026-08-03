@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: queryResult.error.errors[0]?.message ?? 'Invalid request parameters',
+          error: queryResult.error.issues[0]?.message ?? 'Invalid request parameters',
         },
         { status: 400 },
       );
