@@ -30,7 +30,11 @@ async function main() {
 
   const js = await actor.did_to_js(did);
 
-  await writeFile('did.js', js);
+  if (js.length === 0) {
+    throw new Error('Canister returned no JavaScript interface');
+  }
+
+  await writeFile('did.js', js[0]);
 }
 
 main();
