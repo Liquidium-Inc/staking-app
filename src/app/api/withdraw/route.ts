@@ -15,6 +15,10 @@ import {
 import { logger } from '@/lib/logger';
 import { RunePSBT } from '@/lib/psbt';
 import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
+import {
+  TransactionErrorCode,
+  WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE,
+} from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
@@ -32,7 +36,10 @@ const body = z.object({
   feeRate: z.number().int().min(1).max(MAX_FEE_RATE_SATS_PER_VBYTE).optional(),
   payer: z.object({ public: z.string(), address: z.string() }).optional(),
 });
-const errorResponseSchema = z.object({ error: z.string() });
+const errorResponseSchema = z.object({
+  error: z.string(),
+  error_code: z.literal(TransactionErrorCode.WalletIdentityMismatch).optional(),
+});
 const withdrawResponseSchema = z.object({
   sender: z.object({ public: z.string(), address: z.string() }),
   payer: z.object({ public: z.string(), address: z.string() }),
@@ -81,7 +88,8 @@ export const POST = async (req: NextRequest) => {
     ) {
       return NextResponse.json(
         errorResponseSchema.parse({
-          error: 'Fee payer must be controlled by the authenticated wallet',
+          error: WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE,
+          error_code: TransactionErrorCode.WalletIdentityMismatch,
         }),
         { status: 400 },
       );

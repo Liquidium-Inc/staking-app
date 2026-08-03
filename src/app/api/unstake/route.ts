@@ -10,6 +10,11 @@ import { addressesMatch } from '@/lib/address';
 import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
+import {
+  mixedRuneUtxoErrorResponseSchema,
+  MIXED_RUNE_UTXO_ERROR_MESSAGE,
+  TransactionErrorCode,
+} from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
@@ -121,6 +126,15 @@ export const POST = async (req: NextRequest) => {
     }
     if (error instanceof FeePolicyError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof PSBTService.MixedRuneUtxoError) {
+      return NextResponse.json(
+        mixedRuneUtxoErrorResponseSchema.parse({
+          error: MIXED_RUNE_UTXO_ERROR_MESSAGE,
+          error_code: TransactionErrorCode.MixedRuneUtxo,
+        }),
+        { status: 400 },
+      );
     }
     logger.error(error as Error);
     if (error instanceof PSBTService.NotEnoughBalanceError)

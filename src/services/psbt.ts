@@ -33,6 +33,12 @@ export class PSBTService {
     }
   };
 
+  static MixedRuneUtxoError = class MixedRuneUtxoError extends Error {
+    constructor() {
+      super('Required Rune balance is held in mixed-Rune UTXOs');
+    }
+  };
+
   constructor(
     private readonly source: Party,
     private readonly target: Party,
@@ -104,15 +110,57 @@ export class PSBTService {
       .sort(PSBTService.sortingCriteria.bind(null, (e) => e.runes[this.target.rune_id]));
 
     const sourceOutpoints = sourceUTXOs
-      .filter((x) => x.rune_ids + '' === this.source.rune_id)
+      .filter(
+        (x) =>
+          Array.isArray(x.rune_ids) &&
+          x.rune_ids.length === 1 &&
+          x.rune_ids[0] === this.source.rune_id,
+      )
       .map((x) => ({ ...mapToPsbtInput(x), publicKey: this.source.public || '' }))
       .sort(PSBTService.sortingCriteria.bind(null, (e) => e.runes[this.source.rune_id]));
+    const mixedSourceOutpoints = sourceUTXOs
+      .filter(
+        (x) =>
+          Array.isArray(x.rune_ids) &&
+          x.rune_ids.length > 1 &&
+          x.rune_ids.includes(this.source.rune_id),
+      )
+      .map((x) => ({ ...mapToPsbtInput(x), publicKey: this.source.public || '' }));
 
     const payerOutpoints = payerUTXOs
       .map((x) => ({ ...mapToPsbtInput(x), publicKey: this.payer.public || '' }))
       .sort(PSBTService.sortingCriteria.bind(null, (e) => e.value));
 
-    return { target: targetOutpoints, source: sourceOutpoints, payer: payerOutpoints };
+    return {
+      target: targetOutpoints,
+      source: sourceOutpoints,
+      mixedSource: mixedSourceOutpoints,
+      payer: payerOutpoints,
+    };
+  }
+
+  private async getUnlockedInputs(outpoints: PSBTInput[]) {
+    if (!redis.client || outpoints.length === 0) return outpoints;
+
+    const utxoKeys = outpoints.map((input) => `${input.hash}:${input.index}`);
+    const pipeline = redis.client.pipeline();
+    utxoKeys.forEach((utxoKey) => pipeline.exists(`utxo:${utxoKey}`));
+    const results = await pipeline.exec();
+    if (!results) throw new Error('Failed to check UTXO locks');
+
+    return outpoints.filter((_input, index) => {
+      const result = results[index];
+      if (!result) return true;
+      const [error, value] = result;
+      if (error) {
+        logger.error('Failed to check UTXO lock status', {
+          utxo: utxoKeys[index],
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+      return !value;
+    });
   }
 
   private async addInputs(
@@ -124,46 +172,8 @@ export class PSBTService {
   ) {
     // Convert PSBTInputs to UTXOs for the selection algorithm
     const utxos = outpoints.map((input) => this.convertToUtxo(input));
-
-    // Filter out frozen/locked UTXOs before selection
-    const availableUtxos: UTXO[] = [];
-    const utxoKeys = utxos.map((utxo) => `${utxo.hash}:${utxo.index}`);
-
-    let lockedSet = new Set<string>();
-    if (redis.client && utxoKeys.length > 0) {
-      const pipeline = redis.client.pipeline();
-      utxoKeys.forEach((utxoKey) => pipeline.exists(`utxo:${utxoKey}`));
-      const results = await pipeline.exec();
-      if (!results) {
-        throw new Error('Failed to check UTXO locks');
-      }
-
-      lockedSet = new Set(
-        results
-          ?.map((result, index) => {
-            if (!result) return null;
-            const [error, value] = result;
-            if (error) {
-              logger.error('Failed to check UTXO lock status', {
-                utxo: utxoKeys[index],
-                error: error instanceof Error ? error.message : String(error),
-              });
-              throw error;
-            }
-            return value ? utxoKeys[index] : null;
-          })
-          .filter((utxoKey): utxoKey is string => Boolean(utxoKey)) ?? [],
-      );
-    }
-
-    for (const utxo of utxos) {
-      const utxoKey = `${utxo.hash}:${utxo.index}`;
-      if (lockedSet.has(utxoKey)) {
-        logger.debug('Skipping locked UTXO during selection', { utxo: utxoKey });
-        continue;
-      }
-      availableUtxos.push(utxo);
-    }
+    const availableInputs = await this.getUnlockedInputs(outpoints);
+    const availableUtxos = availableInputs.map((input) => this.convertToUtxo(input));
     // Use efficient UTXO selection on available (unlocked) UTXOs
     const selectionResult = selectRuneUtxos(availableUtxos, rune, target, feeRate, 'target_aware');
 
@@ -274,10 +284,26 @@ export class PSBTService {
         feeRate,
       );
       if (!sourceInputs) {
+        const [availableCleanSource, availableMixedSource] = await Promise.all([
+          this.getUnlockedInputs(utxos.source),
+          this.getUnlockedInputs(utxos.mixedSource),
+        ]);
+        const cleanSourceBalance = availableCleanSource.reduce(
+          (sum, input) => sum + (input.runes[source.rune_id] || BigInt(0)),
+          BigInt(0),
+        );
+        const mixedSourceBalance = availableMixedSource.reduce(
+          (sum, input) => sum + (input.runes[source.rune_id] || BigInt(0)),
+          BigInt(0),
+        );
+        if (
+          cleanSourceBalance < source.amount &&
+          cleanSourceBalance + mixedSourceBalance >= source.amount
+        ) {
+          throw new PSBTService.MixedRuneUtxoError();
+        }
         logger.debug('Insufficient staked balance to cover requested amount', {
-          available: utxos.source
-            .reduce((a, b) => a + (b.runes[source.rune_id] || BigInt(0)), BigInt(0))
-            .toString(),
+          available: cleanSourceBalance.toString(),
           requested: source.amount.toString(),
         });
         throw new PSBTService.NotEnoughBalanceError(

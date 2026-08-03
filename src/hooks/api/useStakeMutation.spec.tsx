@@ -97,7 +97,7 @@ describe('useStakeMutation', () => {
   it('handles axios error with string message', async () => {
     axiosMock.post.mockRejectedValueOnce({
       isAxiosError: true,
-      response: { data: { error: 'API error' } },
+      response: { data: { error: 'API error', error_code: 'mixed_rune_utxo' } },
     });
     const { result } = renderHook(() => useStakeMutation(), { wrapper });
     await expect(
@@ -110,6 +110,34 @@ describe('useStakeMutation', () => {
         style: { whiteSpace: 'pre-line' },
       }),
     );
+    expect(captureMock).toHaveBeenCalledWith('stake_failed', {
+      amount: '100',
+      stakedAmount: '50',
+      feeRate: undefined,
+      error_message: 'API error',
+      error_code: 'mixed_rune_utxo',
+      stage: 'prepare_stake',
+    });
+  });
+
+  it('captures confirm response codes', async () => {
+    axiosMock.post
+      .mockResolvedValueOnce({ data: { psbt: 'psbt-data', toSign: ['input1'] } })
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { data: { error: 'Broadcast rejected', code: 'broadcast_rejected' } },
+      });
+    const { result } = renderHook(() => useStakeMutation(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ amount: new Big(100), stakedAmount: new Big(50) }),
+    ).rejects.toThrow('Broadcast rejected');
+    expect(captureMock).toHaveBeenCalledWith(
+      'stake_failed',
+      expect.objectContaining({
+        error_code: 'broadcast_rejected',
+        stage: 'confirm_stake',
+      }),
+    );
   });
 
   it('handles axios error with non-string error', async () => {
@@ -120,9 +148,9 @@ describe('useStakeMutation', () => {
     const { result } = renderHook(() => useStakeMutation(), { wrapper });
     await expect(
       result.current.mutateAsync({ amount: new Big(100), stakedAmount: new Big(50) }),
-    ).rejects.toThrow('[object Object]');
+    ).rejects.toThrow('bar');
     expect(toastMock.error).toHaveBeenCalledWith(
-      'Please retry or try again later.\n[object Object].',
+      'Please retry or try again later.\nbar.',
       expect.objectContaining({
         id: 'toast-id',
         style: { whiteSpace: 'pre-line' },

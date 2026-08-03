@@ -8,8 +8,9 @@ import type { POST as SEND_HANDLER } from '@/app/api/stake/confirm/route';
 import type { POST as PSBT_HANDLER } from '@/app/api/stake/route';
 import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
-import { showErrorToast } from '@/lib/normalizeErrorMessage';
+import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
+import { TransactionStage } from '@/lib/transaction-errors';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useStakeMutation = () => {
@@ -29,6 +30,8 @@ export const useStakeMutation = () => {
     }) => {
       const toastId = toast.loading('Staking...');
       const finalFeeRate = 'feeRate' in window ? window.feeRate : selectedRate;
+      let stage: (typeof TransactionStage)[keyof typeof TransactionStage] =
+        TransactionStage.PrepareStake;
       try {
         toast.loading(GENERATING_TRANSACTION_TOAST.title, {
           id: toastId,
@@ -43,6 +46,7 @@ export const useStakeMutation = () => {
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
 
+        stage = TransactionStage.SignStake;
         toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
@@ -54,6 +58,7 @@ export const useStakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
+        stage = TransactionStage.ConfirmStake;
         toast.loading('Sending transaction...', { id: toastId, description: '' });
         const response = await axios.post<ApiOutput<typeof SEND_HANDLER>>('/api/stake/confirm', {
           psbt: signedPsbt.signedPsbtBase64,
@@ -66,22 +71,24 @@ export const useStakeMutation = () => {
         });
         return response.data;
       } catch (error) {
-        let errorMessage: string;
-        if (axios.isAxiosError(error)) {
-          if (typeof error.response?.data.error === 'string') {
-            errorMessage = error.response.data.error;
-          } else {
-            errorMessage = error.response?.data + '';
-          }
-        } else {
-          errorMessage = error instanceof Error ? error.message : 'Cannot stake';
-        }
+        const responseData = axios.isAxiosError<{
+          error?: string;
+          error_code?: string;
+          code?: string;
+        }>(error)
+          ? error.response?.data
+          : undefined;
+        const fallbackMessage =
+          error instanceof Error && error.message ? error.message : 'Cannot stake';
+        const errorMessage = getApiErrorMessage(responseData, fallbackMessage);
 
         capture('stake_failed', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),
           feeRate: finalFeeRate,
           error_message: errorMessage,
+          error_code: responseData?.error_code ?? responseData?.code,
+          stage,
         });
 
         showErrorToast(errorMessage, { id: toastId, description: '' });

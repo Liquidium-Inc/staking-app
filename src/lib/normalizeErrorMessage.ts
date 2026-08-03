@@ -2,6 +2,22 @@ import { toast } from 'sonner';
 
 const RETRY_PREFIX = 'Please retry or try again later.\n';
 
+const collectStrings = (value: unknown): string[] => {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectStrings);
+  return [];
+};
+
+export function getApiErrorMessage(responseData: unknown, fallback: string): string {
+  const errorValue =
+    responseData && typeof responseData === 'object' && 'error' in responseData
+      ? responseData.error
+      : responseData;
+  const messages = [...new Set(collectStrings(errorValue))];
+  return messages.length > 0 ? messages.join(', ') : fallback;
+}
+
 export function normalizeErrorMessage(message: string): string {
   const trimmed = message.trim();
   if (!trimmed) return `${RETRY_PREFIX}Unknown error.`;

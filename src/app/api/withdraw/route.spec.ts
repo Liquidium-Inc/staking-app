@@ -153,6 +153,7 @@ describe('POST /api/withdraw', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: 'Fee payer must be controlled by the authenticated wallet',
+      error_code: 'wallet_identity_mismatch',
     });
     expect(mocks.mempool.transactions.getTx).not.toHaveBeenCalled();
   });

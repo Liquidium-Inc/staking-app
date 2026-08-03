@@ -139,7 +139,11 @@ describe('POST', () => {
       amount: '1000',
       sAmount: '2000',
     };
-    const req = { json: vi.fn().mockResolvedValue(validBody) } as unknown as NextRequest;
+    const req = new NextRequest('http://localhost/api/unstake', {
+      method: 'POST',
+      body: JSON.stringify(validBody),
+      headers: { 'content-type': 'application/json' },
+    });
 
     mock.canister.getUnstakeUtxos.mockResolvedValue([]);
     mock.build.mockRejectedValue(new PSBTService.NotEnoughBalanceError('not enough'));
@@ -148,6 +152,31 @@ describe('POST', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'not enough' });
+  });
+
+  it('returns a classified error for mixed-Rune source UTXOs', async () => {
+    const validBody = {
+      sender: { public: 'pub', address: 'addr' },
+      amount: '1000',
+      sAmount: '2000',
+    };
+    const req = new NextRequest('http://localhost/api/unstake', {
+      method: 'POST',
+      body: JSON.stringify(validBody),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    mock.canister.getUnstakeUtxos.mockResolvedValue([]);
+    mock.build.mockRejectedValue(new PSBTService.MixedRuneUtxoError());
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error:
+        'Your Rune balance is stored together with another Rune in the same Bitcoin UTXO. Liquidium cannot use mixed-Rune UTXOs. Separate the Runes in your wallet and try again.',
+      error_code: 'mixed_rune_utxo',
+    });
   });
 
   it('returns 400 if canister unstake fails', async () => {
