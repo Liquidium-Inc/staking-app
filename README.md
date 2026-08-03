@@ -149,7 +149,7 @@ These tools are not intended for production use, but are for protocol developmen
 
 Prerequisites:
 
-- Node.js 20 (LTS) or newer
+- Node.js 22.22.2 or newer on a supported even-numbered release line
 - pnpm 10+
 
 1. Install dependencies:
