@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { canister, CanisterService } from './canister';
 
+const ORACLE_SECRET_HEX = '01'.repeat(32);
+
 const mocks = vi.hoisted(() => ({
   HttpAgent: {
     createSync: vi.fn().mockReturnValue({}),
@@ -17,12 +19,13 @@ const mocks = vi.hoisted(() => ({
   Secp256k1KeyIdentity: {
     fromSecretKey: vi.fn().mockReturnValue({}),
   },
+  createActor: vi.fn(),
 }));
 
 // Mock dependencies
 vi.mock('@icp-sdk/core/agent', () => ({
   HttpAgent: mocks.HttpAgent,
-  Actor: { createActor: vi.fn().mockReturnValue(mocks.Actor) },
+  Actor: { createActor: mocks.createActor.mockReturnValue(mocks.Actor) },
 }));
 
 vi.mock('@icp-sdk/core/identity/secp256k1', () => ({
@@ -39,9 +42,42 @@ describe('CanisterService', () => {
       canister.address,
       canister.retention,
       canister.network,
-      'test-oracle-secret',
+      ORACLE_SECRET_HEX,
       'https://test-host.com',
     );
+  });
+
+  describe('construction', () => {
+    it('creates the oracle identity from the decoded secret key', () => {
+      expect(mocks.Secp256k1KeyIdentity.fromSecretKey).toHaveBeenCalledWith(
+        Uint8Array.from(Buffer.from(ORACLE_SECRET_HEX, 'hex')),
+      );
+    });
+
+    it('uses anonymous actors when no oracle secret is provided', () => {
+      vi.clearAllMocks();
+
+      new CanisterService(
+        canister.id,
+        canister.address,
+        canister.retention,
+        canister.network,
+        '',
+        'https://test-host.com',
+      );
+
+      expect(mocks.Secp256k1KeyIdentity.fromSecretKey).not.toHaveBeenCalled();
+      expect(mocks.HttpAgent.createSync).toHaveBeenCalledTimes(2);
+      expect(mocks.HttpAgent.createSync).toHaveBeenNthCalledWith(1, {
+        host: 'https://test-host.com',
+        fetch,
+      });
+      expect(mocks.HttpAgent.createSync).toHaveBeenNthCalledWith(2, {
+        host: 'https://test-host.com',
+        fetch,
+      });
+      expect(mocks.createActor).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('stake', () => {
