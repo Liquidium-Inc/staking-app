@@ -29,6 +29,7 @@ export const useUnstakeMutation = () => {
       stakedAmount: Big | string | number;
     }) => {
       const toastId = toast.loading('Unstaking...');
+      let stage = 'prepare_unstake';
       try {
         toast.loading(GENERATING_TRANSACTION_TOAST.title, {
           id: toastId,
@@ -42,6 +43,7 @@ export const useUnstakeMutation = () => {
           sAmount: stakedAmount.toString(),
         });
 
+        stage = 'sign_unstake';
         toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
@@ -53,6 +55,7 @@ export const useUnstakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
+        stage = 'confirm_unstake';
         toast.loading('Sending transaction...', { id: toastId, description: '' });
         const sendResponse = await axios.post<ApiOutput<typeof SEND_HANDLER>>(
           '/api/unstake/confirm',
@@ -65,23 +68,37 @@ export const useUnstakeMutation = () => {
         });
         return sendResponse.data;
       } catch (error) {
+        const responseData = axios.isAxiosError<{
+          error?: string;
+          error_code?: string;
+          code?: string;
+        }>(error)
+          ? error.response?.data
+          : undefined;
+        const responseError =
+          responseData && typeof responseData.error === 'string' ? responseData.error : undefined;
+        const responseErrorCode =
+          responseData && typeof responseData.error_code === 'string'
+            ? responseData.error_code
+            : responseData && typeof responseData.code === 'string'
+              ? responseData.code
+              : undefined;
+        const fallbackResponseError =
+          axios.isAxiosError(error) && error.response?.data != null
+            ? String(error.response.data)
+            : undefined;
+        const errorMessage =
+          responseError ??
+          fallbackResponseError ??
+          (error instanceof Error ? error.message : 'Cannot unstake');
         capture('unstake_request_failed', {
           amount: amount.toString(),
           stakedAmount: stakedAmount.toString(),
-          error: error instanceof Error ? error.message : JSON.stringify(error),
+          error: errorMessage,
+          error_message: errorMessage,
+          error_code: responseErrorCode,
+          stage,
         });
-        if (axios.isAxiosError(error)) {
-          if (typeof error.response?.data.error === 'string') {
-            const errorMessage = error.response.data.error;
-            showErrorToast(errorMessage, { id: toastId, description: '' });
-            // Propagate error so React Query marks the mutation as failed
-            throw new Error(errorMessage);
-          }
-          const errorMessage = error.response?.data + '';
-          showErrorToast(errorMessage, { id: toastId, description: '' });
-          throw new Error(errorMessage);
-        }
-        const errorMessage = error instanceof Error ? error.message : 'Cannot unstake';
         showErrorToast(errorMessage, { id: toastId, description: '' });
         throw new Error(errorMessage);
       }

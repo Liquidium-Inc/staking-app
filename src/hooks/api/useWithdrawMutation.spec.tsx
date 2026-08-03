@@ -20,6 +20,7 @@ vi.mock('@omnisat/lasereyes-react', () => ({
     signPsbt: vi.fn().mockResolvedValue({ signedPsbtBase64: 'signed-psbt' }),
     publicKey: 'test-public-key',
     paymentPublicKey: 'test-payment-public-key',
+    provider: 'kray',
   }),
 }));
 vi.mock('axios', () => ({
@@ -96,7 +97,7 @@ describe('useWithdrawMutation', () => {
   it('handles axios error with string message', async () => {
     axiosMock.post.mockRejectedValueOnce({
       isAxiosError: true,
-      response: { data: { error: 'API error' } },
+      response: { data: { error: 'API error', error_code: 'wallet_identity_mismatch' } },
     });
     const { result } = renderHook(() => useWithdrawMutation(), { wrapper });
     await expect(result.current.mutateAsync({ txid: 'txid-123' })).rejects.toThrow('API error');
@@ -107,6 +108,14 @@ describe('useWithdrawMutation', () => {
         style: { whiteSpace: 'pre-line' },
       }),
     );
+    expect(captureMock).toHaveBeenCalledWith('withdrawal_failed', {
+      txid: 'txid-123',
+      address: 'test…ddress',
+      error_message: 'API error',
+      error_code: 'wallet_identity_mismatch',
+      stage: 'prepare_withdrawal',
+      wallet_provider: 'kray',
+    });
   });
 
   it('handles axios error with non-string error', async () => {
@@ -116,13 +125,33 @@ describe('useWithdrawMutation', () => {
     });
     const { result } = renderHook(() => useWithdrawMutation(), { wrapper });
     await expect(result.current.mutateAsync({ txid: 'txid-123' })).rejects.toThrow(
-      '[object Object]',
+      'Cannot withdraw',
     );
     expect(toastMock.error).toHaveBeenCalledWith(
-      'Please retry or try again later.\n[object Object].',
+      'Please retry or try again later.\nCannot withdraw.',
       expect.objectContaining({
         id: 'toast-id',
         style: { whiteSpace: 'pre-line' },
+      }),
+    );
+  });
+
+  it('captures confirm response codes', async () => {
+    axiosMock.post
+      .mockResolvedValueOnce({ data: { psbt: 'psbt-data', toSign: ['input1'] } })
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { data: { error: 'Broadcast rejected', code: 'broadcast_rejected' } },
+      });
+    const { result } = renderHook(() => useWithdrawMutation(), { wrapper });
+    await expect(result.current.mutateAsync({ txid: 'txid-123' })).rejects.toThrow(
+      'Broadcast rejected',
+    );
+    expect(captureMock).toHaveBeenCalledWith(
+      'withdrawal_failed',
+      expect.objectContaining({
+        error_code: 'broadcast_rejected',
+        stage: 'confirm_withdrawal',
       }),
     );
   });

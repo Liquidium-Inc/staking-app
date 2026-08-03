@@ -29,6 +29,7 @@ export const useStakeMutation = () => {
     }) => {
       const toastId = toast.loading('Staking...');
       const finalFeeRate = 'feeRate' in window ? window.feeRate : selectedRate;
+      let stage = 'prepare_stake';
       try {
         toast.loading(GENERATING_TRANSACTION_TOAST.title, {
           id: toastId,
@@ -43,6 +44,7 @@ export const useStakeMutation = () => {
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
 
+        stage = 'sign_stake';
         toast.loading('Waiting for signature...', { id: toastId, description: '' });
         const signedPsbt = await signPsbt({
           tx: psbtResponse.data.psbt,
@@ -54,6 +56,7 @@ export const useStakeMutation = () => {
           throw new Error('Failed to sign PSBT');
         }
 
+        stage = 'confirm_stake';
         toast.loading('Sending transaction...', { id: toastId, description: '' });
         const response = await axios.post<ApiOutput<typeof SEND_HANDLER>>('/api/stake/confirm', {
           psbt: signedPsbt.signedPsbtBase64,
@@ -66,10 +69,17 @@ export const useStakeMutation = () => {
         });
         return response.data;
       } catch (error) {
+        const responseData = axios.isAxiosError<{
+          error?: string;
+          error_code?: string;
+          code?: string;
+        }>(error)
+          ? error.response?.data
+          : undefined;
         let errorMessage: string;
         if (axios.isAxiosError(error)) {
-          if (typeof error.response?.data.error === 'string') {
-            errorMessage = error.response.data.error;
+          if (typeof responseData?.error === 'string') {
+            errorMessage = responseData.error;
           } else {
             errorMessage = error.response?.data + '';
           }
@@ -82,6 +92,8 @@ export const useStakeMutation = () => {
           stakedAmount: stakedAmount.toString(),
           feeRate: finalFeeRate,
           error_message: errorMessage,
+          error_code: responseData?.error_code ?? responseData?.code,
+          stage,
         });
 
         showErrorToast(errorMessage, { id: toastId, description: '' });

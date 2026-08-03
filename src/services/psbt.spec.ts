@@ -179,6 +179,98 @@ describe('PSBTService', () => {
       expect(psbt.data.outputs.length).toBeGreaterThan(0);
     });
 
+    test('identifies when sufficient source balance is only available in mixed-Rune UTXOs', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${randomHex(64)}:0`,
+                  rune_ids: [runeId],
+                  balances: ['500'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [
+                {
+                  wallet_addr: user.address,
+                  output: `${randomHex(64)}:0`,
+                  rune_ids: [stakedId],
+                  balances: ['500'],
+                  confirmations: 99,
+                  value: 546,
+                },
+                {
+                  wallet_addr: user.address,
+                  output: `${randomHex(64)}:1`,
+                  rune_ids: [stakedId, '1:1'],
+                  balances: ['500', '100'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: stakedId },
+        { address: canister.address, amount: 500n, rune_id: runeId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toThrow(PSBTService.MixedRuneUtxoError);
+    });
+
+    test('keeps the insufficient-balance error when mixed UTXOs do not cover the request', async () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+
+      mocks.runeOutputs.mockImplementation(async (address) => ({
+        data:
+          address === canister.address
+            ? [
+                {
+                  wallet_addr: canister.address,
+                  output: `${randomHex(64)}:0`,
+                  rune_ids: [runeId],
+                  balances: ['500'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ]
+            : [
+                {
+                  wallet_addr: user.address,
+                  output: `${randomHex(64)}:0`,
+                  rune_ids: [stakedId, '1:1'],
+                  balances: ['500', '100'],
+                  confirmations: 99,
+                  value: 546,
+                },
+              ],
+        block_height: 100,
+      }));
+      mocks.paymentOutputs.mockResolvedValue({ data: [], block_height: 100 });
+
+      const service = new PSBTService(
+        { address: user.address, public: user.publicKey, amount: 1000n, rune_id: stakedId },
+        { address: canister.address, amount: 500n, rune_id: runeId },
+        { address: user.address, public: user.publicKey },
+        canister.network,
+        1,
+      );
+
+      await expect(service.build()).rejects.toThrow(PSBTService.NotEnoughBalanceError);
+    });
+
     test('releases protocol UTXO locks when later input selection fails', async () => {
       const runeId = publicConfig.rune.id;
       const stakedId = publicConfig.sRune.id;
