@@ -28,7 +28,14 @@ This policy covers the open-source code in this repository. Hosted production in
 
 ## Known Temporary Dependency Risk
 
-As of 2026-08-10, we temporarily accept the low-severity [`elliptic@6.6.1` advisory (GHSA-848j-6mx2-7j84 / CVE-2025-14505)](https://github.com/advisories/GHSA-848j-6mx2-7j84). The dependency is transitive through `@omnisat/lasereyes-core` → `@oyl/sdk` → `@sadoprotocol/ordit-sdk` → `bip322-js`, and no patched `elliptic` version is available. We will remove this acceptance when the upstream dependency chain can be upgraded to a patched version.
+As of 2026-08-10, we temporarily accept the low-severity [`elliptic@6.6.1` advisory (GHSA-848j-6mx2-7j84 / CVE-2025-14505)](https://github.com/advisories/GHSA-848j-6mx2-7j84). This acceptance is limited to the single installed `elliptic@6.6.1` version, which is reached through these dependency paths:
+
+- `@omnisat/lasereyes-core` → `@oyl/sdk` → `@sadoprotocol/ordit-sdk` → `bip322-js@1.1.1`.
+- `@oyl/sdk` → `bip322-js@2.0.0`, and the app directly → `bip322-js@3.0.0`.
+- `@omnisat/lasereyes-core` → `crypto-browserify` → `browserify-sign` or `create-ecdh`.
+- `secp256k1@3.8.1` (through `bitcoinjs-message`) and `secp256k1@5.0.1`, reached through the `bip322-js` and Ordit SDK paths above.
+
+No patched `elliptic` version is available. This acceptance does not cover other versions or advisories and will be removed when the upstream dependency paths can be upgraded to a patched version.
 
 ## Safe Harbor
 
