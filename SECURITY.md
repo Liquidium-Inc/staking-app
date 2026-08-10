@@ -26,6 +26,10 @@ We prefer encrypted communication; request PGP details in your initial email if 
 
 This policy covers the open-source code in this repository. Hosted production incidents for Liquidium infrastructure should also be reported through the channels above.
 
+## Known Temporary Dependency Risk
+
+As of 2026-08-10, we temporarily accept the low-severity [`elliptic@6.6.1` advisory (GHSA-848j-6mx2-7j84 / CVE-2025-14505)](https://github.com/advisories/GHSA-848j-6mx2-7j84). The dependency is transitive through `@omnisat/lasereyes-core` → `@oyl/sdk` → `@sadoprotocol/ordit-sdk` → `bip322-js`, and no patched `elliptic` version is available. We will remove this acceptance when the upstream dependency chain can be upgraded to a patched version.
+
 ## Safe Harbor
 
 When you follow this policy in good faith, we will not initiate legal action against you or ask law enforcement to investigate. Avoid actions that may disrupt services or compromise user data (e.g., DDoS, social engineering, or accessing personal data).
