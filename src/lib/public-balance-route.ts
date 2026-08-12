@@ -76,7 +76,10 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
     normalizedUrl.searchParams.set('tokenId', parsedQuery.data.tokenId);
   }
 
-  const cacheKey = `${CACHE_KEY_PREFIX}${endpoint}:${encodeURIComponent(parsedQuery.data.address)}:${encodeURIComponent(parsedQuery.data.tokenId || '*')}`;
+  const tokenSegment = parsedQuery.data.tokenId
+    ? `token:${encodeURIComponent(parsedQuery.data.tokenId)}`
+    : 'all';
+  const cacheKey = `${CACHE_KEY_PREFIX}${endpoint}:${encodeURIComponent(parsedQuery.data.address)}:${tokenSegment}`;
 
   if (redisClient) {
     try {

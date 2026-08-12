@@ -86,7 +86,27 @@ describe('protectPublicBalanceRoute', () => {
       }),
     );
     expect(mocks.redisClient?.set).toHaveBeenCalledWith(
-      'cache:public-balance:balance:bc1ptest:token',
+      'cache:public-balance:balance:bc1ptest:token:token',
+      JSON.stringify({ total_balance: '42' }),
+      'EX',
+      30,
+    );
+  });
+
+  it('uses different cache keys for all tokens and a literal asterisk token', async () => {
+    await protectPublicBalanceRoute(request(), 'balance', handler);
+    await protectPublicBalanceRoute(request('address=bc1ptest&tokenId=*'), 'balance', handler);
+
+    expect(mocks.redisClient?.set).toHaveBeenNthCalledWith(
+      1,
+      'cache:public-balance:balance:bc1ptest:all',
+      JSON.stringify({ total_balance: '42' }),
+      'EX',
+      30,
+    );
+    expect(mocks.redisClient?.set).toHaveBeenNthCalledWith(
+      2,
+      'cache:public-balance:balance:bc1ptest:token:*',
       JSON.stringify({ total_balance: '42' }),
       'EX',
       30,
