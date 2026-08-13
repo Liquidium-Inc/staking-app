@@ -9,9 +9,7 @@ import { redis } from '@/providers/redis';
 
 const RATE_LIMIT_MAX_REQUESTS = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const CACHE_TTL_SECONDS = 30;
 const RATE_LIMIT_KEY_PREFIX = 'rate-limit:public-balance:';
-const CACHE_KEY_PREFIX = 'cache:public-balance:';
 
 const querySchema = z.object({
   address: z.string().trim().min(1).max(120),
@@ -67,8 +65,11 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
           { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) } },
         );
       }
-    } catch (error) {
-      logger.error('Public balance rate limit failed', { error, endpoint });
+    } catch {
+      logger.error('Public balance rate limit failed', {
+        endpoint,
+        reason: 'rate-limit backend unavailable',
+      });
       if (config.env === 'production') return unavailableResponse();
     }
   }
@@ -80,30 +81,7 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
     normalizedUrl.searchParams.set('tokenId', parsedQuery.data.tokenId);
   }
 
-  const tokenSegment = parsedQuery.data.tokenId
-    ? `token:${encodeURIComponent(parsedQuery.data.tokenId)}`
-    : 'all';
-  const cacheKey = `${CACHE_KEY_PREFIX}${endpoint}:${encodeURIComponent(parsedQuery.data.address)}:${tokenSegment}`;
-
-  if (redisClient) {
-    try {
-      const cached = await redisClient.get(cacheKey);
-      if (cached) return NextResponse.json(JSON.parse(cached) as BalanceHandlerBody<T>);
-    } catch (error) {
-      logger.warn('Public balance cache read failed', { error, endpoint });
-    }
-  }
-
-  const response = await handler(new Request(normalizedUrl, request));
-
-  if (redisClient && response.ok) {
-    try {
-      const body = await response.clone().json();
-      await redisClient.set(cacheKey, JSON.stringify(body), 'EX', CACHE_TTL_SECONDS);
-    } catch (error) {
-      logger.warn('Public balance cache write failed', { error, endpoint });
-    }
-  }
-
-  return response as NextResponse<BalanceHandlerBody<T>>;
+  return handler(new Request(normalizedUrl, request)) as Promise<
+    NextResponse<BalanceHandlerBody<T>>
+  >;
 }
