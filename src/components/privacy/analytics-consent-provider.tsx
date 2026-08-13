@@ -141,6 +141,10 @@ export function AnalyticsConsentProvider({ children }: { children: ReactNode }) 
           capture_pageview: true,
           capture_performance: true,
           disable_session_recording: false,
+          session_recording: {
+            maskAllInputs: true,
+            maskTextSelector: '*',
+          },
         });
         client.opt_in_capturing?.();
         if (!initialPageviewSent) {

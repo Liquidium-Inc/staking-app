@@ -1,11 +1,12 @@
 import axios from 'axios';
 import Big from 'big.js';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { config as publicConfig } from '@/config/public';
 import { SATOSHIS_PER_BTC } from '@/lib/bitcoin-units';
 import { logger } from '@/lib/logger';
+import { protectPublicBalanceRoute } from '@/lib/public-balance-route';
 
 type MempoolStats = {
   tx_count: number;
@@ -32,7 +33,7 @@ const ERROR_INVALID_QUERY = 'Invalid query parameters';
 const ERROR_FETCH_FAILED = 'Failed to fetch BTC balance';
 const ERROR_FETCH_TIMEOUT = 'BTC balance request timed out';
 
-export const GET = async (request: Request) => {
+const getBtcBalance = async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const parseResult = querySchema.safeParse({ address: searchParams.get('address') });
 
@@ -76,3 +77,6 @@ export const GET = async (request: Request) => {
     return NextResponse.json({ error: ERROR_FETCH_FAILED }, { status: 502 });
   }
 };
+
+export const GET = (request: NextRequest) =>
+  protectPublicBalanceRoute(request, 'btc-balance', getBtcBalance);

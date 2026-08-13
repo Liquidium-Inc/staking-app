@@ -16,6 +16,10 @@ if (typeof window !== 'undefined' && apiKey) {
       capture_pageview: false,
       capture_performance: false,
       disable_session_recording: true,
+      session_recording: {
+        maskAllInputs: true,
+        maskTextSelector: '*',
+      },
       disable_persistence: true,
       persistence: 'memory',
       opt_out_capturing_by_default: true,
