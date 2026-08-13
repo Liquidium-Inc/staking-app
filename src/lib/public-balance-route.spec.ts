@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   config: { env: 'production' },
+  logger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+  },
   redisClient: null as null | {
     eval: ReturnType<typeof vi.fn>;
     get: ReturnType<typeof vi.fn>;
@@ -11,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/config/config', () => ({ config: mocks.config }));
+vi.mock('@/lib/logger', () => ({ logger: mocks.logger }));
 vi.mock('@/providers/redis', () => ({
   redis: {
     get client() {
@@ -47,6 +52,19 @@ describe('protectPublicBalanceRoute', () => {
 
     expect(response.status).toBe(400);
     expect(mocks.redisClient?.eval).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('rejects tokenId on the BTC endpoint before consuming quota', async () => {
+    const response = await protectPublicBalanceRoute(
+      request('address=bc1ptest&tokenId=ignored'),
+      'btc-balance',
+      handler,
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.redisClient?.eval).not.toHaveBeenCalled();
+    expect(mocks.redisClient?.get).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -138,6 +156,11 @@ describe('protectPublicBalanceRoute', () => {
 
     expect(response.status).toBe(503);
     expect(handler).not.toHaveBeenCalled();
+    expect(mocks.logger.error).toHaveBeenCalledWith('Public balance rate limit failed', {
+      error: expect.any(Error),
+      endpoint: 'balance',
+    });
+    expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('203.0.113.1');
   });
 
   it('preserves the non-production fail-open convention for limiter outages', async () => {

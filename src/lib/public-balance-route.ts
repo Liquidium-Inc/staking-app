@@ -45,6 +45,10 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
     );
   }
 
+  if (endpoint === 'btc-balance' && parsedQuery.data.tokenId) {
+    return NextResponse.json({ error: 'Invalid query parameters' }, { status: 400 });
+  }
+
   const redisClient = redis.client;
   if (!redisClient) {
     if (config.env === 'production') return unavailableResponse();
@@ -64,7 +68,7 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
         );
       }
     } catch (error) {
-      logger.error('Public balance rate limit failed', { error, key: rateLimitKey });
+      logger.error('Public balance rate limit failed', { error, endpoint });
       if (config.env === 'production') return unavailableResponse();
     }
   }
