@@ -180,6 +180,12 @@ describe('protectPublicBalanceRoute', () => {
 
     expect(response.status).toBe(200);
     expect(handler).toHaveBeenCalledOnce();
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Public balance cache read failed', {
+      error: expect.any(Error),
+      endpoint: 'balance',
+    });
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('bc1ptest');
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('cache:public-balance');
   });
 
   it('returns the successful response when the cache write fails', async () => {
@@ -189,5 +195,11 @@ describe('protectPublicBalanceRoute', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ total_balance: '42' });
+    expect(mocks.logger.warn).toHaveBeenCalledWith('Public balance cache write failed', {
+      error: expect.any(Error),
+      endpoint: 'balance',
+    });
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('bc1ptest');
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('cache:public-balance');
   });
 });

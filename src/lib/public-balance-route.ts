@@ -90,7 +90,7 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
       const cached = await redisClient.get(cacheKey);
       if (cached) return NextResponse.json(JSON.parse(cached) as BalanceHandlerBody<T>);
     } catch (error) {
-      logger.warn('Public balance cache read failed', { error, key: cacheKey });
+      logger.warn('Public balance cache read failed', { error, endpoint });
     }
   }
 
@@ -101,7 +101,7 @@ export async function protectPublicBalanceRoute<T extends BalanceHandler>(
       const body = await response.clone().json();
       await redisClient.set(cacheKey, JSON.stringify(body), 'EX', CACHE_TTL_SECONDS);
     } catch (error) {
-      logger.warn('Public balance cache write failed', { error, key: cacheKey });
+      logger.warn('Public balance cache write failed', { error, endpoint });
     }
   }
 
