@@ -48,7 +48,7 @@
     "@opentelemetry/sdk-logs": "0.221.0",
     "@opentelemetry/sdk-metrics": "2.10.0",
     "@opentelemetry/sdk-trace-base": "2.10.0",
-    "@posthog/cli": "^0.11.3",
+    "@posthog/cli": "0.10.0",
     "@radix-ui/react-accordion": "^1.2.20",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-avatar": "^1.2.6",
