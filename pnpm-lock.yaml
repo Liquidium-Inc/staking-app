@@ -7,9 +7,11 @@ settings:
 overrides:
   baseline-browser-mapping: 2.11.10
   '@isaacs/brace-expansion@<=5.0.0': 5.0.1
+  '@posthog/core': 1.48.10
+  '@posthog/types': 1.405.3
   '@tootallnate/once@<2.0.1': 2.0.1
   ajv@>=7.0.0-alpha.0 <8.18.0: 8.20.0
-  axios: ^1.20.0
+  axios: ^1.16.0
   bn.js@>=4.0.0 <4.12.3: 4.12.3
   bn.js@>=5.0.0 <5.2.3: 5.2.5
   esbuild: ^0.28.1
@@ -157,11 +159,11 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tanstack/react-query':
-        specifier: ^5.102.5
-        version: 5.102.5(react@19.2.8)
+        specifier: ^5.102.3
+        version: 5.102.3(react@19.2.8)
       '@tanstack/react-query-devtools':
-        specifier: ^5.102.5
-        version: 5.102.5(@tanstack/react-query@5.102.5(react@19.2.8))(react@19.2.8)
+        specifier: ^5.102.3
+        version: 5.102.3(@tanstack/react-query@5.102.3(react@19.2.8))(react@19.2.8)
       '@types/big.js':
         specifier: ^7.0.0
         version: 7.0.0
@@ -175,8 +177,8 @@ importers:
         specifier: ^10.5.4
         version: 10.5.4(postcss@8.5.26)
       axios:
-        specifier: ^1.20.0
-        version: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+        specifier: ^1.16.0
+        version: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       big.js:
         specifier: ^7.0.1
         version: 7.0.1
@@ -238,11 +240,11 @@ importers:
         specifier: ^6.0.11
         version: 6.0.11(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       posthog-js:
-        specifier: ^1.420.0
-        version: 1.420.0(@types/react@19.2.18)(react@19.2.8)
+        specifier: ^1.418.16
+        version: 1.418.16
       posthog-node:
-        specifier: ^5.51.2
-        version: 5.51.2
+        specifier: ^5.51.1
+        version: 5.51.1
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -1730,22 +1732,19 @@ packages:
   '@popperjs/core@2.11.8':
     resolution: {integrity: sha512-P1st0aksCrn9sGZhp8GMYwBnQsbvAWsZAX44oXNNvLHGqAOcoVxmjZiohstwQ7SqKnbR47akdNi+uleWD8+g6A==}
 
-  '@posthog/browser-common@0.6.0':
-    resolution: {integrity: sha512-d6yBE7VeoU3JTpaab3CaCoDCseh0Ytx7sTe0v2ZxhtHNxoKk7rdqr92+bUz9F1T2CuJO5/OTkes4HWT2VHNrTA==}
+  '@posthog/browser-common@0.5.2':
+    resolution: {integrity: sha512-8GvfEshFdeKIccuy3kpp6mDBxawQtRamMYRCwzy1r1ixLKQVLAGs3afhOf6r75yp59ZQBi5mtXQgUJ2Jz8eHuw==}
 
   '@posthog/cli@0.10.0':
     resolution: {integrity: sha512-lPL7kFwGD66h0am8nSffydhRnDyskRWM9GkZOJBZIFShLRmAUdRnBNHrM4k8G5Qmqm3OC2xQMNS0YUKkQXaBQw==}
     engines: {node: '>=14.14', npm: '>=6'}
     hasBin: true
 
-  '@posthog/core@1.48.11':
-    resolution: {integrity: sha512-fvKbxGaUM8RuCDB1jdhSqAHYjk42INfJDWT1KVezn74sCrfnr1YaUafxzmcS+87D5FzbA2tu7IT0GQRV2WkkRg==}
+  '@posthog/core@1.48.10':
+    resolution: {integrity: sha512-Y70zhdQFNMwHHZk9MW44MJUR1DyFm0Cn3DOtd+wQYnGv+kX+qc6CA+pBtEmZe2XD0K9uuOKiz2LJwzaq/wz0FA==}
 
   '@posthog/types@1.405.3':
     resolution: {integrity: sha512-HApKJSYfwo/z2KIVB98E/8XwEL3pTXawBp0AB7FKRVtStz9hizRlaO6n9RR7sjgXLnOLvqj++CGsZb8rQbOS2g==}
-
-  '@posthog/types@1.406.2':
-    resolution: {integrity: sha512-RNNoKD7+ZD2v5uzIDp1SOKK1CseZ+YgNPRYCoPlVKuu+wTB/Tb41JCprMjX9E24gPcsdDg8B47dsEsmO0nwEfw==}
 
   '@protobuf-ts/protoc@2.11.1':
     resolution: {integrity: sha512-mUZJaV0daGO6HUX90o/atzQ6A7bbN2RSuHtdwo8SSF2Qoe3zHwa4IHyCN1evftTeHfLmdz+45qo47sL+5P8nyg==}
@@ -2745,25 +2744,17 @@ packages:
   '@tanstack/query-core@5.102.3':
     resolution: {integrity: sha512-5O2VEceonqC4uaTLUGglb0hgPouWCJ4K1ykVWyeV8aThhdNCzwpwu01bYoaRNJ9mgFUXS7Kf9utJ46ysT8m+bw==}
 
-  '@tanstack/query-core@5.102.5':
-    resolution: {integrity: sha512-RjCmHf9cPRYcH/dpO0Jagw3rxCM1bLzMKKSGzaDkQJADDKGpv5RFjN54IyHSOIPa822AUA7ASOXDjjy1jfyzIA==}
+  '@tanstack/query-devtools@5.102.3':
+    resolution: {integrity: sha512-J/QKK3J+YuqOY/CQBypJSUGANGcdurFyHP4GZDP90QiB3G/wQVeGamo3zFJ/sTcM2uvF3+V7K3rS521xS8B3lQ==}
 
-  '@tanstack/query-devtools@5.102.5':
-    resolution: {integrity: sha512-F4siMPz8QJf2Mr3XwrIcmA6WjhWMKPl1S+V/1rKpz1zwUthK827vRErQgvtWL+Yl0aw/iTbnzIBZDtyIVR8FuQ==}
-
-  '@tanstack/react-query-devtools@5.102.5':
-    resolution: {integrity: sha512-LGoy8EQunplWUoF5lEDbwRrlSXxKSmS6K3TFqgkqwgGm+4zPLSLQJ9EuE/CCmNb/ZYuxNCD8D2vHDTqT8e2f9Q==}
+  '@tanstack/react-query-devtools@5.102.3':
+    resolution: {integrity: sha512-OFxO8PAccjxdf2l1kt0MpcUdrVdSside4lPyucsrSZHssvHc4Vaz1RdtRIuEU0C0Z0P2vMWVIqfF2WlmFtdsng==}
     peerDependencies:
-      '@tanstack/react-query': ^5.102.5
+      '@tanstack/react-query': ^5.102.3
       react: ^18 || ^19
 
   '@tanstack/react-query@5.102.3':
     resolution: {integrity: sha512-nHazxUEUQSGJOswGgSL2DI77f2K75WRCowDgaiyEi0ACocZTFKewTv+A/rJfq6QkuE35rVPff1QUT3ClbaePGQ==}
-    peerDependencies:
-      react: ^18 || ^19
-
-  '@tanstack/react-query@5.102.5':
-    resolution: {integrity: sha512-PyTmSq2nW4MnPuQ/T4hZbH2BYShpgCLSJNwCaPEEYO3RWd9yX611wOMm7etz2SZWVh4N7Azag5iZLMDqYTzfNA==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -3556,8 +3547,8 @@ packages:
     resolution: {integrity: sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==}
     engines: {node: '>=4'}
 
-  axios@1.20.0:
-    resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
+  axios@1.19.0:
+    resolution: {integrity: sha512-ht/iuYZXEjFxLH/Hkezgd7m6JKlHHXEUSneaDz8uZe1Gj5QZtCnpyDsckvAiEnT89OEbCLmnte4R4sn7P0EKFw==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -6082,19 +6073,11 @@ packages:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
 
-  posthog-js@1.420.0:
-    resolution: {integrity: sha512-tIfyJhOCD177n6s5k+0thh7US2x7ZYD0rLJlOIYikDXtjpMIqeSILuZckVedlX9kuZSdpUQvRqoQZpGx4iCqbw==}
-    peerDependencies:
-      '@types/react': '>=16.8.0'
-      react: '>=16.8.0'
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      react:
-        optional: true
+  posthog-js@1.418.16:
+    resolution: {integrity: sha512-/xnf6/PfCpRttAUr9R809L0qb52DsDg+LsuVlafKKDSqB1jO3dvCd1lDMgHsDZARcojI2RXfYZbsXHIfR10hVQ==}
 
-  posthog-node@5.51.2:
-    resolution: {integrity: sha512-K+aQnqyHEtx2O5YmjxByh3WnXXMsrAisW0hNSXwejM4v7cngrbqoA6rZevMSyaXNqx9xhBedTxz0orb1Xwxyew==}
+  posthog-node@5.51.1:
+    resolution: {integrity: sha512-uEGB5OQvYl9f8Fy2t4FolhcBBlYB8sZM6/4Us517M5dcg/d00yyCusm0HydZFwbPQtPntlpr3gNAmv8TTbWuaA==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       rxjs: ^7.0.0
@@ -8191,7 +8174,7 @@ snapshots:
 
   '@mempool/mempool.js@3.0.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       ws: 8.21.1
     transitivePeerDependencies:
       - bufferutil
@@ -8366,7 +8349,7 @@ snapshots:
       '@orangecrypto/orange-connect': 1.2.4(typescript@5.9.3)
       '@oyl/sdk': 1.17.0(@types/node@22.20.1)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
       alkanes: https://codeload.github.com/kungfuflex/alkanes/tar.gz/7a3326b12702c044424d10b37c048e06ebefb3d2(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       bip32: 5.0.0-rc.0(typescript@5.9.3)
       bip39: 3.1.0
       bitcoinjs-lib: 7.0.1(typescript@5.9.3)
@@ -8601,22 +8584,20 @@ snapshots:
 
   '@popperjs/core@2.11.8': {}
 
-  '@posthog/browser-common@0.6.0':
+  '@posthog/browser-common@0.5.2':
     dependencies:
-      '@posthog/core': 1.48.11
-      '@posthog/types': 1.406.2
+      '@posthog/core': 1.48.10
+      '@posthog/types': 1.405.3
 
   '@posthog/cli@0.10.0':
     dependencies:
       detect-libc: 2.1.2
 
-  '@posthog/core@1.48.11':
+  '@posthog/core@1.48.10':
     dependencies:
       '@posthog/types': 1.405.3
 
   '@posthog/types@1.405.3': {}
-
-  '@posthog/types@1.406.2': {}
 
   '@protobuf-ts/protoc@2.11.1': {}
 
@@ -9374,7 +9355,7 @@ snapshots:
 
   '@sats-connect/core@0.10.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(valibot@1.4.2(typescript@5.9.3))':
     dependencies:
-      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       bitcoin-address-validation: 3.0.0
       buffer: 6.0.3
       jsontokens: 4.0.1
@@ -9596,24 +9577,17 @@ snapshots:
 
   '@tanstack/query-core@5.102.3': {}
 
-  '@tanstack/query-core@5.102.5': {}
+  '@tanstack/query-devtools@5.102.3': {}
 
-  '@tanstack/query-devtools@5.102.5': {}
-
-  '@tanstack/react-query-devtools@5.102.5(@tanstack/react-query@5.102.5(react@19.2.8))(react@19.2.8)':
+  '@tanstack/react-query-devtools@5.102.3(@tanstack/react-query@5.102.3(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@tanstack/query-devtools': 5.102.5
-      '@tanstack/react-query': 5.102.5(react@19.2.8)
+      '@tanstack/query-devtools': 5.102.3
+      '@tanstack/react-query': 5.102.3(react@19.2.8)
       react: 19.2.8
 
   '@tanstack/react-query@5.102.3(react@19.2.8)':
     dependencies:
       '@tanstack/query-core': 5.102.3
-      react: 19.2.8
-
-  '@tanstack/react-query@5.102.5(react@19.2.8)':
-    dependencies:
-      '@tanstack/query-core': 5.102.5
       react: 19.2.8
 
   '@testing-library/dom@10.4.1':
@@ -10445,7 +10419,7 @@ snapshots:
       '@protobuf-ts/runtime': 2.11.1
       '@scure/base': 1.1.9
       '@scure/btc-signer': 1.8.1
-      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       binaryen: 118.0.0
       bip32: 5.0.0-rc.0(typescript@5.9.3)
       bip39: 3.1.0
@@ -10640,7 +10614,7 @@ snapshots:
 
   axe-core@4.13.0: {}
 
-  axios@1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2):
+  axios@1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2):
     dependencies:
       follow-redirects: 1.16.0(debug@4.4.3(supports-color@10.2.2))
       form-data: 4.0.6
@@ -13104,7 +13078,7 @@ snapshots:
 
   node-mailjet@6.0.11(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2):
     dependencies:
-      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       json-bigint: 1.0.0
       url-join: 4.0.1
     transitivePeerDependencies:
@@ -13386,11 +13360,11 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  posthog-js@1.420.0(@types/react@19.2.18)(react@19.2.8):
+  posthog-js@1.418.16:
     dependencies:
-      '@posthog/browser-common': 0.6.0
-      '@posthog/core': 1.48.11
-      '@posthog/types': 1.406.2
+      '@posthog/browser-common': 0.5.2
+      '@posthog/core': 1.48.10
+      '@posthog/types': 1.405.3
       core-js: 3.50.0
       dompurify: 3.4.13
       fflate: 0.4.9
@@ -13398,15 +13372,12 @@ snapshots:
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.3.0
       web-vitals-soft-navs: web-vitals@6.0.0
-    optionalDependencies:
-      '@types/react': 19.2.18
-      react: 19.2.8
     transitivePeerDependencies:
       - preact-render-to-string
 
-  posthog-node@5.51.2:
+  posthog-node@5.51.1:
     dependencies:
-      '@posthog/core': 1.48.11
+      '@posthog/core': 1.48.10
 
   postinstall@0.10.3:
     dependencies:
