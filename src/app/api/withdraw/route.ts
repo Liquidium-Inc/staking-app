@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { addressesMatch, publicKeyOwnsAddress } from '@/lib/address';
+import { addressesMatch, findPublicKeyForAddress } from '@/lib/address';
 import {
   FeePolicyError,
   MAX_FEE_RATE_SATS_PER_VBYTE,
@@ -79,9 +79,14 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Match each public key to the address it owns. Wallets may report x-only
+    // keys; the matched key is always usable downstream (e.g. PSBT building).
+    const senderKey = findPublicKeyForAddress(sender.public, sender.address, canister.network);
+    const payerKey = findPublicKeyForAddress(payer.public, payer.address, canister.network);
+
     if (
-      !publicKeyOwnsAddress(sender.public, sender.address, canister.network) ||
-      !publicKeyOwnsAddress(payer.public, payer.address, canister.network) ||
+      !senderKey ||
+      !payerKey ||
       [canister.address, canister.retention].some((address) =>
         addressesMatch(address, payer.address, canister.network),
       )
@@ -94,6 +99,8 @@ export const POST = async (req: NextRequest) => {
         { status: 400 },
       );
     }
+    sender.public = senderKey;
+    payer.public = payerKey;
 
     const unstake = await db.unstake.getByTxid(txid);
     if (!unstake || !addressesMatch(unstake.address, sender.address)) {

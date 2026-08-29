@@ -11,6 +11,7 @@ import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import { TransactionStage, UNKNOWN_WALLET_PROVIDER } from '@/lib/transaction-errors';
+import { resolveSigningKeys } from '@/lib/wallet-keys';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useWithdrawMutation = () => {
@@ -20,6 +21,12 @@ export const useWithdrawMutation = () => {
   const { capture } = useAnalytics();
 
   const { address, paymentAddress, signPsbt, publicKey, paymentPublicKey, provider } = context;
+  const { senderPublicKey, payerPublicKey } = resolveSigningKeys({
+    address,
+    paymentAddress,
+    publicKey,
+    paymentPublicKey,
+  });
 
   const mutation = useMutation({
     mutationFn: async ({ txid }: { txid: string }) => {
@@ -61,8 +68,8 @@ export const useWithdrawMutation = () => {
         });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/withdraw', {
           feeRate: feeRate,
-          sender: { address, public: publicKey },
-          payer: { address: paymentAddress, public: paymentPublicKey },
+          sender: { address, public: senderPublicKey },
+          payer: { address: paymentAddress, public: payerPublicKey },
           txid,
         });
 

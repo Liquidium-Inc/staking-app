@@ -11,6 +11,7 @@ import { useFeeSelection } from '@/components/ui/fee-selector';
 import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import { TransactionStage } from '@/lib/transaction-errors';
+import { resolveSigningKeys } from '@/lib/wallet-keys';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useUnstakeMutation = () => {
@@ -20,6 +21,12 @@ export const useUnstakeMutation = () => {
   const { capture } = useAnalytics();
 
   const { address, paymentAddress, signPsbt, publicKey, paymentPublicKey } = context;
+  const { senderPublicKey, payerPublicKey } = resolveSigningKeys({
+    address,
+    paymentAddress,
+    publicKey,
+    paymentPublicKey,
+  });
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -39,8 +46,8 @@ export const useUnstakeMutation = () => {
         });
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/unstake', {
           feeRate: 'feeRate' in window ? window.feeRate : selectedRate,
-          sender: { address, public: publicKey },
-          payer: { address: paymentAddress, public: paymentPublicKey },
+          sender: { address, public: senderPublicKey },
+          payer: { address: paymentAddress, public: payerPublicKey },
           amount: amount.toString(),
           sAmount: stakedAmount.toString(),
         });

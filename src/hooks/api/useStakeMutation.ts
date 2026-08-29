@@ -11,6 +11,7 @@ import { useFeeSelection } from '@/components/ui/fee-selector';
 import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
 import { TransactionStage } from '@/lib/transaction-errors';
+import { resolveSigningKeys } from '@/lib/wallet-keys';
 import type { ApiOutput } from '@/utils/api-output';
 
 export const useStakeMutation = () => {
@@ -19,6 +20,12 @@ export const useStakeMutation = () => {
   const { capture } = useAnalytics();
 
   const { address, paymentAddress, signPsbt, publicKey, paymentPublicKey } = useLaserEyes();
+  const { senderPublicKey, payerPublicKey } = resolveSigningKeys({
+    address,
+    paymentAddress,
+    publicKey,
+    paymentPublicKey,
+  });
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -40,8 +47,8 @@ export const useStakeMutation = () => {
 
         const psbtResponse = await axios.post<ApiOutput<typeof PSBT_HANDLER>>('/api/stake', {
           feeRate: finalFeeRate,
-          sender: { address, public: publicKey },
-          payer: { address: paymentAddress, public: paymentPublicKey },
+          sender: { address, public: senderPublicKey },
+          payer: { address: paymentAddress, public: payerPublicKey },
           amount: amount.toString(),
           sAmount: new Big(stakedAmount.toString()).round(0, 0).toFixed(0),
         });
