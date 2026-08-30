@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { addressesMatch, findPublicKeyForAddress } from '@/lib/address';
+import { addressesMatch } from '@/lib/address';
+import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import {
   FeePolicyError,
   MAX_FEE_RATE_SATS_PER_VBYTE,
@@ -13,6 +14,7 @@ import {
   resolveFeeRate,
 } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
+import { captureServerException } from '@/lib/posthog-server-capture';
 import { RunePSBT } from '@/lib/psbt';
 import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
 import {
@@ -24,11 +26,16 @@ import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
 import { runeProvider } from '@/providers/rune-provider';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { resolveWalletKeyPairing } from '@/services/withdrawal-identity.service';
 
 bitcoin.initEccLib(ecc);
 
 const FEE_ESTIMATION_ERROR_MESSAGE = 'Fee estimation failed';
 const HTTP_STATUS_BAD_GATEWAY = 502;
+
+// Never log raw public keys; length + short prefix is enough to tell key
+// formats apart (e.g. x-only vs compressed vs garbage like "undefined").
+const keyFingerprint = (key: string) => `${key.trim().length}:${key.trim().slice(0, 4)}`;
 
 const body = z.object({
   txid: z.string(),
@@ -79,11 +86,14 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Match each public key to the address it owns. Wallets may report x-only
-    // keys; the matched key is always usable downstream (e.g. PSBT building).
-    const senderKey = findPublicKeyForAddress(sender.public, sender.address, canister.network);
-    const payerKey = findPublicKeyForAddress(payer.public, payer.address, canister.network);
-
+    // Match each public key to the address it owns, tolerating wallets that
+    // report the two account keys swapped (Xverse mobile). Matched keys are
+    // always usable downstream (e.g. PSBT building).
+    const { senderKey, payerKey, pairing } = resolveWalletKeyPairing(
+      sender,
+      payer,
+      canister.network,
+    );
     if (
       !senderKey ||
       !payerKey ||
@@ -91,6 +101,15 @@ export const POST = async (req: NextRequest) => {
         addressesMatch(address, payer.address, canister.network),
       )
     ) {
+      const mismatchError = Object.assign(new Error(WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE), {
+        txid,
+      });
+      await captureServerException(req, mismatchError, {
+        key_pairing: pairing,
+        sender_key_fingerprint: keyFingerprint(sender.public),
+        payer_key_fingerprint: keyFingerprint(payer.public),
+        sender_address: anonymizeAddress(sender.address),
+      });
       return NextResponse.json(
         errorResponseSchema.parse({
           error: WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE,
