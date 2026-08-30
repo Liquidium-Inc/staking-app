@@ -281,14 +281,15 @@ describe('POST /api/withdraw', () => {
       .addOutput({ script: Buffer.from([0x51]), value: 11_000n });
     mocks.RunePSBT.build.mockResolvedValueOnce(psbt);
 
-    const req = {
-      json: vi.fn().mockResolvedValue({
+    const req = new NextRequest('http://localhost/api/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({
         txid: 'txid1',
         sender: { address: user.address, public: user.paymentPublicKey },
         payer: { address: user.paymentAddress, public: user.publicKey },
         feeRate: 5,
       }),
-    } as unknown as NextRequest;
+    });
     const res = await POST(req);
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -297,13 +298,14 @@ describe('POST /api/withdraw', () => {
   });
 
   it('rejects keys that own neither address', async () => {
-    const req = {
-      json: vi.fn().mockResolvedValue({
+    const req = new NextRequest('http://localhost/api/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({
         txid: 'txid1',
         sender: { address: user.address, public: 'undefined' },
         payer: { address: user.paymentAddress, public: 'undefined' },
       }),
-    } as unknown as NextRequest;
+    });
     const res = await POST(req);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({

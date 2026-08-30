@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { addressesMatch, findPublicKeyForAddress } from '@/lib/address';
+import { addressesMatch } from '@/lib/address';
 import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import {
   FeePolicyError,
@@ -26,6 +26,7 @@ import { mempool } from '@/providers/mempool';
 import { redis } from '@/providers/redis';
 import { runeProvider } from '@/providers/rune-provider';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { resolveWalletKeyPairing } from '@/services/withdrawal-identity.service';
 
 bitcoin.initEccLib(ecc);
 
@@ -85,36 +86,14 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Match each public key to the address it owns. Wallets may report x-only
-    // keys; the matched key is always usable downstream (e.g. PSBT building).
-    let senderKey = findPublicKeyForAddress(sender.public, sender.address, canister.network);
-    let payerKey = findPublicKeyForAddress(payer.public, payer.address, canister.network);
-    let keyPairing: 'direct' | 'swapped' | 'unmatched' = 'direct';
-
-    // LaserEyes' Xverse provider assigns the two account pubkeys by array
-    // index, so some wallets (Xverse mobile) report them swapped. Both
-    // accounts belong to the same authenticated wallet, so accept the swapped
-    // pairing when each key owns the other address.
-    if (!senderKey || !payerKey) {
-      const swappedSenderKey = findPublicKeyForAddress(
-        payer.public,
-        sender.address,
-        canister.network,
-      );
-      const swappedPayerKey = findPublicKeyForAddress(
-        sender.public,
-        payer.address,
-        canister.network,
-      );
-      if (swappedSenderKey && swappedPayerKey) {
-        senderKey = swappedSenderKey;
-        payerKey = swappedPayerKey;
-        keyPairing = 'swapped';
-      } else {
-        keyPairing = 'unmatched';
-      }
-    }
-
+    // Match each public key to the address it owns, tolerating wallets that
+    // report the two account keys swapped (Xverse mobile). Matched keys are
+    // always usable downstream (e.g. PSBT building).
+    const { senderKey, payerKey, pairing } = resolveWalletKeyPairing(
+      sender,
+      payer,
+      canister.network,
+    );
     if (
       !senderKey ||
       !payerKey ||
@@ -126,7 +105,7 @@ export const POST = async (req: NextRequest) => {
         txid,
       });
       await captureServerException(req, mismatchError, {
-        key_pairing: keyPairing,
+        key_pairing: pairing,
         sender_key_fingerprint: keyFingerprint(sender.public),
         payer_key_fingerprint: keyFingerprint(payer.public),
         sender_address: anonymizeAddress(sender.address),
