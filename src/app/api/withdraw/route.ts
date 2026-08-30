@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { addressesMatch, findPublicKeyForAddress } from '@/lib/address';
+import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import {
   FeePolicyError,
   MAX_FEE_RATE_SATS_PER_VBYTE,
@@ -13,6 +14,7 @@ import {
   resolveFeeRate,
 } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
+import { captureServerException } from '@/lib/posthog-server-capture';
 import { RunePSBT } from '@/lib/psbt';
 import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
 import {
@@ -29,6 +31,10 @@ bitcoin.initEccLib(ecc);
 
 const FEE_ESTIMATION_ERROR_MESSAGE = 'Fee estimation failed';
 const HTTP_STATUS_BAD_GATEWAY = 502;
+
+// Never log raw public keys; length + short prefix is enough to tell key
+// formats apart (e.g. x-only vs compressed vs garbage like "undefined").
+const keyFingerprint = (key: string) => `${key.trim().length}:${key.trim().slice(0, 4)}`;
 
 const body = z.object({
   txid: z.string(),
@@ -81,8 +87,33 @@ export const POST = async (req: NextRequest) => {
 
     // Match each public key to the address it owns. Wallets may report x-only
     // keys; the matched key is always usable downstream (e.g. PSBT building).
-    const senderKey = findPublicKeyForAddress(sender.public, sender.address, canister.network);
-    const payerKey = findPublicKeyForAddress(payer.public, payer.address, canister.network);
+    let senderKey = findPublicKeyForAddress(sender.public, sender.address, canister.network);
+    let payerKey = findPublicKeyForAddress(payer.public, payer.address, canister.network);
+    let keyPairing: 'direct' | 'swapped' | 'unmatched' = 'direct';
+
+    // LaserEyes' Xverse provider assigns the two account pubkeys by array
+    // index, so some wallets (Xverse mobile) report them swapped. Both
+    // accounts belong to the same authenticated wallet, so accept the swapped
+    // pairing when each key owns the other address.
+    if (!senderKey || !payerKey) {
+      const swappedSenderKey = findPublicKeyForAddress(
+        payer.public,
+        sender.address,
+        canister.network,
+      );
+      const swappedPayerKey = findPublicKeyForAddress(
+        sender.public,
+        payer.address,
+        canister.network,
+      );
+      if (swappedSenderKey && swappedPayerKey) {
+        senderKey = swappedSenderKey;
+        payerKey = swappedPayerKey;
+        keyPairing = 'swapped';
+      } else {
+        keyPairing = 'unmatched';
+      }
+    }
 
     if (
       !senderKey ||
@@ -91,6 +122,15 @@ export const POST = async (req: NextRequest) => {
         addressesMatch(address, payer.address, canister.network),
       )
     ) {
+      const mismatchError = Object.assign(new Error(WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE), {
+        txid,
+      });
+      await captureServerException(req, mismatchError, {
+        key_pairing: keyPairing,
+        sender_key_fingerprint: keyFingerprint(sender.public),
+        payer_key_fingerprint: keyFingerprint(payer.public),
+        sender_address: anonymizeAddress(sender.address),
+      });
       return NextResponse.json(
         errorResponseSchema.parse({
           error: WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE,

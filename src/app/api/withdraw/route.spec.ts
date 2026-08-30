@@ -256,6 +256,62 @@ describe('POST /api/withdraw', () => {
     );
   });
 
+  it('accepts swapped sender/payer keys (Xverse mobile) and normalizes them', async () => {
+    mocks.mempool.transactions.getTx.mockResolvedValue({
+      vout: [
+        { scriptpubkey_address: user.address, value: 1000, index: 0 },
+        { scriptpubkey_address: canister.retention, value: 2000, index: 1 },
+      ],
+    });
+    mocks.mempool.fees.getFeesRecommended.mockResolvedValue({ fastestFee: 1 });
+    mocks.BIS.mempool.cardinalUTXOs.mockResolvedValue({
+      data: [{ txid: 'utxo1', vout: 0, value: 10000000, address: user.paymentAddress }],
+    });
+    const psbt = new bitcoin.Psbt()
+      .addInput({
+        hash: Buffer.alloc(32, 1),
+        index: 1,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 2_000n },
+      })
+      .addInput({
+        hash: Buffer.alloc(32, 2),
+        index: 0,
+        witnessUtxo: { script: Buffer.from([0x51]), value: 10_000n },
+      })
+      .addOutput({ script: Buffer.from([0x51]), value: 11_000n });
+    mocks.RunePSBT.build.mockResolvedValueOnce(psbt);
+
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        txid: 'txid1',
+        sender: { address: user.address, public: user.paymentPublicKey },
+        payer: { address: user.paymentAddress, public: user.publicKey },
+        feeRate: 5,
+      }),
+    } as unknown as NextRequest;
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.sender.public).toBe(user.publicKey);
+    expect(json.payer.public).toBe(user.paymentPublicKey);
+  });
+
+  it('rejects keys that own neither address', async () => {
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        txid: 'txid1',
+        sender: { address: user.address, public: 'undefined' },
+        payer: { address: user.paymentAddress, public: 'undefined' },
+      }),
+    } as unknown as NextRequest;
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'Fee payer must be controlled by the authenticated wallet',
+      error_code: 'wallet_identity_mismatch',
+    });
+  });
+
   it('returns 500 on unexpected error', async () => {
     const req = {
       json: vi.fn().mockRejectedValue(new Error('Unexpected')),
