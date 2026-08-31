@@ -20,6 +20,16 @@ describe('publicKeyOwnsAddress', () => {
     );
   });
 
+  it('accepts an x-only BIP86 taproot internal public key', () => {
+    const publicKey = ECPair.makeRandom({ network }).publicKey;
+    const xOnly = bitcoin.toXOnly(publicKey);
+    const address = bitcoin.payments.p2tr({ internalPubkey: xOnly, network }).address;
+
+    expect(publicKeyOwnsAddress(Buffer.from(xOnly).toString('hex'), address || '', network)).toBe(
+      true,
+    );
+  });
+
   it('accepts a compressed SegWit payment public key', () => {
     const publicKey = ECPair.makeRandom({ network }).publicKey;
     const address = bitcoin.payments.p2wpkh({ pubkey: publicKey, network }).address;

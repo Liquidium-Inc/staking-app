@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { config } from '@/config/public';
+import { logger } from '@/lib/logger';
 import { runeProvider } from '@/providers/rune-provider';
 import { authorizeAddressRequest } from '@/server/auth/session';
 import { getPortfolioActivity } from '@/services/portfolioActivity.service';
@@ -29,12 +30,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const result = await getPortfolioActivity(
-    parsedQuery.data.address,
-    runeId,
-    PORTFOLIO_ACTIVITY_HISTORY_COUNT,
-    runeProvider,
-  );
+  try {
+    const result = await getPortfolioActivity(
+      parsedQuery.data.address,
+      runeId,
+      PORTFOLIO_ACTIVITY_HISTORY_COUNT,
+      runeProvider,
+    );
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (error) {
+    logger.error('Failed to load account activity', error);
+    return NextResponse.json({ error: 'Unable to load account activity' }, { status: 502 });
+  }
 }

@@ -15,28 +15,33 @@ export async function GET(req: NextRequest) {
   if (req.headers.get('authorization') !== `Bearer ${config.secrets.cron}`)
     return new Response('Unauthorized', { status: 401 });
 
-  let offset = 0;
-  while (true) {
-    logger.info(`Fetching token ${STAKED_RUNE_ID} holders with offset ${offset}`);
-    const { data, block_height } = await BIS.runes.holders({
-      rune_id: STAKED_RUNE_ID,
-      count: MAX_COUNT,
-      offset,
-    });
+  try {
+    let offset = 0;
+    while (true) {
+      logger.info(`Fetching token ${STAKED_RUNE_ID} holders with offset ${offset}`);
+      const { data, block_height } = await BIS.runes.holders({
+        rune_id: STAKED_RUNE_ID,
+        count: MAX_COUNT,
+        offset,
+      });
 
-    logger.info(`Inserting ${data.length} token ${STAKED_RUNE_ID} holders with offset ${offset}`);
-    await sql.insert(schema.tokenBalances).values(
-      data.map((item) => ({
-        address: item.wallet_addr,
-        tokenSymbol: STAKED_RUNE_ID,
-        balance: item.total_balance.toString(),
-        block: block_height,
-      })),
-    );
-    if (data.length < MAX_COUNT) {
-      break;
+      logger.info(`Inserting ${data.length} token ${STAKED_RUNE_ID} holders with offset ${offset}`);
+      await sql.insert(schema.tokenBalances).values(
+        data.map((item) => ({
+          address: item.wallet_addr,
+          tokenSymbol: STAKED_RUNE_ID,
+          balance: item.total_balance.toString(),
+          block: block_height,
+        })),
+      );
+      if (data.length < MAX_COUNT) {
+        break;
+      }
+      offset += MAX_COUNT;
     }
-    offset += MAX_COUNT;
+  } catch (error) {
+    logger.error('Failed to snapshot token holders', error);
+    return Response.json({ error: 'Unable to snapshot token holders' }, { status: 502 });
   }
 
   return Response.json({ success: true });

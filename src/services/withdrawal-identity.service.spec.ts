@@ -32,6 +32,26 @@ describe('resolveWalletKeyPairing', () => {
     expect(result.payerKey).toBe(payer.public);
   });
 
+  it('accepts an x-only BIP86 taproot internal sender key', () => {
+    const senderKey = ECPair.makeRandom({ network }).publicKey;
+    const senderPublic = Buffer.from(bitcoin.toXOnly(senderKey)).toString('hex');
+    const senderAddress = bitcoin.payments.p2tr({
+      internalPubkey: bitcoin.toXOnly(senderKey),
+      network,
+    }).address as string;
+    const { payer } = makeAccounts();
+
+    const result = resolveWalletKeyPairing(
+      { address: senderAddress, public: senderPublic },
+      payer,
+      network,
+    );
+
+    expect(result.pairing).toBe(WalletKeyPairing.Direct);
+    expect(result.senderKey).toBe(senderPublic);
+    expect(result.payerKey).toBe(payer.public);
+  });
+
   it('accepts the swapped pairing when each key owns the other address', () => {
     const { sender, payer } = makeAccounts();
 
