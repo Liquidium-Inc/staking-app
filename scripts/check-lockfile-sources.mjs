@@ -11,6 +11,8 @@ const SOURCE_FIELD_PATTERN =
   /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("(?:[^"\\]|\\.)*"|'[^']*'|[^,}]+)/g;
 const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
   /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*(?:[!&][^\s]+\s+)*[>|][0-9+-]*(?:\s+#.*)?$/;
+const YAML_REFERENCE_SOURCE_FIELD_PATTERN =
+  /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*(?:![^\s]+\s+)*[&*][^\s,#}\]]+/;
 const DOUBLE_QUOTED_SCALAR_PATTERN = /"(?:[^"\\]|\\.)*"/g;
 const HEX_ESCAPE_LENGTHS = { x: 2, u: 4, U: 8 };
 
@@ -98,8 +100,13 @@ export function findExoticSources(lockfile) {
 }
 
 export function assertAllowedLockfileSources(lockfile) {
-  if (lockfile.split('\n').some((line) => BLOCK_SCALAR_SOURCE_FIELD_PATTERN.test(line))) {
+  const lines = lockfile.split('\n');
+  if (lines.some((line) => BLOCK_SCALAR_SOURCE_FIELD_PATTERN.test(line))) {
     throw new Error('pnpm-lock.yaml contains an unsupported block scalar repo or tarball source');
+  }
+
+  if (lines.some((line) => YAML_REFERENCE_SOURCE_FIELD_PATTERN.test(line))) {
+    throw new Error('pnpm-lock.yaml contains an unsupported YAML reference repo or tarball source');
   }
 
   const unexpectedSources = findExoticSources(lockfile).filter(

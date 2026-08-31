@@ -1,6 +1,7 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const CIRCULAR_REFERENCE_MARKER = '[Circular]';
+const UNSERIALIZABLE_VALUE_MARKER = '[Unserializable]';
 
 // Basic logger wrapper. In development, all levels are printed. In production, only `info` and above.
 const getLogLevelPriority = (level: LogLevel): number => {
@@ -27,6 +28,14 @@ const isSafeErrorMetadata = (value: unknown): value is string | number | boolean
   ['string', 'number', 'boolean'].includes(typeof value);
 
 function sanitizeLogValue(value: unknown, seen = new WeakSet<object>()): unknown {
+  try {
+    return sanitizeLogValueUnsafe(value, seen);
+  } catch {
+    return UNSERIALIZABLE_VALUE_MARKER;
+  }
+}
+
+function sanitizeLogValueUnsafe(value: unknown, seen: WeakSet<object>): unknown {
   if (value instanceof Error) {
     const error = value as Error & { code?: unknown; status?: unknown };
     const code = error.code;

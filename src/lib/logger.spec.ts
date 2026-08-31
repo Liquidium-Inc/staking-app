@@ -95,6 +95,34 @@ describe('logger', () => {
     expect(JSON.stringify(consoleError.mock.calls[0])).not.toContain('secret');
   });
 
+  it('replaces errors with throwing property access', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = new Error('Upstream request failed') as Error & { code?: unknown };
+    Object.defineProperty(error, 'code', {
+      get: () => {
+        throw new Error('Property access failed');
+      },
+    });
+
+    expect(() => logger.error(error)).not.toThrow();
+    expect(consoleError).toHaveBeenCalledWith('[error]', '[Unserializable]');
+  });
+
+  it('replaces objects that cannot be enumerated', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const value = new Proxy(
+      {},
+      {
+        ownKeys: () => {
+          throw new Error('Enumeration failed');
+        },
+      },
+    );
+
+    expect(() => logger.error(value)).not.toThrow();
+    expect(consoleError).toHaveBeenCalledWith('[error]', '[Unserializable]');
+  });
+
   it('preserves shared references across sibling branches', () => {
     const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const shared = { value: 'shared' };
