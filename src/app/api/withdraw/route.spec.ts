@@ -70,7 +70,10 @@ const getUser = () => {
     pubkey: paymentKeyPair.publicKey,
     network,
   }).address;
-  const address = bitcoin.payments.p2tr({ pubkey: toXOnly(keyPair.publicKey), network }).address;
+  const address = bitcoin.payments.p2tr({
+    internalPubkey: toXOnly(keyPair.publicKey),
+    network,
+  }).address;
   return {
     keyPair: keyPair,
     publicKey: Buffer.from(keyPair.publicKey).toString('hex'),

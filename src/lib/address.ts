@@ -34,10 +34,10 @@ export function addressesMatch(
  * Returns the public key (hex) that owns the given address, or undefined.
  *
  * Wallets don't always hand us the key in the form we need: taproot keys may
- * arrive x-only (32 bytes) or compressed (33 bytes), and some wallets return
- * x-only keys even for SegWit payment addresses. For x-only keys we try both
- * parities, so the returned key is always a usable 33-byte compressed key for
- * SegWit/nested-SegWit addresses.
+ * be internal or output keys and arrive x-only (32 bytes) or compressed (33
+ * bytes), while some wallets return x-only keys even for SegWit payment
+ * addresses. For x-only keys we try both parities, so the returned key is
+ * always a usable 33-byte compressed key for SegWit/nested-SegWit addresses.
  */
 export function findPublicKeyForAddress(
   publicKeyHex: string,
@@ -49,8 +49,17 @@ export function findPublicKeyForAddress(
   if (publicKey.length !== 32 && publicKey.length !== 33) return undefined;
 
   try {
-    const taproot = bitcoin.payments.p2tr({ pubkey: bitcoin.toXOnly(publicKey), network }).address;
-    if (taproot && addressesMatch(taproot, address, network)) return publicKey.toString('hex');
+    const xOnlyPublicKey = bitcoin.toXOnly(publicKey);
+    const taprootCandidates = [
+      bitcoin.payments.p2tr({ internalPubkey: xOnlyPublicKey, network }).address,
+      bitcoin.payments.p2tr({ pubkey: xOnlyPublicKey, network }).address,
+    ];
+    if (
+      taprootCandidates.some(
+        (candidate) => candidate && addressesMatch(candidate, address, network),
+      )
+    )
+      return publicKey.toString('hex');
   } catch {}
 
   const compressedForms =

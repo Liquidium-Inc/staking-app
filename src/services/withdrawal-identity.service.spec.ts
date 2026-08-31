@@ -12,8 +12,10 @@ bitcoin.initEccLib(ecc);
 function makeAccounts() {
   const ordinalsKey = ECPair.makeRandom({ network }).publicKey;
   const paymentKey = ECPair.makeRandom({ network }).publicKey;
-  const address = bitcoin.payments.p2tr({ pubkey: Buffer.from(ordinalsKey).subarray(1), network })
-    .address as string;
+  const address = bitcoin.payments.p2tr({
+    internalPubkey: Buffer.from(ordinalsKey).subarray(1),
+    network,
+  }).address as string;
   const paymentAddress = bitcoin.payments.p2wpkh({ pubkey: paymentKey, network }).address as string;
   return {
     sender: { address, public: Buffer.from(ordinalsKey).toString('hex') },

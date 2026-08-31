@@ -13,7 +13,7 @@ function makeAccounts() {
   const ordinalsKey = ECPair.makeRandom({ network }).publicKey;
   const paymentKey = ECPair.makeRandom({ network }).publicKey;
   const ordinalsXOnly = Buffer.from(ordinalsKey).subarray(1);
-  const address = bitcoin.payments.p2tr({ pubkey: ordinalsXOnly, network }).address || '';
+  const address = bitcoin.payments.p2tr({ internalPubkey: ordinalsXOnly, network }).address || '';
   const segwit = bitcoin.payments.p2wpkh({ pubkey: paymentKey, network });
   const paymentAddress = bitcoin.payments.p2sh({ redeem: segwit, network }).address || '';
   return {

@@ -10,7 +10,17 @@ const ECPair = ECPairFactory(ecc);
 bitcoin.initEccLib(ecc);
 
 describe('publicKeyOwnsAddress', () => {
-  it('accepts an x-only taproot public key', () => {
+  it('accepts an x-only taproot internal public key', () => {
+    const publicKey = ECPair.makeRandom({ network }).publicKey;
+    const xOnly = bitcoin.toXOnly(publicKey);
+    const address = bitcoin.payments.p2tr({ internalPubkey: xOnly, network }).address;
+
+    expect(publicKeyOwnsAddress(Buffer.from(xOnly).toString('hex'), address || '', network)).toBe(
+      true,
+    );
+  });
+
+  it('accepts an x-only taproot output public key', () => {
     const publicKey = ECPair.makeRandom({ network }).publicKey;
     const xOnly = bitcoin.toXOnly(publicKey);
     const address = bitcoin.payments.p2tr({ pubkey: xOnly, network }).address;
