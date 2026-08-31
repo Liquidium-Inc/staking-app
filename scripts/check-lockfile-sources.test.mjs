@@ -84,6 +84,41 @@ packages:
   );
 });
 
+test('rejects a local file dependency source', () => {
+  const source = 'file:../local-package';
+  const lockfile = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      local-package:
+        specifier: ${source}
+        version: ${source}
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), [source]);
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    (error) => error instanceof Error && error.message.includes(source),
+  );
+});
+
+test('rejects a relative git+file dependency source', () => {
+  const source = 'git+file:../local-repository#0123456789abcdef';
+  const lockfile = `
+lockfileVersion: '9.0'
+packages:
+  injected@${source}:
+    resolution: {commit: 0123456789abcdef, repo: ${source}, type: git}
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), [source]);
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    (error) => error instanceof Error && error.message.includes(source),
+  );
+});
+
 test('rejects exotic snapshot keys and dependency values even without a package entry', () => {
   const source = 'https://example.com/packages/injected.tgz';
   const lockfile = `

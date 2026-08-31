@@ -6,7 +6,7 @@ const ALLOWED_EXOTIC_SOURCES = new Set([
 ]);
 
 const SOURCE_PATTERN =
-  /(?:git\+(?:https?|ssh|file):\/\/|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
+  /(?:git\+(?:https?|ssh):\/\/|git\+file:|(?<![\w+.-])file:|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
 const SOURCE_FIELD_PATTERN =
   /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("[^"]*"|'[^']*'|[^,}]+)/g;
 const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
