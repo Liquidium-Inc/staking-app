@@ -7,6 +7,7 @@ const ALLOWED_EXOTIC_SOURCES = new Set([
 
 const SOURCE_PATTERN =
   /(?:git\+(?:https?|ssh|file):\/\/|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
+const BLOCK_SCALAR_SOURCE_FIELD_PATTERN = /^\s+(?:repo|tarball):\s*[>|][0-9+-]*(?:\s+#.*)?$/;
 
 function extractSource(value) {
   return (value.match(SOURCE_PATTERN) ?? []).map((source) =>
@@ -45,6 +46,10 @@ export function findExoticSources(lockfile) {
 }
 
 export function assertAllowedLockfileSources(lockfile) {
+  if (lockfile.split('\n').some((line) => BLOCK_SCALAR_SOURCE_FIELD_PATTERN.test(line))) {
+    throw new Error('pnpm-lock.yaml contains an unsupported block scalar repo or tarball source');
+  }
+
   const unexpectedSources = findExoticSources(lockfile).filter(
     (source) => !ALLOWED_EXOTIC_SOURCES.has(source),
   );

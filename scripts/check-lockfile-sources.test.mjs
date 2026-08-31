@@ -29,6 +29,24 @@ packages:
   assert.throws(() => assertAllowedLockfileSources(lockfile), new RegExp(source));
 });
 
+for (const indicator of ['>-', '|2']) {
+  test(`rejects a continued tarball using the ${indicator} block scalar indicator`, () => {
+    const lockfile = `
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution:
+      tarball: ${indicator}
+        https://example.com/packages/injected.tgz
+`;
+
+    assert.throws(
+      () => assertAllowedLockfileSources(lockfile),
+      /unsupported block scalar repo or tarball source/,
+    );
+  });
+}
+
 test('rejects Git dependency sources', () => {
   const source = 'git+ssh://git@github.com/example/injected.git#0123456789abcdef';
   const lockfile = `
