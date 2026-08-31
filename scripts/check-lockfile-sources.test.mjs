@@ -29,6 +29,22 @@ packages:
   assert.throws(() => assertAllowedLockfileSources(lockfile), new RegExp(source));
 });
 
+test('rejects a double-quoted tarball with escaped URL punctuation', () => {
+  const source = 'https://example.com/packages/escaped.tgz';
+  const lockfile = String.raw`
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution: {tarball: "https\u003a\u002f\u002fexample.com/packages/escaped.tgz"}
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), [source]);
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    (error) => error instanceof Error && error.message.includes(source),
+  );
+});
+
 for (const [key, value] of [
   ['"tarball"', '"https://example.com/packages/double-quoted.tgz"'],
   ["'repo'", "'git+https://github.com/example/single-quoted.git'"],

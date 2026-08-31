@@ -11,9 +11,48 @@ const SOURCE_FIELD_PATTERN =
   /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("[^"]*"|'[^']*'|[^,}]+)/g;
 const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
   /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*[>|][0-9+-]*(?:\s+#.*)?$/;
+const DOUBLE_QUOTED_SCALAR_PATTERN = /"(?:[^"\\]|\\.)*"/g;
+const HEX_ESCAPE_LENGTHS = { x: 2, u: 4, U: 8 };
+
+function decodeDoubleQuotedHexEscapes(scalar) {
+  let decoded = '';
+
+  for (let index = 1; index < scalar.length - 1; index += 1) {
+    const character = scalar[index];
+    const escapeLength = HEX_ESCAPE_LENGTHS[scalar[index + 1]];
+
+    if (character === '\\' && scalar[index + 1] === '\\') {
+      decoded += character;
+      index += 1;
+      continue;
+    }
+
+    if (character !== '\\' || escapeLength === undefined) {
+      decoded += character;
+      continue;
+    }
+
+    const hexStart = index + 2;
+    const hex = scalar.slice(hexStart, hexStart + escapeLength);
+    if (hex.length !== escapeLength || !/^[\dA-Fa-f]+$/.test(hex)) {
+      decoded += character;
+      continue;
+    }
+
+    const codePoint = Number.parseInt(hex, 16);
+    decoded += codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : character;
+    index = hexStart + escapeLength - 1;
+  }
+
+  return decoded;
+}
+
+function decodeDoubleQuotedScalars(value) {
+  return value.replace(DOUBLE_QUOTED_SCALAR_PATTERN, decodeDoubleQuotedHexEscapes);
+}
 
 function extractSource(value) {
-  return (value.match(SOURCE_PATTERN) ?? []).map((source) =>
+  return (decodeDoubleQuotedScalars(value).match(SOURCE_PATTERN) ?? []).map((source) =>
     source.replace(/\(.+$/, '').replace(/:$/, ''),
   );
 }

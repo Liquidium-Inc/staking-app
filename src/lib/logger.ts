@@ -1,5 +1,7 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+const CIRCULAR_REFERENCE_MARKER = '[Circular]';
+
 // Basic logger wrapper. In development, all levels are printed. In production, only `info` and above.
 const getLogLevelPriority = (level: LogLevel): number => {
   switch (level) {
@@ -34,14 +36,18 @@ function sanitizeLogValue(value: unknown, seen = new WeakSet<object>()): unknown
   }
 
   if (!value || typeof value !== 'object') return value;
-  if (seen.has(value)) return '[Circular]';
+  if (seen.has(value)) return CIRCULAR_REFERENCE_MARKER;
   seen.add(value);
 
-  if (Array.isArray(value)) return value.map((item) => sanitizeLogValue(item, seen));
+  try {
+    if (Array.isArray(value)) return value.map((item) => sanitizeLogValue(item, seen));
 
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, sanitizeLogValue(item, seen)]),
-  );
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, sanitizeLogValue(item, seen)]),
+    );
+  } finally {
+    seen.delete(value);
+  }
 }
 
 const sanitizeLogArgs = (args: unknown[]) => args.map((arg) => sanitizeLogValue(arg));
