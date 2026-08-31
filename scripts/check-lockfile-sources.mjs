@@ -7,7 +7,10 @@ const ALLOWED_EXOTIC_SOURCES = new Set([
 
 const SOURCE_PATTERN =
   /(?:git\+(?:https?|ssh|file):\/\/|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
-const BLOCK_SCALAR_SOURCE_FIELD_PATTERN = /^\s+(?:repo|tarball):\s*[>|][0-9+-]*(?:\s+#.*)?$/;
+const SOURCE_FIELD_PATTERN =
+  /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("[^"]*"|'[^']*'|[^,}]+)/g;
+const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
+  /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*[>|][0-9+-]*(?:\s+#.*)?$/;
 
 function extractSource(value) {
   return (value.match(SOURCE_PATTERN) ?? []).map((source) =>
@@ -32,12 +35,16 @@ export function findExoticSources(lockfile) {
         for (const source of extractSource(packageKey[1])) sources.add(source);
       }
 
-      for (const field of line.matchAll(/\b(?:repo|tarball):\s*([^,}]+)/g)) {
+      for (const field of line.matchAll(SOURCE_FIELD_PATTERN)) {
         for (const source of extractSource(field[1])) sources.add(source);
       }
     }
 
-    if ((section === 'importers' || section === 'snapshots') && /^ {2,}\S/.test(line)) {
+    if (
+      (section === 'importers' || section === 'snapshots') &&
+      /^ {2,}\S/.test(line) &&
+      !/^\s*#/.test(line)
+    ) {
       for (const source of extractSource(line)) sources.add(source);
     }
   }

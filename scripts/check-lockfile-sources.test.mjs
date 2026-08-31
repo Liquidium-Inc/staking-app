@@ -29,6 +29,27 @@ packages:
   assert.throws(() => assertAllowedLockfileSources(lockfile), new RegExp(source));
 });
 
+for (const [key, value] of [
+  ['"tarball"', '"https://example.com/packages/double-quoted.tgz"'],
+  ["'repo'", "'git+https://github.com/example/single-quoted.git'"],
+]) {
+  test(`rejects a source with quoted resolution field ${key}`, () => {
+    const source = value.slice(1, -1);
+    const lockfile = `
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution: {${key}: ${value}}
+`;
+
+    assert.deepEqual(findExoticSources(lockfile), [source]);
+    assert.throws(
+      () => assertAllowedLockfileSources(lockfile),
+      (error) => error instanceof Error && error.message.includes(source),
+    );
+  });
+}
+
 for (const indicator of ['>-', '|2']) {
   test(`rejects a continued tarball using the ${indicator} block scalar indicator`, () => {
     const lockfile = `
@@ -77,6 +98,21 @@ snapshots:
 `;
 
   assert.deepEqual(findExoticSources(lockfile), [source]);
+});
+
+test('ignores comment-only URLs in importers and snapshots', () => {
+  const lockfile = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    # See https://example.com/importer-docs
+snapshots:
+  package@1.0.0:
+    # See https://example.com/snapshot-docs
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), []);
+  assert.doesNotThrow(() => assertAllowedLockfileSources(lockfile));
 });
 
 test('ignores informational URLs in package metadata', () => {
