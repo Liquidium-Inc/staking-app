@@ -23,6 +23,8 @@ jobs:
         with:
           version: 11.24.0
           run_install: false
+      - name: Verify lockfile dependency sources
+        run: pnpm check:lockfile-sources && pnpm test:lockfile-sources
       - run: pnpm install --frozen-lockfile
       - run: pnpm secretlint
       - run: pnpm lint
