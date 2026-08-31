@@ -45,6 +45,36 @@ packages:
   );
 });
 
+test('rejects a double-quoted tarball with escaped slashes', () => {
+  const source = 'https://example.com/packages/escaped-slashes.tgz';
+  const lockfile = String.raw`
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution: {tarball: "https:\/\/example.com/packages/escaped-slashes.tgz"}
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), [source]);
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    (error) => error instanceof Error && error.message.includes(source),
+  );
+});
+
+test('rejects escaped slashes when the double-quoted tarball also contains an escaped quote', () => {
+  const lockfile = String.raw`
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution: {tarball: "https:\/\/example.com/packages/a\"b.tgz"}
+`;
+
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    /unapproved exotic dependency sources/,
+  );
+});
+
 for (const [key, value] of [
   ['"tarball"', '"https://example.com/packages/double-quoted.tgz"'],
   ["'repo'", "'git+https://github.com/example/single-quoted.git'"],
@@ -102,6 +132,25 @@ packages:
 
 test('rejects a local file dependency source', () => {
   const source = 'file:../local-package';
+  const lockfile = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      local-package:
+        specifier: ${source}
+        version: ${source}
+`;
+
+  assert.deepEqual(findExoticSources(lockfile), [source]);
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    (error) => error instanceof Error && error.message.includes(source),
+  );
+});
+
+test('rejects a local link dependency source', () => {
+  const source = 'link:../local-package';
   const lockfile = `
 lockfileVersion: '9.0'
 importers:

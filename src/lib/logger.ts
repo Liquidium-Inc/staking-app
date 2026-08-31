@@ -23,14 +23,19 @@ const currentLevel: LogLevel = process.env.NODE_ENV === 'production' ? 'info' : 
 const shouldLog = (level: LogLevel) =>
   getLogLevelPriority(level) >= getLogLevelPriority(currentLevel);
 
+const isSafeErrorMetadata = (value: unknown): value is string | number | boolean =>
+  ['string', 'number', 'boolean'].includes(typeof value);
+
 function sanitizeLogValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value instanceof Error) {
     const error = value as Error & { code?: unknown; status?: unknown };
+    const code = error.code;
+    const status = error.status;
     return {
       name: error.name,
       message: error.message,
-      ...(error.code !== undefined ? { code: error.code } : {}),
-      ...(error.status !== undefined ? { status: error.status } : {}),
+      ...(isSafeErrorMetadata(code) ? { code } : {}),
+      ...(isSafeErrorMetadata(status) ? { status } : {}),
       ...(error.stack ? { stack: error.stack } : {}),
     };
   }

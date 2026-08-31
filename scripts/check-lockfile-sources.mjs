@@ -6,15 +6,15 @@ const ALLOWED_EXOTIC_SOURCES = new Set([
 ]);
 
 const SOURCE_PATTERN =
-  /(?:git\+(?:https?|ssh):\/\/|git\+file:|(?<![\w+.-])file:|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
+  /(?:git\+(?:https?|ssh):\/\/|git\+file:|(?<![\w+.-])(?:file|link):|git:\/\/|ssh:\/\/|github:|gitlab:|bitbucket:|https?:\/\/)[^\s,'"}\])]+/gi;
 const SOURCE_FIELD_PATTERN =
-  /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("[^"]*"|'[^']*'|[^,}]+)/g;
+  /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("(?:[^"\\]|\\.)*"|'[^']*'|[^,}]+)/g;
 const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
   /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*[>|][0-9+-]*(?:\s+#.*)?$/;
 const DOUBLE_QUOTED_SCALAR_PATTERN = /"(?:[^"\\]|\\.)*"/g;
 const HEX_ESCAPE_LENGTHS = { x: 2, u: 4, U: 8 };
 
-function decodeDoubleQuotedHexEscapes(scalar) {
+function decodeDoubleQuotedEscapes(scalar) {
   let decoded = '';
 
   for (let index = 1; index < scalar.length - 1; index += 1) {
@@ -23,6 +23,12 @@ function decodeDoubleQuotedHexEscapes(scalar) {
 
     if (character === '\\' && scalar[index + 1] === '\\') {
       decoded += character;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\\' && scalar[index + 1] === '/') {
+      decoded += '/';
       index += 1;
       continue;
     }
@@ -48,7 +54,7 @@ function decodeDoubleQuotedHexEscapes(scalar) {
 }
 
 function decodeDoubleQuotedScalars(value) {
-  return value.replace(DOUBLE_QUOTED_SCALAR_PATTERN, decodeDoubleQuotedHexEscapes);
+  return value.replace(DOUBLE_QUOTED_SCALAR_PATTERN, decodeDoubleQuotedEscapes);
 }
 
 function extractSource(value) {
