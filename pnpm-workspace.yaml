@@ -1,6 +1,7 @@
 packages:
   - .
 
+# Keep false: @omnisat/lasereyes-core depends on a pinned alkanes GitHub tarball (kungfuflex/alkanes@7a3326b).
 blockExoticSubdeps: false
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
