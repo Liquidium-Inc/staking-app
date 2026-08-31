@@ -114,6 +114,22 @@ packages:
   });
 }
 
+test('rejects a continued tarball with an anchor before the block scalar', () => {
+  const lockfile = `
+lockfileVersion: '9.0'
+packages:
+  injected@1.0.0:
+    resolution:
+      tarball: &source >-
+        https://example.com/packages/injected.tgz
+`;
+
+  assert.throws(
+    () => assertAllowedLockfileSources(lockfile),
+    /unsupported block scalar repo or tarball source/,
+  );
+});
+
 test('rejects Git dependency sources', () => {
   const source = 'git+ssh://git@github.com/example/injected.git#0123456789abcdef';
   const lockfile = `

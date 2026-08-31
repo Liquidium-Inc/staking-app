@@ -10,7 +10,7 @@ const SOURCE_PATTERN =
 const SOURCE_FIELD_PATTERN =
   /(?:^|[\s{,])(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*("(?:[^"\\]|\\.)*"|'[^']*'|[^,}]+)/g;
 const BLOCK_SCALAR_SOURCE_FIELD_PATTERN =
-  /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*[>|][0-9+-]*(?:\s+#.*)?$/;
+  /^\s+(?:(?:repo|tarball)|"(?:repo|tarball)"|'(?:repo|tarball)')\s*:\s*(?:[!&][^\s]+\s+)*[>|][0-9+-]*(?:\s+#.*)?$/;
 const DOUBLE_QUOTED_SCALAR_PATTERN = /"(?:[^"\\]|\\.)*"/g;
 const HEX_ESCAPE_LENGTHS = { x: 2, u: 4, U: 8 };
 
