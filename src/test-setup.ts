@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { TextEncoder, TextDecoder } from 'util';
 
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
 if (typeof globalThis.TextEncoder === 'undefined') {
