@@ -151,7 +151,7 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "secretlint": "^13.0.5",
     "tailwindcss": "^4.3.3",
-    "tsx": "4.23.13",
+    "tsx": "4.23.15",
     "typescript": "^5.9.3",
     "vercel": "^59.23.2",
     "vite": "^8.3.0",
