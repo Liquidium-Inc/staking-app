@@ -13,6 +13,7 @@ import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
 import {
   mixedRuneUtxoErrorResponseSchema,
   MIXED_RUNE_UTXO_ERROR_MESSAGE,
+  PROTOCOL_FEE_PAYER_ERROR_MESSAGE,
   TransactionErrorCode,
 } from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
@@ -50,6 +51,14 @@ export const POST = async (req: NextRequest) => {
 
     if (!addressesMatch(session.address, sender.address)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (
+      [canister.address, canister.retention].some((address) =>
+        addressesMatch(address, payer.address, canister.network),
+      )
+    ) {
+      return NextResponse.json({ error: PROTOCOL_FEE_PAYER_ERROR_MESSAGE }, { status: 400 });
     }
 
     const psbtService = new PSBTService(
