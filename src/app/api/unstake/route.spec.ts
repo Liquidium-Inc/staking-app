@@ -128,6 +128,14 @@ describe('POST', () => {
     const response = await POST(req);
 
     expect(response.status).toBe(200);
+    expect(PSBTService).toHaveBeenCalledOnce();
+    expect(PSBTService).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      payer ?? validBody.sender,
+      undefined,
+      1,
+    );
     expect(await response.json()).toEqual({
       psbt: 'unsigned-psbt-data',
       toSign: [],
