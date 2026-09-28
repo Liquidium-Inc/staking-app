@@ -2,6 +2,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { PROTOCOL_FEE_PAYER_ERROR_MESSAGE } from '@/lib/transaction-errors';
 import { PSBTService } from '@/services/psbt';
 
 import { POST } from './route';
@@ -15,6 +16,8 @@ const mock = vi.hoisted(() => {
     },
     canister: {
       stake: vi.fn(),
+      address: 'bc1qksmmyx6a8p78nr7w33cxh3lefqfa39c26lytr6',
+      retention: 'bc1q3avy8nvxk5yd48gxp0a84aeef0uckqp8crxx2q',
     },
     redis: {
       client: {
@@ -90,9 +93,16 @@ describe('POST', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns response from PSBTService.build on success', async () => {
+  it.each([
+    { description: 'omitted payer', payer: undefined },
+    {
+      description: 'separate user payer',
+      payer: { public: 'payment-pub', address: 'payment-addr' },
+    },
+  ])('returns response from PSBTService.build on success with $description', async ({ payer }) => {
     const validBody = {
       sender: { public: 'pub', address: 'addr' },
+      ...(payer ? { payer } : {}),
       amount: '1000',
       sAmount: '2000',
       feeRate: 1,
@@ -115,6 +125,14 @@ describe('POST', () => {
     const response = await POST(req);
 
     expect(response.status).toBe(200);
+    expect(PSBTService).toHaveBeenCalledOnce();
+    expect(PSBTService).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      payer ?? validBody.sender,
+      undefined,
+      1,
+    );
     expect(await response.json()).toEqual({
       psbt: 'unsigned-psbt-data',
       toSign: [],
@@ -129,6 +147,27 @@ describe('POST', () => {
       block: null,
     });
   });
+
+  it.each(['address', 'retention'] as const)(
+    'rejects the protocol %s address as fee payer before building a PSBT',
+    async (protocolWallet) => {
+      const req = {
+        json: vi.fn().mockResolvedValue({
+          sender: { public: 'pub', address: 'addr' },
+          payer: { public: 'pub', address: mock.canister[protocolWallet] },
+          amount: '1000',
+          sAmount: '2000',
+        }),
+      } as unknown as NextRequest;
+
+      const response = await POST(req);
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: PROTOCOL_FEE_PAYER_ERROR_MESSAGE });
+      expect(mock.build).not.toHaveBeenCalled();
+      expect(mock.canister.stake).not.toHaveBeenCalled();
+    },
+  );
 
   it('returns 400 if NotEnoughBalanceError is thrown', async () => {
     const validBody = {

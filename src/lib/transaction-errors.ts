@@ -29,3 +29,9 @@ export const MIXED_RUNE_UTXO_ERROR_MESSAGE =
 
 export const WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE =
   'Fee payer must be controlled by the authenticated wallet';
+
+export const PROTOCOL_FEE_PAYER_ERROR_MESSAGE = 'Protocol wallets cannot pay transaction fees';
+
+export const protocolFeePayerErrorResponseSchema = z.object({
+  error: z.literal(PROTOCOL_FEE_PAYER_ERROR_MESSAGE),
+});
