@@ -14,6 +14,7 @@ import {
   mixedRuneUtxoErrorResponseSchema,
   MIXED_RUNE_UTXO_ERROR_MESSAGE,
   PROTOCOL_FEE_PAYER_ERROR_MESSAGE,
+  protocolFeePayerErrorResponseSchema,
   TransactionErrorCode,
 } from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
@@ -58,7 +59,10 @@ export const POST = async (req: NextRequest) => {
         addressesMatch(address, payer.address, canister.network),
       )
     ) {
-      return NextResponse.json({ error: PROTOCOL_FEE_PAYER_ERROR_MESSAGE }, { status: 400 });
+      return NextResponse.json(
+        protocolFeePayerErrorResponseSchema.parse({ error: PROTOCOL_FEE_PAYER_ERROR_MESSAGE }),
+        { status: 400 },
+      );
     }
 
     const psbtService = new PSBTService(

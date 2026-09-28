@@ -93,10 +93,16 @@ describe('POST', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns response from PSBTService.build on success', async () => {
+  it.each([
+    { description: 'omitted payer', payer: undefined },
+    {
+      description: 'separate user payer',
+      payer: { public: 'payment-pub', address: 'payment-addr' },
+    },
+  ])('returns response from PSBTService.build on success with $description', async ({ payer }) => {
     const validBody = {
       sender: { public: 'pub', address: 'addr' },
-      payer: { public: 'payment-pub', address: 'payment-addr' },
+      ...(payer ? { payer } : {}),
       amount: '1000',
       sAmount: '2000',
       feeRate: 1,
