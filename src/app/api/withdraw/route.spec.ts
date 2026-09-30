@@ -198,7 +198,9 @@ describe('POST /api/withdraw', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toBe('Not enough balance to pay fees');
+    expect(json.error).toBe(
+      'Not enough BTC for the network fee. Add BTC to your Bitcoin payment address, then try withdrawing again.',
+    );
   });
 
   it('returns 200 and psbt if all is valid', async () => {

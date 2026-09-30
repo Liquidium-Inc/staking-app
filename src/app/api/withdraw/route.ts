@@ -18,6 +18,7 @@ import { captureServerException } from '@/lib/posthog-server-capture';
 import { RunePSBT } from '@/lib/psbt';
 import { getPsbtInputOutpoints } from '@/lib/psbt-locks';
 import {
+  INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE,
   TransactionErrorCode,
   WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE,
 } from '@/lib/transaction-errors';
@@ -254,7 +255,10 @@ export const POST = async (req: NextRequest) => {
     }
     logger.error(error as Error);
     if (error instanceof Error && error.message === 'Insufficient balance') {
-      return NextResponse.json({ error: 'Not enough balance to pay fees' }, { status: 400 });
+      return NextResponse.json(
+        { error: INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE },
+        { status: 400 },
+      );
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

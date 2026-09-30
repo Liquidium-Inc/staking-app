@@ -10,7 +10,11 @@ import { useFeeSelection } from '@/components/ui/fee-selector';
 import { anonymizeAddress } from '@/lib/anonymizeAddress';
 import { showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
-import { TransactionStage, UNKNOWN_WALLET_PROVIDER } from '@/lib/transaction-errors';
+import {
+  INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE,
+  TransactionStage,
+  UNKNOWN_WALLET_PROVIDER,
+} from '@/lib/transaction-errors';
 import { resolveSigningKeys } from '@/lib/wallet-keys';
 import type { ApiOutput } from '@/utils/api-output';
 
@@ -111,7 +115,11 @@ export const useWithdrawMutation = () => {
             : error instanceof Error && error.message
               ? error.message
               : 'Cannot withdraw';
-        showErrorToast(errorMessage, { id: toastId, description: '' });
+        showErrorToast(errorMessage, {
+          id: toastId,
+          description: '',
+          appendRetryMessage: errorMessage !== INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE,
+        });
         captureFailure(errorMessage, responseData?.error_code ?? responseData?.code);
         throw new Error(errorMessage);
       }
