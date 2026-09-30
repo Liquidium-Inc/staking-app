@@ -256,7 +256,7 @@ export const POST = async (req: NextRequest) => {
     logger.error(error as Error);
     if (error instanceof Error && error.message === 'Insufficient balance') {
       return NextResponse.json(
-        { error: INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE },
+        errorResponseSchema.parse({ error: INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE }),
         { status: 400 },
       );
     }

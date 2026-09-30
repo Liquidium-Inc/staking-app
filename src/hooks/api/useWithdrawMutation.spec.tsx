@@ -5,6 +5,8 @@ import React from 'react';
 import { toast } from 'sonner';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE } from '@/lib/transaction-errors';
+
 import { useWithdrawMutation } from './useWithdrawMutation';
 
 const captureMock = vi.fn();
@@ -92,6 +94,21 @@ describe('useWithdrawMutation', () => {
       vi.runAllTimers();
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['balance', 'test-address'] });
+  });
+
+  it('omits retry text when the Bitcoin payment address needs fee funds', async () => {
+    axiosMock.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { data: { error: INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE } },
+    });
+    const { result } = renderHook(() => useWithdrawMutation(), { wrapper });
+    await expect(result.current.mutateAsync({ txid: 'txid-123' })).rejects.toThrow(
+      INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE,
+    );
+    expect(toastMock.error).toHaveBeenCalledWith(
+      INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE,
+      expect.objectContaining({ id: 'toast-id' }),
+    );
   });
 
   it('handles axios error with string message', async () => {
