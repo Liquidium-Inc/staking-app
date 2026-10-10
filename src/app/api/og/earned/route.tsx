@@ -9,9 +9,9 @@ export const runtime = 'edge';
 
 async function getProtocolApy(): Promise<number> {
   try {
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000';
+    // Use the public site URL: the per-deployment VERCEL_URL sits behind Vercel auth,
+    // and the request Host header is not trusted.
+    const baseUrl = process.env.BASE_URL ?? 'https://stake.liquidium.org';
     const response = await fetch(`${baseUrl}/api/protocol`, {
       next: { revalidate: 600 },
     });
