@@ -7,10 +7,12 @@ import { getRunePrice } from '@/providers/rune-provider';
 
 export const runtime = 'edge';
 
-async function getProtocolApy(origin: string): Promise<number> {
+async function getProtocolApy(): Promise<number> {
   try {
-    // Use the request origin: the per-deployment VERCEL_URL sits behind Vercel auth.
-    const response = await fetch(`${origin}/api/protocol`, {
+    // Use the public site URL: the per-deployment VERCEL_URL sits behind Vercel auth,
+    // and the request Host header is not trusted.
+    const baseUrl = process.env.BASE_URL ?? 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/protocol`, {
       next: { revalidate: 600 },
     });
     if (!response.ok) {
@@ -45,10 +47,7 @@ export async function GET(request: NextRequest) {
       return new Response('Invalid amount parameter', { status: 400 });
     }
 
-    const [tokenPrice, apy] = await Promise.all([
-      getRunePrice(),
-      getProtocolApy(request.nextUrl.origin),
-    ]);
+    const [tokenPrice, apy] = await Promise.all([getRunePrice(), getProtocolApy()]);
     const usdValue = tokenAmount.times(tokenPrice);
     const apyPercentage = new Big(apy).times(100).toFixed(1);
 
