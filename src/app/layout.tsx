@@ -13,15 +13,12 @@ import { RewardsPauseBanner } from '../components/layout/rewards-pause-banner';
 import { ttCommonsPro } from './fonts';
 import Providers from './providers';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://liquidium.org';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://stake.liquidium.org';
 
 export const metadata: Metadata = {
   title: 'Liquidium Staking',
   description: 'Liquidium Staking Protocol by the Liquidium Foundation',
   metadataBase: new URL(siteUrl),
-  alternates: {
-    canonical: '/',
-  },
 };
 
 export default function RootLayout({

@@ -32,18 +32,21 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const title = `I earned ${formatCurrency(tokenAmount, 2)} LIQ on Liquidium!`;
   const description = `Check out my earnings: ${formatCurrency(tokenAmount, 2)} LIQ ($${formatCurrency(usdValue)} USD) from staking on Liquidium.`;
 
-  // get base URL from headers or use default
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://liquidium.fi';
-  const imageUrl = `${baseUrl}/api/og/earned?amount=${tokenAmount}`;
+  // Relative URLs resolve against metadataBase (the public site URL), not the
+  // protected per-deployment VERCEL_URL.
+  const pageUrl = `/earned/${tokenAmount}`;
+  const imageUrl = `/api/og/earned?amount=${tokenAmount}`;
 
   return {
     title,
     description,
+    alternates: {
+      canonical: pageUrl,
+    },
     openGraph: {
       title,
       description,
+      url: pageUrl,
       images: [
         {
           url: imageUrl,
@@ -184,7 +187,7 @@ export default async function EarnedSharePage({ params }: PageProps) {
           <div className="flex flex-col justify-center gap-4">
             <Button variant="default" asChild className="rounded-full px-8 py-6 text-base">
               <Link
-                href="https://help.liquidium.fi/en/articles/11359560-liq-marketplaces"
+                href="https://liquidium.org/tokenomics/marketplaces"
                 target="_blank"
                 rel="noopener noreferrer"
               >
