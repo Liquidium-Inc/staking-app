@@ -21,7 +21,7 @@ const footerLinks = [
   },
   {
     label: 'Tokenomics',
-    href: 'https://tokenomics.liquidium.fi/',
+    href: 'https://liquidium.org/tokenomics',
     external: true,
   },
   {
@@ -41,7 +41,7 @@ const footerLinks = [
   },
   {
     label: 'Marketplaces',
-    href: 'https://help.liquidium.org/en/articles/11359560-liq-marketplaces',
+    href: 'https://liquidium.org/tokenomics/marketplaces',
     external: true,
   },
 ];

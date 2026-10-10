@@ -72,7 +72,7 @@ export function NoTokensBanner({
       <div className="flex items-center space-x-0">
         <Button asChild size="sm" className="h-5 gap-1 rounded-full" variant="secondary">
           <Link
-            href="https://help.liquidium.fi/en/articles/11359560-liq-marketplaces"
+            href="https://liquidium.org/tokenomics/marketplaces"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {

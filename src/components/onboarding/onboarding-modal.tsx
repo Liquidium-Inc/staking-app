@@ -204,7 +204,7 @@ const getSlidesContent = (handleClose: () => void) => [
         <div className="grid grid-cols-2 gap-3 pt-2">
           <Button variant="default" asChild className="w-full rounded-full py-6 text-base">
             <Link
-              href="https://help.liquidium.fi/en/articles/11359560-liq-marketplaces"
+              href="https://liquidium.org/tokenomics/marketplaces"
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleClose}
