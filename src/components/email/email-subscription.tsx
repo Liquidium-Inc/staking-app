@@ -173,7 +173,7 @@ export const EmailSubscription = ({ address }: { address: string }) => {
                 <Label htmlFor="privacy-policy" className="cursor-pointer text-xs leading-none">
                   I agree to the{' '}
                   <a
-                    href="/privacy-policy"
+                    href="/privacy"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-gray-200 underline decoration-gray-400 underline-offset-4 transition-colors hover:text-white"
