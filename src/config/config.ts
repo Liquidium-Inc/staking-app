@@ -60,6 +60,11 @@ const initializeConfig = () => {
     baseUrl: z.string().url().default('http://localhost:3000'),
   });
 
+  const support = z.object({
+    apiKey: z.string().optional(),
+    tokenSecret: z.string().optional(),
+  });
+
   const configSchema = z.object({
     env: z.enum(['development', 'production', 'test']).default('development'),
     network: z.enum(['mainnet', 'testnet4']).default('mainnet'),
@@ -73,6 +78,7 @@ const initializeConfig = () => {
     ordiscan,
     canister,
     email,
+    support,
   });
 
   const { success, data, error } = configSchema.safeParse({
@@ -115,6 +121,10 @@ const initializeConfig = () => {
       mailjetApiSecret: process.env.MAILJET_API_SECRET,
       fromEmail: process.env.FROM_EMAIL,
       baseUrl: process.env.BASE_URL,
+    },
+    support: {
+      apiKey: process.env.SUPPORT_API_KEY || undefined,
+      tokenSecret: process.env.SUPPORT_TOKEN_SECRET || undefined,
     },
     canister:
       process.env.CANISTER_MOCK + '' === 'true'

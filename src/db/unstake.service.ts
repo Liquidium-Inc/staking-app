@@ -3,11 +3,11 @@ import { and, desc, eq, isNull, inArray, or, gte, isNotNull } from 'drizzle-orm'
 import { pick } from '@/lib/pick';
 
 import { sql } from './client';
+import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { unstakes } from './schema';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
-const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function insert(...values: (typeof unstakes.$inferInsert)[]) {
   return await sql.insert(unstakes).values(values);
@@ -20,6 +20,35 @@ async function getPendingsOf(address: string) {
     .where(and(eq(unstakes.address, address), isNull(unstakes.claimTx)))
     .orderBy(desc(unstakes.id))
     .limit(PENDING_RESULT_LIMIT);
+}
+
+const SUPPORT_UNSTAKE_COLUMNS = [
+  'address',
+  'txid',
+  'amount',
+  'sAmount',
+  'timestamp',
+  'block',
+  'claimTx',
+  'claimTxBlock',
+] as const;
+
+async function getRecentOf(address: string, limit: number) {
+  return await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(eq(unstakes.address, address))
+    .orderBy(desc(unstakes.id))
+    .limit(limit);
+}
+
+async function getByClaimTx(claimTx: string) {
+  const [value] = await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(eq(unstakes.claimTx, claimTx))
+    .limit(1);
+  return value;
 }
 
 async function getAfterBlock(block: number) {
@@ -95,6 +124,8 @@ async function remove(ids: number[]) {
 export const unstake = {
   insert,
   getPendingsOf,
+  getRecentOf,
+  getByClaimTx,
   update,
   getAfterBlock,
   getWithdrawAfterBlock,

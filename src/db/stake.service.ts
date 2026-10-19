@@ -3,11 +3,11 @@ import { and, desc, eq, isNull, inArray, or, gte } from 'drizzle-orm';
 import { pick } from '@/lib/pick';
 
 import { sql } from './client';
+import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { stakes } from './schema';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
-const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function insert(...values: (typeof stakes.$inferInsert)[]) {
   return await sql.insert(stakes).values(values);
@@ -20,6 +20,15 @@ async function getPendingsOf(address: string) {
     .where(and(eq(stakes.address, address), isNull(stakes.block)))
     .orderBy(desc(stakes.id))
     .limit(PENDING_RESULT_LIMIT);
+}
+
+async function getRecentOf(address: string, limit: number) {
+  return await sql
+    .select(pick(stakes, 'txid', 'amount', 'sAmount', 'timestamp', 'block'))
+    .from(stakes)
+    .where(eq(stakes.address, address))
+    .orderBy(desc(stakes.id))
+    .limit(limit);
 }
 
 async function getAfterBlock(block: number) {
@@ -52,6 +61,7 @@ async function remove(ids: number[]) {
 export const stake = {
   insert,
   getPendingsOf,
+  getRecentOf,
   update,
   getAfterBlock,
   getByTxid,
