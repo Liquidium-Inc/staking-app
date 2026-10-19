@@ -2,6 +2,7 @@ import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { mempool } from '@/providers/mempool';
 
+import { createBudget, withinBudget, type Budget } from './budget';
 import { SUPPORT_PORTFOLIO_URL, SUPPORT_UNSTAKE_URL } from './constants';
 import { fetchTxChainStatus, hasStakingActivity } from './facts';
 import { TxChainState, type TxChainStatus } from './types';
@@ -81,9 +82,9 @@ export function txProgress(
   }
 }
 
-async function tipHeightOrNull() {
+async function tipHeightOrNull(budget: Budget) {
   try {
-    return await mempool.blocks.getBlocksTipHeight();
+    return await withinBudget(budget, () => mempool.blocks.getBlocksTipHeight());
   } catch {
     return null;
   }
@@ -119,11 +120,12 @@ export async function lookupTxid(txid: string): Promise<TxLookupResult> {
 
   if (!match) return { found: false };
 
+  const budget = createBudget();
   const [chain, tipHeight] = await Promise.all([
     match.recorded
       ? Promise.resolve<TxChainStatus>({ state: TxChainState.Unknown })
-      : fetchTxChainStatus(txid),
-    match.recorded ? Promise.resolve(null) : tipHeightOrNull(),
+      : fetchTxChainStatus(txid, budget),
+    match.recorded ? Promise.resolve(null) : tipHeightOrNull(budget),
   ]);
 
   return {

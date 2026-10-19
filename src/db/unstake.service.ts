@@ -43,6 +43,19 @@ async function getRecentOf(address: string, limit: number) {
     .limit(limit);
 }
 
+/** The address's own unstake with this txid or claim txid. */
+async function getOwnByTxid(address: string, txid: string) {
+  const [value] = await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(
+      and(eq(unstakes.address, address), or(eq(unstakes.txid, txid), eq(unstakes.claimTx, txid))),
+    )
+    .orderBy(desc(unstakes.id))
+    .limit(1);
+  return value;
+}
+
 async function getByClaimTx(claimTx: string) {
   const [value] = await sql
     .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
@@ -126,6 +139,7 @@ export const unstake = {
   insert,
   getPendingsOf,
   getRecentOf,
+  getOwnByTxid,
   getByClaimTx,
   update,
   getAfterBlock,

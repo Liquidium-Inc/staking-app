@@ -17,6 +17,10 @@ export const SUPPORT_LIST_MAX_LIMIT = 50;
 export const SUPPORT_HISTORY_LIMIT = 1000;
 // Unsettled rows checked on chain to tell pending from never-broadcast.
 export const SUPPORT_UNSETTLED_LOOKUP_LIMIT = 100;
+// Remote reads per request stop here; the Worker times out each call after 8s.
+export const SUPPORT_REQUEST_BUDGET_MS = 6_000;
+// One mempool/provider read; a slow one can't take the whole budget.
+export const SUPPORT_PROVIDER_TIMEOUT_MS = 3_000;
 
 export enum SupportErrorCode {
   BadRequest = 'bad_request',

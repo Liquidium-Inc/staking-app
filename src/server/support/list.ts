@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { config as publicConfig } from '@/config/public';
 
+import { createBudget, type Budget } from './budget';
 import {
   MS_PER_SECOND,
   SUPPORT_LIST_DEFAULT_LIMIT,
@@ -10,10 +11,11 @@ import {
 } from './constants';
 import {
   loadActivityHistory,
-  loadStakeHistory,
-  loadUnstakeHistory,
+  readStakes,
+  readUnstakes,
   resolveUnstakeChains,
-  type History,
+  toStakeFacts,
+  toUnstakeFacts,
 } from './facts';
 import { stakeItem, unstakeItem } from './summary';
 import { StakeState, UnstakeState } from './types';
@@ -141,14 +143,12 @@ export function pageEntries<T>(entries: ListEntry<T>[], request: ListRequest) {
 function response<T>(
   items: unknown[],
   page: ReturnType<typeof pageEntries<T>>,
-  history: History<unknown>,
-  request: ListRequest,
+  totalExact: boolean,
 ) {
   return {
     items,
     total: page.total,
-    // A state filter is only exact when every unsettled row's state was confirmed on chain.
-    totalExact: history.totalExact && (!request.filter.states || history.statesExact),
+    totalExact,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     // Items carry txids only; the address's own wallet value is in /context.
     values: [],
@@ -156,45 +156,80 @@ function response<T>(
 }
 
 /**
- * One page of the address's stakes, unstakes or rune activity. The full history is
- * read (it's per address and user-initiated) so totals and pages are exact.
+ * One page of facts. A state filter needs every row's state, so all unsettled
+ * rows are checked on chain; otherwise only the page's rows are.
  */
-export async function listSupportItems(address: string, request: ListRequest, nowMs = Date.now()) {
-  if (request.kind === 'stakes') {
-    const history = await loadStakeHistory(address);
+async function pageFacts<
+  Row extends { id: number; timestamp: Date },
+  Fact extends { state: string },
+>(
+  rows: Row[],
+  request: ListRequest,
+  ids: (row: Row) => (string | null)[],
+  toFacts: (rows: Row[]) => Promise<{ items: Fact[]; statesExact: boolean }>,
+) {
+  const entry = <T>(row: Row, value: T, state?: string): ListEntry<T> => ({
+    ts: row.timestamp.getTime(),
+    key: row.id,
+    state,
+    ids: ids(row),
+    value,
+  });
+  if (!request.filter.states) {
     const page = pageEntries(
-      history.items.map((stake) => ({
-        ts: stake.createdAtMs,
-        key: stake.id,
-        state: stake.state,
-        ids: [stake.txid],
-        value: stake,
-      })),
+      rows.map((row) => entry(row, row)),
       request,
     );
-    return response(page.values.map(stakeItem), page, history, request);
+    const { items } = await toFacts(page.values);
+    return { page: { ...page, values: items }, statesExact: true };
+  }
+  const { items, statesExact } = await toFacts(rows);
+  const page = pageEntries(
+    items.map((fact, index) => entry(rows[index], fact, fact.state)),
+    request,
+  );
+  return { page, statesExact };
+}
+
+/**
+ * One page of the address's stakes, unstakes or rune activity. Our records are
+ * read in full (per address, user-initiated) so totals and pages are exact;
+ * chain checks only run where the page or a state filter needs them.
+ */
+export async function listSupportItems(
+  address: string,
+  request: ListRequest,
+  nowMs = Date.now(),
+  budget: Budget = createBudget(),
+) {
+  if (request.kind === 'stakes') {
+    const { rows, totalExact } = await readStakes(address);
+    const { page, statesExact } = await pageFacts(
+      rows,
+      request,
+      (row) => [row.txid],
+      (some) => toStakeFacts(some, budget),
+    );
+    // A state filter is only exact when every unsettled row's state was confirmed on chain.
+    return response(page.values.map(stakeItem), page, totalExact && statesExact);
   }
 
   if (request.kind === 'unstakes') {
-    const history = await loadUnstakeHistory(address);
-    const page = pageEntries(
-      history.items.map((unstake) => ({
-        ts: unstake.createdAtMs,
-        key: unstake.id,
-        state: unstake.state,
-        ids: [unstake.txid, unstake.claimTx],
-        value: unstake,
-      })),
+    const { rows, totalExact } = await readUnstakes(address);
+    const { page, statesExact } = await pageFacts(
+      rows,
       request,
+      (row) => [row.txid, row.claimTx],
+      (some) => toUnstakeFacts(some, budget),
     );
     const withdrawTimeMs = publicConfig.protocol.withdrawTime * MS_PER_SECOND;
-    const items = (await resolveUnstakeChains(page.values)).map((unstake) =>
+    const items = (await resolveUnstakeChains(page.values, budget)).map((unstake) =>
       unstakeItem(unstake, withdrawTimeMs, nowMs),
     );
-    return response(items, page, history, request);
+    return response(items, page, totalExact && statesExact);
   }
 
-  const history = await loadActivityHistory(address);
+  const history = await loadActivityHistory(address, budget);
   const page = pageEntries(
     history.items.map((activity) => ({
       ts: new Date(activity.ts).valueOf(),
@@ -204,5 +239,5 @@ export async function listSupportItems(address: string, request: ListRequest, no
     })),
     request,
   );
-  return response(page.values, page, history, request);
+  return response(page.values, page, history.totalExact);
 }

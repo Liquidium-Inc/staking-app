@@ -1,9 +1,11 @@
 import { z } from 'zod';
 
 import { config as publicConfig } from '@/config/public';
+import { db } from '@/db';
 
+import { createBudget, type Budget } from './budget';
 import { MS_PER_SECOND } from './constants';
-import { loadStakeHistory, loadUnstakeHistory, resolveUnstakeChains } from './facts';
+import { resolveUnstakeChains, toStakeFacts, toUnstakeFacts } from './facts';
 import { txProgress } from './lookup';
 import { unstakeItem } from './summary';
 
@@ -16,13 +18,19 @@ export type ItemRequest = z.infer<typeof itemRequestSchema>;
 
 /**
  * Returns one stake or unstake (by txid, or claim txid for unstakes) from the
- * address's own records, or null when it isn't one of them.
+ * address's own records, or null when it isn't one of them. Looked up by exact
+ * txid, so any record is found, however old.
  */
-export async function loadSupportItem(address: string, request: ItemRequest, nowMs = Date.now()) {
+export async function loadSupportItem(
+  address: string,
+  request: ItemRequest,
+  nowMs = Date.now(),
+  budget: Budget = createBudget(),
+) {
   if (request.kind === 'stake') {
-    const { items } = await loadStakeHistory(address);
-    const stake = items.find((candidate) => candidate.txid === request.id);
-    if (!stake) return null;
+    const row = await db.stake.getOwnByTxid(address, request.id);
+    if (!row) return null;
+    const [stake] = (await toStakeFacts([row], budget)).items;
     return {
       kind: request.kind,
       txid: stake.txid,
@@ -35,12 +43,10 @@ export async function loadSupportItem(address: string, request: ItemRequest, now
     };
   }
 
-  const { items } = await loadUnstakeHistory(address);
-  const match = items.find(
-    (candidate) => candidate.txid === request.id || candidate.claimTx === request.id,
-  );
-  if (!match) return null;
-  const [unstake] = await resolveUnstakeChains([match]);
+  const row = await db.unstake.getOwnByTxid(address, request.id);
+  if (!row) return null;
+  const [checked] = (await toUnstakeFacts([row], budget)).items;
+  const [unstake] = await resolveUnstakeChains([checked], budget);
   const withdrawTimeMs = publicConfig.protocol.withdrawTime * MS_PER_SECOND;
   return { kind: request.kind, ...unstakeItem(unstake, withdrawTimeMs, nowMs) };
 }
