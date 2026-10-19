@@ -23,7 +23,27 @@ export enum ClaimStatus {
   Unknown = 'unknown',
 }
 
+// List states, derived from our records plus a chain lookup for unsettled rows.
+export enum StakeState {
+  Pending = 'pending',
+  Confirmed = 'confirmed',
+  // Prepared but never seen on chain (abandoned PSBT or dropped from the mempool).
+  NotBroadcast = 'not_broadcast',
+}
+
+export enum UnstakeState {
+  Pending = 'pending',
+  // Unstake confirmed, not claimed yet (cooldown or withdrawable).
+  Confirmed = 'confirmed',
+  // A claim tx was sent. The item's claimStatus has its chain status: the withdraw
+  // monitor rarely records claimTxBlock, so our records can't tell pending from done.
+  ClaimSubmitted = 'claim_submitted',
+  NotBroadcast = 'not_broadcast',
+}
+
 export type StakeFact = {
+  id: number;
+  state: StakeState;
   txid: string;
   amount: string;
   sAmount: string;
@@ -34,6 +54,8 @@ export type StakeFact = {
 };
 
 export type UnstakeFact = {
+  id: number;
+  state: UnstakeState;
   txid: string;
   amount: string;
   sAmount: string;
@@ -52,6 +74,14 @@ export type ActivityFact = {
   ts: string;
 };
 
+/** Totals over one list kind's full history for the address. */
+export type KindTotals = {
+  total: number | null;
+  byState?: Record<string, number>;
+  totalExact: boolean;
+  byStateExact?: boolean;
+};
+
 /** Everything the support context is computed from. Internal; never serialized directly. */
 export type StakingFacts = {
   address: string;
@@ -64,9 +94,11 @@ export type StakingFacts = {
   exchangeRate: number | null;
   hourFeeRate: number | null;
   withdrawTimeMs: number;
+  // Summary selections: open items first, then the most recent, at most SUPPORT_SUMMARY_ITEM_LIMIT.
   stakes: StakeFact[];
   unstakes: UnstakeFact[];
   recentActivity: ActivityFact[] | null;
+  totals: { stakes: KindTotals; unstakes: KindTotals; activity: KindTotals };
   unavailable: string[];
 };
 

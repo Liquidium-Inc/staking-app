@@ -24,7 +24,7 @@ async function getPendingsOf(address: string) {
 
 async function getRecentOf(address: string, limit: number) {
   return await sql
-    .select(pick(stakes, 'txid', 'amount', 'sAmount', 'timestamp', 'block'))
+    .select(pick(stakes, 'id', 'txid', 'amount', 'sAmount', 'timestamp', 'block'))
     .from(stakes)
     .where(eq(stakes.address, address))
     .orderBy(desc(stakes.id))

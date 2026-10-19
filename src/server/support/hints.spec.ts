@@ -8,7 +8,14 @@ import {
   STAKE_UNCONFIRMED_LONG_MS,
   computeHints,
 } from './hints';
-import { TxChainState, type StakeFact, type StakingFacts, type UnstakeFact } from './types';
+import {
+  StakeState,
+  TxChainState,
+  UnstakeState,
+  type StakeFact,
+  type StakingFacts,
+  type UnstakeFact,
+} from './types';
 
 const NOW_MS = 1_760_000_000_000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -32,6 +39,11 @@ function facts(overrides: Partial<StakingFacts> = {}): StakingFacts {
     stakes: [],
     unstakes: [],
     recentActivity: [],
+    totals: {
+      stakes: { total: 0, totalExact: true },
+      unstakes: { total: 0, totalExact: true },
+      activity: { total: 0, totalExact: true },
+    },
     unavailable: [],
     ...overrides,
   };
@@ -39,6 +51,8 @@ function facts(overrides: Partial<StakingFacts> = {}): StakingFacts {
 
 function stake(overrides: Partial<StakeFact> = {}): StakeFact {
   return {
+    id: 1,
+    state: StakeState.Pending,
     txid: TXID,
     amount: '100',
     sAmount: '90',
@@ -52,6 +66,8 @@ function stake(overrides: Partial<StakeFact> = {}): StakeFact {
 
 function unstake(overrides: Partial<UnstakeFact> = {}): UnstakeFact {
   return {
+    id: 1,
+    state: UnstakeState.Confirmed,
     txid: TXID,
     amount: '100',
     sAmount: '90',

@@ -1,3 +1,4 @@
+import { AxiosError } from 'axios';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,7 +36,10 @@ const mock = vi.hoisted(() => ({
 vi.mock('@/config/config', () => ({ config: { env: 'test', support: mock.support } }));
 vi.mock('@/db', () => ({ db: mock.db }));
 vi.mock('@/providers/mempool', () => ({ mempool: mock.mempool }));
-vi.mock('@/providers/rune-provider', () => ({ runeProvider: mock.runeProvider }));
+vi.mock('@/providers/rune-provider', () => ({
+  MAX_WALLET_ACTIVITY_RESULTS: 500,
+  runeProvider: mock.runeProvider,
+}));
 vi.mock('@/providers/canister', () => ({ canister: mock.canister }));
 vi.mock('@/services/portfolioActivity.service', () => ({
   getPortfolioActivity: mock.getPortfolioActivity,
@@ -63,6 +67,7 @@ describe('POST /api/support/context', () => {
     // Rows deliberately include columns that must never leave the server.
     mock.db.stake.getRecentOf.mockResolvedValue([
       {
+        id: 1,
         txid: STAKE_TXID,
         amount: '10000',
         sAmount: '9000',
@@ -73,6 +78,7 @@ describe('POST /api/support/context', () => {
     ]);
     mock.db.unstake.getRecentOf.mockResolvedValue([
       {
+        id: 2,
         address: ADDRESS,
         txid: UNSTAKE_TXID,
         amount: '5000',
@@ -106,6 +112,7 @@ describe('POST /api/support/context', () => {
     mock.getPortfolioActivity.mockResolvedValue({
       activity: [],
       truncated: false,
+      complete: true,
       originalFetchCount: 0,
       deduplicatedCount: 0,
     });
@@ -146,20 +153,25 @@ describe('POST /api/support/context', () => {
         'address',
         'addressType',
         'balances',
+        'counts',
         'exchangeRate',
         'found',
         'mixedRuneUtxoCount',
-        'pendingStakes',
         'recentActivity',
+        'stakes',
         'unavailable',
         'unstakes',
       ].sort(),
     );
-    expect(Object.keys(body.summary.pendingStakes[0]).sort()).toEqual(
-      ['amount', 'confirmed', 'feeRate', 'sAmount', 'ts', 'txid'].sort(),
+    expect(Object.keys(body.summary.stakes[0]).sort()).toEqual(
+      ['amount', 'confirmed', 'feeRate', 'sAmount', 'state', 'ts', 'txid'].sort(),
     );
-    expect(body.summary.pendingStakes[0]).toMatchObject({ amount: '100', feeRate: 5 });
-    expect(body.summary.unstakes[0]).toMatchObject({ txid: UNSTAKE_TXID, withdrawable: false });
+    expect(body.summary.stakes[0]).toMatchObject({ amount: '100', feeRate: 5, state: 'pending' });
+    expect(body.summary.unstakes[0]).toMatchObject({
+      txid: UNSTAKE_TXID,
+      state: 'confirmed',
+      withdrawable: false,
+    });
     expect(body.values).toEqual([expect.objectContaining({ value: ADDRESS, destination: false })]);
     expect(serialized).not.toContain(PSBT);
     expect(serialized).not.toMatch(/psbt|signature|witness|counterparty|public/i);
@@ -167,6 +179,68 @@ describe('POST /api/support/context', () => {
       'support: cross-app verified read',
       expect.objectContaining({ verifiedByBackend: 'wtf-btc', tokenId: 'jti-1' }),
     );
+  });
+
+  it('reports exact counts and lists open stakes first, capped at 20', async () => {
+    const now = Date.now();
+    const confirmed = Array.from({ length: 22 }, (_, index) => ({
+      id: 100 - index,
+      txid: `c${index}`.padEnd(64, '0'),
+      amount: '100',
+      sAmount: '90',
+      timestamp: new Date(now - (index + 10) * 60_000),
+      block: 900_000 - index,
+    }));
+    const pending = {
+      ...confirmed[0],
+      id: 5,
+      txid: STAKE_TXID,
+      block: null,
+      timestamp: new Date(now - 30 * 86_400_000),
+    };
+    const abandoned = { ...confirmed[0], id: 4, txid: 'd'.repeat(64), block: null };
+    mock.db.stake.getRecentOf.mockResolvedValue([...confirmed, pending, abandoned]);
+    mock.mempool.transactions.getTx.mockImplementation(async ({ txid }: { txid: string }) => {
+      if (txid === abandoned.txid) {
+        throw new AxiosError('not found', 'ERR_BAD_REQUEST', undefined, undefined, {
+          status: 404,
+        } as never);
+      }
+      return { fee: 1000, weight: 800, status: { confirmed: false } };
+    });
+    mock.getPortfolioActivity.mockResolvedValue({
+      activity: [],
+      truncated: true,
+      complete: false,
+      originalFetchCount: 500,
+      deduplicatedCount: 500,
+    });
+    const verifiedBy = { backend: 'wtf-btc', verifiedAt: 1, tokenId: 'jti-4' };
+
+    const body = await (await POST(request({ address: ADDRESS, verifiedBy }))).json();
+
+    expect(body.summary.counts.stakes).toEqual({
+      total: 24,
+      shown: 20,
+      byState: { confirmed: 22, pending: 1, not_broadcast: 1 },
+      totalExact: true,
+      byStateExact: true,
+    });
+    expect(body.summary.stakes).toHaveLength(20);
+    // The old pending stake comes first despite being the oldest; never-broadcast rows stay out.
+    expect(body.summary.stakes[0]).toMatchObject({ txid: STAKE_TXID, state: 'pending' });
+    expect(
+      body.summary.stakes.slice(1).every((stake: { state: string }) => stake.state === 'confirmed'),
+    ).toBe(true);
+    expect(body.summary.counts.unstakes).toEqual({
+      total: 1,
+      shown: 1,
+      byState: { confirmed: 1 },
+      totalExact: true,
+      byStateExact: true,
+    });
+    // A provider that couldn't read the whole history never yields an "exact" total.
+    expect(body.summary.counts.activity).toEqual({ total: 0, shown: 0, totalExact: false });
   });
 
   it('returns found false for an address with no staking footprint', async () => {
