@@ -30,7 +30,8 @@ declare global {
 }
 
 // Staging can point this at the staging support Worker (e.g. https://support-staging.liquidium.org/widget.js).
-const SUPPORT_WIDGET_SRC = process.env.NEXT_PUBLIC_SUPPORT_WIDGET_SRC || 'https://support.liquidium.org/widget.js';
+const SUPPORT_WIDGET_SRC =
+  process.env.NEXT_PUBLIC_SUPPORT_WIDGET_SRC || 'https://support.liquidium.org/widget.js';
 const SUPPORT_TOKEN_PATH = '/api/support/token';
 
 export const isSupportWidgetEnabled = process.env.NEXT_PUBLIC_SUPPORT_WIDGET === 'true';
@@ -78,10 +79,15 @@ export const support = {
   refreshIdentity: () => getApi().refreshIdentity(),
 };
 
-/** Exchanges the wallet session for a short-lived support token; null when not signed in. */
+/**
+ * Exchanges the wallet session for a short-lived support token. Null when not
+ * signed in (401/403); throws on network errors and other statuses, so the
+ * widget keeps the previous identity instead of dropping it.
+ */
 export async function fetchSupportToken(): Promise<string | null> {
   const response = await fetch(SUPPORT_TOKEN_PATH, { method: 'POST', credentials: 'include' });
-  if (!response.ok) return null;
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) throw new Error(`support token: ${response.status}`);
   const body = (await response.json()) as { token?: string };
   return body.token ?? null;
 }
