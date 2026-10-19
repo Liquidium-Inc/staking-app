@@ -4,6 +4,7 @@ import { SUPPORT_RECENT_ACTIVITY_LIMIT } from './constants';
 import {
   ClaimStatus,
   TxChainState,
+  type KindTotals,
   type LabelledValue,
   type StakeFact,
   type StakingFacts,
@@ -66,13 +67,36 @@ export function broadcastUnstakesOf(facts: StakingFacts): UnstakeFact[] {
   return facts.unstakes.filter((unstake) => unstake.chain.state !== TxChainState.NotFound);
 }
 
+/** One stake as the summary and /list show it. */
+export function stakeItem(stake: StakeFact) {
+  return {
+    txid: stake.txid,
+    state: stake.state,
+    amount: stake.amount,
+    sAmount: stake.sAmount,
+    ts: stake.createdAtMs,
+    confirmed: stake.recordedConfirmed || stake.chain.state === TxChainState.Confirmed,
+    feeRate: stake.feeRate,
+  };
+}
+
+/** One unstake as the summary and /list show it. */
+export function unstakeItem(unstake: UnstakeFact, withdrawTimeMs: number, nowMs: number) {
+  return { state: unstake.state, ...deriveUnstake(unstake, withdrawTimeMs, nowMs) };
+}
+
+/** Exact totals so the bot never mistakes the summary list for the whole history. */
+function countOf(totals: KindTotals, shown: number) {
+  return { ...totals, shown };
+}
+
 const isPositive = (amount: string | null) => amount !== null && new Big(amount).gt(0);
 
 /** False for addresses we know nothing about: no stake records and no LIQ or sLIQ. */
 export function hasStakingFootprint(facts: StakingFacts) {
   return (
-    facts.stakes.length > 0 ||
-    facts.unstakes.length > 0 ||
+    (facts.totals.stakes.total ?? 0) > 0 ||
+    (facts.totals.unstakes.total ?? 0) > 0 ||
     isPositive(facts.liqBalance) ||
     isPositive(facts.sliqBalance) ||
     // If balances couldn't be read we can't claim the address is unknown.
@@ -82,6 +106,11 @@ export function hasStakingFootprint(facts: StakingFacts) {
 
 /** Compact, allowlisted summary for the support bot. Field-by-field on purpose. */
 export function buildSummary(facts: StakingFacts, nowMs: number) {
+  const stakes = facts.stakes.map(stakeItem);
+  const unstakes = broadcastUnstakesOf(facts).map((unstake) =>
+    unstakeItem(unstake, facts.withdrawTimeMs, nowMs),
+  );
+  const recentActivity = facts.recentActivity?.slice(0, SUPPORT_RECENT_ACTIVITY_LIMIT) ?? null;
   return {
     found: true,
     address: facts.address,
@@ -93,18 +122,14 @@ export function buildSummary(facts: StakingFacts, nowMs: number) {
     },
     exchangeRate: facts.exchangeRate,
     mixedRuneUtxoCount: facts.mixedRuneUtxoCount,
-    pendingStakes: pendingStakesOf(facts).map((stake) => ({
-      txid: stake.txid,
-      amount: stake.amount,
-      sAmount: stake.sAmount,
-      ts: stake.createdAtMs,
-      confirmed: stake.chain.state === TxChainState.Confirmed,
-      feeRate: stake.feeRate,
-    })),
-    unstakes: broadcastUnstakesOf(facts).map((unstake) =>
-      deriveUnstake(unstake, facts.withdrawTimeMs, nowMs),
-    ),
-    recentActivity: facts.recentActivity?.slice(0, SUPPORT_RECENT_ACTIVITY_LIMIT) ?? null,
+    stakes,
+    unstakes,
+    recentActivity,
+    counts: {
+      stakes: countOf(facts.totals.stakes, stakes.length),
+      unstakes: countOf(facts.totals.unstakes, unstakes.length),
+      activity: countOf(facts.totals.activity, recentActivity?.length ?? 0),
+    },
     unavailable: facts.unavailable,
   };
 }

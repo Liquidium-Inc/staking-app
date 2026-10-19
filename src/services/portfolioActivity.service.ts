@@ -14,6 +14,8 @@ export const WalletActivitySchema = z.object({
 export const PortfolioActivityResponseSchema = z.object({
   activity: z.array(WalletActivitySchema),
   truncated: z.boolean(),
+  // True only when the provider read the address's whole history for this rune.
+  complete: z.boolean(),
   originalFetchCount: z.number(),
   deduplicatedCount: z.number(),
 });
@@ -29,7 +31,7 @@ export async function getPortfolioActivity(
   count: number,
   provider: RuneProvider,
 ): Promise<PortfolioActivityResponse> {
-  const { data: activity } = await provider.runes.walletActivity({
+  const { data: activity, complete } = await provider.runes.walletActivity({
     address,
     rune_id: runeId,
     count,
@@ -47,6 +49,7 @@ export async function getPortfolioActivity(
   return PortfolioActivityResponseSchema.parse({
     activity: deduplicated,
     truncated: activity.length === count,
+    complete: complete === true,
     originalFetchCount: activity.length,
     deduplicatedCount: deduplicated.length,
   });

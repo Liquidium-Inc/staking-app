@@ -145,7 +145,7 @@ These are development-only tools and should not be used in production.
 **Support (Liquidium Support Worker):**
 
 - `POST /api/support/token` - Mint a 15-minute support token for the wallet session (browser)
-- `POST /api/support/{verify,context,item,lookup,health}` - Read-only, `Authorization: Bearer $SUPPORT_API_KEY`
+- `POST /api/support/{verify,context,item,list,lookup,health}` - Read-only, `Authorization: Bearer $SUPPORT_API_KEY`
 
 **Critical Cron Jobs:**
 

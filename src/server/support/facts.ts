@@ -8,17 +8,22 @@ import { mapWithConcurrencyLimit } from '@/lib/async';
 import { logger } from '@/lib/logger';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
-import { runeProvider } from '@/providers/rune-provider';
+import { MAX_WALLET_ACTIVITY_RESULTS, runeProvider } from '@/providers/rune-provider';
 import { getPortfolioActivity } from '@/services/portfolioActivity.service';
 
 import {
   MS_PER_SECOND,
+  SUPPORT_HISTORY_LIMIT,
   SUPPORT_RECENT_ACTIVITY_LIMIT,
   SUPPORT_SUMMARY_ITEM_LIMIT,
+  SUPPORT_UNSETTLED_LOOKUP_LIMIT,
 } from './constants';
 import {
+  StakeState,
   TxChainState,
+  UnstakeState,
   type ActivityFact,
+  type KindTotals,
   type StakeFact,
   type StakingFacts,
   type TxChainStatus,
@@ -99,85 +104,183 @@ async function optional<T>(
   }
 }
 
-export async function loadStakes(address: string): Promise<StakeFact[]> {
-  const rows = await db.stake.getRecentOf(address, SUPPORT_SUMMARY_ITEM_LIMIT);
-  const lookups = await mapWithConcurrencyLimit(rows, MEMPOOL_LOOKUP_CONCURRENCY, (row) =>
-    row.block === null
-      ? fetchTxWithFeeRate(row.txid)
-      : Promise.resolve({ chain: { state: TxChainState.Unknown } as TxChainStatus, feeRate: null }),
+const UNKNOWN_CHAIN: TxChainStatus = { state: TxChainState.Unknown };
+
+/** One list kind's full history for an address, newest first. */
+export type History<T> = {
+  items: T[];
+  // False when the history was longer than we read.
+  totalExact: boolean;
+  // False when some unsettled rows couldn't be checked on chain, so their state is a best guess.
+  statesExact: boolean;
+};
+
+function settledOr<T>(result: PromiseSettledResult<T> | undefined, fallback: T) {
+  return result?.status === 'fulfilled' ? result.value : fallback;
+}
+
+/** Every stake of the address (capped); only unsettled rows are checked on chain. */
+export async function loadStakeHistory(address: string): Promise<History<StakeFact>> {
+  const rows = await db.stake.getRecentOf(address, SUPPORT_HISTORY_LIMIT + 1);
+  const kept = rows.slice(0, SUPPORT_HISTORY_LIMIT);
+  const unsettled = kept.filter((row) => row.block === null);
+  const checked = unsettled.slice(0, SUPPORT_UNSETTLED_LOOKUP_LIMIT);
+  const lookups = await mapWithConcurrencyLimit(checked, MEMPOOL_LOOKUP_CONCURRENCY, (row) =>
+    fetchTxWithFeeRate(row.txid),
+  );
+  const unresolved = { chain: UNKNOWN_CHAIN, feeRate: null };
+  const lookupById = new Map(
+    checked.map((row, index) => [row.id, settledOr(lookups[index], unresolved)]),
   );
 
-  return rows.map((row, index) => {
-    const lookup = lookups[index];
-    const resolved =
-      lookup.status === 'fulfilled'
-        ? lookup.value
-        : { chain: { state: TxChainState.Unknown } as TxChainStatus, feeRate: null };
+  const items = kept.map((row): StakeFact => {
+    const { chain, feeRate } = lookupById.get(row.id) ?? unresolved;
+    const recordedConfirmed = row.block !== null;
     return {
+      id: row.id,
+      state: recordedConfirmed
+        ? StakeState.Confirmed
+        : chain.state === TxChainState.NotFound
+          ? StakeState.NotBroadcast
+          : StakeState.Pending,
       txid: row.txid,
       amount: toDecimal(row.amount, publicConfig.rune.decimals),
       sAmount: toDecimal(row.sAmount, publicConfig.sRune.decimals),
       createdAtMs: row.timestamp.getTime(),
-      recordedConfirmed: row.block !== null,
-      chain: resolved.chain,
-      feeRate: resolved.feeRate,
+      recordedConfirmed,
+      chain,
+      feeRate,
     };
   });
+
+  return {
+    items,
+    totalExact: rows.length <= SUPPORT_HISTORY_LIMIT,
+    statesExact:
+      checked.length === unsettled.length &&
+      [...lookupById.values()].every(({ chain }) => chain.state !== TxChainState.Unknown),
+  };
 }
 
-export async function loadUnstakes(address: string): Promise<UnstakeFact[]> {
-  const rows = await db.unstake.getRecentOf(address, SUPPORT_SUMMARY_ITEM_LIMIT);
-  const lookups = await mapWithConcurrencyLimit(rows, MEMPOOL_LOOKUP_CONCURRENCY, async (row) => ({
-    chain: await fetchTxChainStatus(row.txid),
-    claimChain: row.claimTx ? await fetchTxChainStatus(row.claimTx) : null,
-  }));
+/** Every unstake of the address (capped); only unsettled, unclaimed rows are checked on chain. */
+export async function loadUnstakeHistory(address: string): Promise<History<UnstakeFact>> {
+  const rows = await db.unstake.getRecentOf(address, SUPPORT_HISTORY_LIMIT + 1);
+  const kept = rows.slice(0, SUPPORT_HISTORY_LIMIT);
+  const unsettled = kept.filter((row) => row.block === null && !row.claimTx);
+  const checked = unsettled.slice(0, SUPPORT_UNSETTLED_LOOKUP_LIMIT);
+  const lookups = await mapWithConcurrencyLimit(checked, MEMPOOL_LOOKUP_CONCURRENCY, (row) =>
+    fetchTxChainStatus(row.txid),
+  );
+  const chainById = new Map(
+    checked.map((row, index) => [row.id, settledOr(lookups[index], UNKNOWN_CHAIN)]),
+  );
 
-  return rows.map((row, index) => {
-    const lookup = lookups[index];
-    const resolved =
-      lookup.status === 'fulfilled'
-        ? lookup.value
-        : { chain: { state: TxChainState.Unknown } as TxChainStatus, claimChain: null };
+  const items = kept.map((row): UnstakeFact => {
+    const chain = chainById.get(row.id) ?? UNKNOWN_CHAIN;
     return {
+      id: row.id,
+      state: row.claimTx
+        ? UnstakeState.ClaimSubmitted
+        : row.block !== null
+          ? UnstakeState.Confirmed
+          : chain.state === TxChainState.NotFound
+            ? UnstakeState.NotBroadcast
+            : UnstakeState.Pending,
       txid: row.txid,
       amount: toDecimal(row.amount, publicConfig.rune.decimals),
       sAmount: toDecimal(row.sAmount, publicConfig.sRune.decimals),
       createdAtMs: row.timestamp.getTime(),
       recordedConfirmed: row.block !== null,
-      chain: resolved.chain,
+      chain,
       claimTx: row.claimTx,
-      claimChain: resolved.claimChain,
+      claimChain: null,
     };
   });
+
+  return {
+    items,
+    totalExact: rows.length <= SUPPORT_HISTORY_LIMIT,
+    statesExact:
+      checked.length === unsettled.length &&
+      [...chainById.values()].every((chain) => chain.state !== TxChainState.Unknown),
+  };
 }
 
-async function loadRecentActivity(address: string): Promise<ActivityFact[]> {
+/** Adds the chain lookups shown on unstake items: confirmation time and claim status. */
+export async function resolveUnstakeChains(unstakes: UnstakeFact[]): Promise<UnstakeFact[]> {
+  const lookups = await mapWithConcurrencyLimit(
+    unstakes,
+    MEMPOOL_LOOKUP_CONCURRENCY,
+    async (unstake) => ({
+      chain:
+        unstake.chain.state === TxChainState.Unknown
+          ? await fetchTxChainStatus(unstake.txid)
+          : unstake.chain,
+      claimChain: unstake.claimTx ? await fetchTxChainStatus(unstake.claimTx) : null,
+    }),
+  );
+  return unstakes.map((unstake, index) => ({
+    ...unstake,
+    ...settledOr(lookups[index], { chain: unstake.chain, claimChain: null }),
+  }));
+}
+
+/** LIQ and sLIQ activity, newest first, as far back as the provider reads. */
+export async function loadActivityHistory(address: string): Promise<History<ActivityFact>> {
   const tokens = [
     { id: publicConfig.rune.id, token: 'LIQ' as const },
     { id: publicConfig.sRune.id, token: 'sLIQ' as const },
   ];
   const results = await Promise.all(
     tokens.map(async ({ id, token }) => {
-      const { activity } = await getPortfolioActivity(
+      const { activity, complete } = await getPortfolioActivity(
         address,
         id,
-        SUPPORT_RECENT_ACTIVITY_LIMIT,
+        MAX_WALLET_ACTIVITY_RESULTS,
         runeProvider,
       );
-      return activity.map((entry) => ({
+      const entries = activity.map((entry) => ({
         direction: entry.event_type === 'output' ? ('in' as const) : ('out' as const),
         token,
         amount: toDecimal(entry.amount, entry.decimals),
         outpoint: entry.outpoint,
         ts: entry.timestamp,
       }));
+      return { entries, complete };
     }),
   );
 
-  return results
-    .flat()
-    .sort((left, right) => new Date(right.ts).valueOf() - new Date(left.ts).valueOf())
-    .slice(0, SUPPORT_RECENT_ACTIVITY_LIMIT);
+  return {
+    items: results
+      .flatMap((result) => result.entries)
+      .sort((left, right) => new Date(right.ts).valueOf() - new Date(left.ts).valueOf()),
+    totalExact: results.every((result) => result.complete),
+    statesExact: true,
+  };
+}
+
+/** Open items first (newest first), then the most recent closed ones, capped for the summary. */
+function summarySelection<T extends { state: string }>(
+  items: T[],
+  openStates: string[],
+  closedStates: string[],
+) {
+  return [
+    ...items.filter((item) => openStates.includes(item.state)),
+    ...items.filter((item) => closedStates.includes(item.state)),
+  ].slice(0, SUPPORT_SUMMARY_ITEM_LIMIT);
+}
+
+function totalsOf<T>(history: History<T> | null, stateOf?: (item: T) => string): KindTotals {
+  if (!history) return { total: null, totalExact: false };
+  const totals: KindTotals = { total: history.items.length, totalExact: history.totalExact };
+  if (stateOf) {
+    const byState: Record<string, number> = {};
+    for (const item of history.items) byState[stateOf(item)] = (byState[stateOf(item)] ?? 0) + 1;
+    totals.byState = byState;
+    totals.byStateExact = history.totalExact && history.statesExact;
+  }
+  return totals;
 }
 
 export async function hasStakingActivity(address: string) {
@@ -193,10 +296,10 @@ export async function loadStakingFacts(address: string): Promise<StakingFacts> {
   const unavailable: string[] = [];
   const addressType = getBitcoinAddressType(address);
 
-  const [stakes, unstakes, balances, cardinal, runic, rate, fees, recentActivity] =
+  const [stakeHistory, unstakeHistory, balances, cardinal, runic, rate, fees, activityHistory] =
     await Promise.all([
-      loadStakes(address),
-      loadUnstakes(address),
+      loadStakeHistory(address),
+      loadUnstakeHistory(address),
       optional('balances', unavailable, () => runeProvider.runes.walletBalances({ address })),
       optional('btcBalance', unavailable, () =>
         runeProvider.mempool.cardinalUTXOs({ wallet_addr: address }),
@@ -206,8 +309,16 @@ export async function loadStakingFacts(address: string): Promise<StakingFacts> {
       ),
       optional('exchangeRate', unavailable, () => canister.getExchangeRate()),
       optional('feeRates', unavailable, () => mempool.fees.getFeesRecommended()),
-      optional('recentActivity', unavailable, () => loadRecentActivity(address)),
+      optional('recentActivity', unavailable, () => loadActivityHistory(address)),
     ]);
+
+  const unstakes = await resolveUnstakeChains(
+    summarySelection(
+      unstakeHistory.items,
+      [UnstakeState.Pending, UnstakeState.Confirmed],
+      [UnstakeState.ClaimSubmitted],
+    ),
+  );
 
   const balanceOf = (runeId: string, decimals: number) =>
     balances
@@ -237,9 +348,15 @@ export async function loadStakingFacts(address: string): Promise<StakingFacts> {
         : null,
     hourFeeRate: fees?.hourFee ?? null,
     withdrawTimeMs: publicConfig.protocol.withdrawTime * MS_PER_SECOND,
-    stakes,
+    stakes: summarySelection(stakeHistory.items, [StakeState.Pending], [StakeState.Confirmed]),
     unstakes,
-    recentActivity,
+    recentActivity: activityHistory?.items.slice(0, SUPPORT_RECENT_ACTIVITY_LIMIT) ?? null,
+    totals: {
+      stakes: totalsOf(stakeHistory, (stake) => stake.state),
+      unstakes: totalsOf(unstakeHistory, (unstake) => unstake.state),
+      // Activity has no states; an unavailable provider leaves its total unknown.
+      activity: totalsOf(activityHistory),
+    },
     unavailable,
   };
 }

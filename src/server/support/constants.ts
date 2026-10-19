@@ -10,9 +10,18 @@ export const SUPPORT_UNSTAKE_URL = `${SUPPORT_SITE_URL}/unstake`;
 
 export const SUPPORT_SUMMARY_ITEM_LIMIT = 20;
 export const SUPPORT_RECENT_ACTIVITY_LIMIT = 10;
+export const SUPPORT_LIST_DEFAULT_LIMIT = 20;
+export const SUPPORT_LIST_MAX_LIMIT = 50;
+// Per-address history read for counts and /list. Stakes are user-initiated, so real
+// histories sit far below this; past it, totals are reported as not exact.
+export const SUPPORT_HISTORY_LIMIT = 1000;
+// Unsettled rows checked on chain to tell pending from never-broadcast.
+export const SUPPORT_UNSETTLED_LOOKUP_LIMIT = 100;
 
 export enum SupportErrorCode {
   BadRequest = 'bad_request',
+  BadKind = 'bad_kind',
+  BadFilter = 'bad_filter',
   Unauthorized = 'unauthorized',
   NotFound = 'not_found',
   RateLimited = 'rate_limited',

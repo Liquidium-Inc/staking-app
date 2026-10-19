@@ -23,6 +23,7 @@ async function getPendingsOf(address: string) {
 }
 
 const SUPPORT_UNSTAKE_COLUMNS = [
+  'id',
   'address',
   'txid',
   'amount',

@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { config as publicConfig } from '@/config/public';
 
 import { MS_PER_SECOND } from './constants';
-import { loadStakes, loadUnstakes } from './facts';
+import { loadStakeHistory, loadUnstakeHistory, resolveUnstakeChains } from './facts';
 import { txProgress } from './lookup';
-import { deriveUnstake } from './summary';
+import { unstakeItem } from './summary';
 
 export const SUPPORT_ITEM_KINDS = ['stake', 'unstake'] as const;
 export const itemRequestSchema = z.object({
@@ -20,11 +20,13 @@ export type ItemRequest = z.infer<typeof itemRequestSchema>;
  */
 export async function loadSupportItem(address: string, request: ItemRequest, nowMs = Date.now()) {
   if (request.kind === 'stake') {
-    const stake = (await loadStakes(address)).find((candidate) => candidate.txid === request.id);
+    const { items } = await loadStakeHistory(address);
+    const stake = items.find((candidate) => candidate.txid === request.id);
     if (!stake) return null;
     return {
       kind: request.kind,
       txid: stake.txid,
+      state: stake.state,
       amount: stake.amount,
       sAmount: stake.sAmount,
       ts: stake.createdAtMs,
@@ -33,10 +35,12 @@ export async function loadSupportItem(address: string, request: ItemRequest, now
     };
   }
 
-  const unstake = (await loadUnstakes(address)).find(
+  const { items } = await loadUnstakeHistory(address);
+  const match = items.find(
     (candidate) => candidate.txid === request.id || candidate.claimTx === request.id,
   );
-  if (!unstake) return null;
+  if (!match) return null;
+  const [unstake] = await resolveUnstakeChains([match]);
   const withdrawTimeMs = publicConfig.protocol.withdrawTime * MS_PER_SECOND;
-  return { kind: request.kind, ...deriveUnstake(unstake, withdrawTimeMs, nowMs) };
+  return { kind: request.kind, ...unstakeItem(unstake, withdrawTimeMs, nowMs) };
 }
