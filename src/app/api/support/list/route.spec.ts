@@ -215,4 +215,31 @@ describe('POST /api/support/list', () => {
       expect.objectContaining({ direction: 'in', amount: '100', ts: '2026-10-02T00:00:00.000Z' }),
     );
   });
+
+  it('checks only the page on chain unless a state filter needs every row', async () => {
+    const rows = stakeRows(45).map((row) => ({ ...row, block: null }));
+    mock.db.stake.getRecentOf.mockResolvedValue(rows);
+
+    const unfiltered = await list({ kind: 'stakes' });
+    expect(unfiltered.body).toMatchObject({ total: 45, totalExact: true });
+    expect(mock.mempool.transactions.getTx).toHaveBeenCalledTimes(20);
+
+    mock.mempool.transactions.getTx.mockClear();
+    const filtered = await list({ kind: 'stakes', filter: { state: 'pending' } });
+    expect(filtered.body).toMatchObject({ total: 45, totalExact: true });
+    expect(mock.mempool.transactions.getTx).toHaveBeenCalledTimes(45);
+  });
+
+  it('filters a chain-confirmed unstake as confirmed, not pending', async () => {
+    mock.db.unstake.getRecentOf.mockResolvedValue([
+      { ...stakeRows(1)[0], block: null, address: ADDRESS, claimTx: null, claimTxBlock: null },
+    ]);
+
+    const pending = await list({ kind: 'unstakes', filter: { state: 'pending' } });
+    const confirmed = await list({ kind: 'unstakes', filter: { state: 'confirmed' } });
+
+    expect(pending.body).toMatchObject({ total: 0, totalExact: true });
+    expect(confirmed.body).toMatchObject({ total: 1, totalExact: true });
+    expect(confirmed.body.items[0]).toMatchObject({ state: 'confirmed', confirmedAt: BASE_MS });
+  });
 });

@@ -2,6 +2,8 @@ import { AxiosError } from 'axios';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createBudget } from '@/server/support/budget';
+import { loadStakingFacts } from '@/server/support/facts';
 import { issueSupportToken } from '@/server/support/token';
 
 const API_KEY = 'support-api-key-for-tests';
@@ -263,5 +265,63 @@ describe('POST /api/support/context', () => {
     expect(body.summary.unavailable).toEqual(['balances']);
     expect(body.summary.balances.liq).toBeNull();
     expect(JSON.stringify(body)).not.toContain('internal upstream');
+  });
+
+  it('reports a stake the chain confirmed as confirmed before our monitor records it', async () => {
+    mock.mempool.transactions.getTx.mockResolvedValue({
+      fee: 1000,
+      weight: 800,
+      status: { confirmed: true, block_time: 1_760_000_000, block_height: 900_000 },
+    });
+    const verifiedBy = { backend: 'wtf-btc', verifiedAt: 1, tokenId: 'jti-5' };
+
+    const body = await (await POST(request({ address: ADDRESS, verifiedBy }))).json();
+
+    expect(body.summary.stakes[0]).toMatchObject({ state: 'confirmed', confirmed: true });
+    expect(body.summary.counts.stakes).toMatchObject({
+      byState: { confirmed: 1 },
+      byStateExact: true,
+    });
+  });
+
+  it('stops remote reads at the request deadline and says what it could not check', async () => {
+    // Every provider hangs; only the budget ends the request.
+    const hang = () => new Promise<never>(() => {});
+    mock.mempool.transactions.getTx.mockImplementation(hang);
+    mock.mempool.transactions.getTxStatus.mockImplementation(hang);
+    mock.mempool.fees.getFeesRecommended.mockImplementation(hang);
+    mock.runeProvider.runes.walletBalances.mockImplementation(hang);
+    mock.runeProvider.mempool.cardinalUTXOs.mockImplementation(hang);
+    mock.runeProvider.mempool.runicUTXOs.mockImplementation(hang);
+    mock.canister.getExchangeRate.mockImplementation(hang);
+    mock.getPortfolioActivity.mockImplementation(hang);
+
+    const startedMs = Date.now();
+    const facts = await loadStakingFacts(ADDRESS, createBudget(50));
+
+    expect(Date.now() - startedMs).toBeLessThan(1_000);
+    expect(facts.totals.stakes).toMatchObject({ total: 1, totalExact: true, byStateExact: false });
+    expect(facts.totals.activity).toEqual({ total: null, totalExact: false });
+    expect(facts.unavailable).toEqual(
+      expect.arrayContaining([
+        'balances',
+        'btcBalance',
+        'runeUtxos',
+        'exchangeRate',
+        'feeRates',
+        'recentActivity',
+        'stakeStates',
+        'unstakeChains',
+      ]),
+    );
+    expect(facts.liqBalance).toBeNull();
+  });
+
+  it('does not start chain checks once the budget is spent', async () => {
+    await loadStakingFacts(ADDRESS, createBudget(0));
+
+    expect(mock.mempool.transactions.getTx).not.toHaveBeenCalled();
+    expect(mock.mempool.transactions.getTxStatus).not.toHaveBeenCalled();
+    expect(mock.getPortfolioActivity).not.toHaveBeenCalled();
   });
 });
