@@ -27,7 +27,7 @@ export function SupportWidget() {
     support.boot({
       app: 'staking',
       getSupportTokens: async () => {
-        const staking = await fetchSupportToken().catch(() => null);
+        const staking = await fetchSupportToken();
         return staking ? { staking } : {};
       },
       getContext: () => ({

@@ -55,4 +55,14 @@ describe('support loader', () => {
       credentials: 'include',
     });
   });
+
+  it('throws from fetchSupportToken when it cannot tell, so the widget keeps the identity', async () => {
+    const { fetchSupportToken } = await loadSupport('true');
+
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(fetchSupportToken()).rejects.toThrow('Failed to fetch');
+
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await expect(fetchSupportToken()).rejects.toThrow('support token: 503');
+  });
 });
