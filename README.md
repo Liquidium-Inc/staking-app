@@ -67,7 +67,7 @@ Copy `.env.example` to `.env` and fill in the required values:
 - `GENERATE_SOURCEMAPS` — Enables source map generation and PostHog uploads during builds.
 - `SUPPORT_API_KEY` — Optional. Bearer key for the read-only `/api/support/*` routes used by the Liquidium Support Worker; when unset those routes return 404.
 - `SUPPORT_TOKEN_SECRET` — Optional. HS256 secret (32+ bytes, unique to this app) for the 15-minute support tokens minted by `POST /api/support/token`.
-- `NEXT_PUBLIC_SUPPORT_WIDGET` — Optional. `true` loads the Liquidium Support chat widget (`https://support.liquidium.fi/widget.js`) and shows "Support" buttons in the header and footer; unset keeps the app as is.
+- `NEXT_PUBLIC_SUPPORT_WIDGET` — Optional. `true` loads the Liquidium Support chat widget (`https://support.liquidium.org/widget.js`) and shows "Support" buttons in the header and footer; unset keeps the app as is.
 
 ---
 

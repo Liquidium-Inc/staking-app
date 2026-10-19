@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const WIDGET_SRC = 'https://support.liquidium.fi/widget.js';
+const WIDGET_SRC = 'https://support.liquidium.org/widget.js';
 
 async function loadSupport(flag: string | undefined) {
   vi.resetModules();

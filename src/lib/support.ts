@@ -29,7 +29,7 @@ declare global {
   }
 }
 
-const SUPPORT_WIDGET_SRC = 'https://support.liquidium.fi/widget.js';
+const SUPPORT_WIDGET_SRC = 'https://support.liquidium.org/widget.js';
 const SUPPORT_TOKEN_PATH = '/api/support/token';
 
 export const isSupportWidgetEnabled = process.env.NEXT_PUBLIC_SUPPORT_WIDGET === 'true';
