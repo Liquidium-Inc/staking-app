@@ -29,7 +29,8 @@ declare global {
   }
 }
 
-const SUPPORT_WIDGET_SRC = 'https://support.liquidium.org/widget.js';
+// Staging can point this at the staging support Worker (e.g. https://support-staging.liquidium.org/widget.js).
+const SUPPORT_WIDGET_SRC = process.env.NEXT_PUBLIC_SUPPORT_WIDGET_SRC || 'https://support.liquidium.org/widget.js';
 const SUPPORT_TOKEN_PATH = '/api/support/token';
 
 export const isSupportWidgetEnabled = process.env.NEXT_PUBLIC_SUPPORT_WIDGET === 'true';
