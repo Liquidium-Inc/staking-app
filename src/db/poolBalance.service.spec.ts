@@ -112,7 +112,12 @@ describe('poolBalance service', () => {
       const result = await poolBalance.getHistoric();
 
       expect(result).toEqual([...daily, ...recent]);
-      expect(sql.selectDistinctOn).toHaveBeenCalled();
+      const day = expect.objectContaining({ values: [poolBalances.timestamp] });
+      expect(sql.selectDistinctOn).toHaveBeenCalledWith([day]);
+      expect(mocks.distinctOrderBy).toHaveBeenCalledWith(day, {
+        type: 'desc',
+        column: poolBalances.block,
+      });
       expect(mocks.distinctFrom).toHaveBeenCalledWith(poolBalances);
       expect(mocks.where).toHaveBeenCalledWith({
         type: 'lt',
