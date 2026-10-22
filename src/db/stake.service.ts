@@ -3,11 +3,11 @@ import { and, desc, eq, isNull, inArray, or, gte } from 'drizzle-orm';
 import { pick } from '@/lib/pick';
 
 import { sql } from './client';
+import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { stakes } from './schema';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
-const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function insert(...values: (typeof stakes.$inferInsert)[]) {
   return await sql.insert(stakes).values(values);
@@ -20,6 +20,28 @@ async function getPendingsOf(address: string) {
     .where(and(eq(stakes.address, address), isNull(stakes.block)))
     .orderBy(desc(stakes.id))
     .limit(PENDING_RESULT_LIMIT);
+}
+
+const SUPPORT_STAKE_COLUMNS = ['id', 'txid', 'amount', 'sAmount', 'timestamp', 'block'] as const;
+
+async function getRecentOf(address: string, limit: number) {
+  return await sql
+    .select(pick(stakes, ...SUPPORT_STAKE_COLUMNS))
+    .from(stakes)
+    .where(eq(stakes.address, address))
+    .orderBy(desc(stakes.id))
+    .limit(limit);
+}
+
+/** The address's own stake with this txid. */
+async function getOwnByTxid(address: string, txid: string) {
+  const [value] = await sql
+    .select(pick(stakes, ...SUPPORT_STAKE_COLUMNS))
+    .from(stakes)
+    .where(and(eq(stakes.address, address), eq(stakes.txid, txid)))
+    .orderBy(desc(stakes.id))
+    .limit(1);
+  return value;
 }
 
 async function getAfterBlock(block: number) {
@@ -52,6 +74,8 @@ async function remove(ids: number[]) {
 export const stake = {
   insert,
   getPendingsOf,
+  getRecentOf,
+  getOwnByTxid,
   update,
   getAfterBlock,
   getByTxid,

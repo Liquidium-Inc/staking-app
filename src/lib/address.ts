@@ -90,3 +90,44 @@ export function publicKeyOwnsAddress(
 ): boolean {
   return findPublicKeyForAddress(publicKeyHex, address, network) !== undefined;
 }
+
+export enum BitcoinAddressType {
+  P2TR = 'p2tr',
+  P2WPKH = 'p2wpkh',
+  P2WSH = 'p2wsh',
+  P2SH = 'p2sh',
+  P2PKH = 'p2pkh',
+  Unknown = 'unknown',
+}
+
+// Inputs the PSBT builder can sign for: Taproot, native SegWit and nested SegWit (P2SH-P2WPKH).
+export const SUPPORTED_ADDRESS_TYPES: ReadonlySet<BitcoinAddressType> = new Set([
+  BitcoinAddressType.P2TR,
+  BitcoinAddressType.P2WPKH,
+  BitcoinAddressType.P2SH,
+]);
+
+const P2WPKH_PROGRAM_BYTES = 20;
+const P2WSH_PROGRAM_BYTES = 32;
+
+export function getBitcoinAddressType(
+  address: string,
+  network: bitcoin.Network = getBitcoinNetwork(),
+): BitcoinAddressType {
+  const trimmed = address.trim();
+  try {
+    const { version, data } = bitcoin.address.fromBech32(trimmed);
+    if (version === 1) return BitcoinAddressType.P2TR;
+    if (version === 0 && data.length === P2WPKH_PROGRAM_BYTES) return BitcoinAddressType.P2WPKH;
+    if (version === 0 && data.length === P2WSH_PROGRAM_BYTES) return BitcoinAddressType.P2WSH;
+    return BitcoinAddressType.Unknown;
+  } catch {}
+
+  try {
+    const { version } = bitcoin.address.fromBase58Check(trimmed);
+    if (version === network.scriptHash) return BitcoinAddressType.P2SH;
+    if (version === network.pubKeyHash) return BitcoinAddressType.P2PKH;
+  } catch {}
+
+  return BitcoinAddressType.Unknown;
+}

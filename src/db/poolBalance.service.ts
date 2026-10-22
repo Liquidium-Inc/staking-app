@@ -34,7 +34,17 @@ export const getHistoric = async () => {
   return [...daily, ...recent];
 };
 
+export const getLatest = async () => {
+  const [row] = await sql
+    .select({ block: poolBalances.block, timestamp: poolBalances.timestamp })
+    .from(poolBalances)
+    .orderBy(desc(poolBalances.block))
+    .limit(1);
+  return row ?? null;
+};
+
 export const poolBalance = {
   insert,
   getHistoric,
+  getLatest,
 };

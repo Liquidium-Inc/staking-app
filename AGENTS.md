@@ -90,6 +90,8 @@ Copy `.env.example` to `.env`. Key variables:
 - `CRON_SECRET`: Secures cron endpoints
 - `ORACLE_PRIVATE_KEY`: Authorizes exchange rate updates
 - `CANISTER_*`: Internet Computer canister configuration
+- `SUPPORT_API_KEY`: Bearer key for the read-only `/api/support/*` routes called by the Liquidium Support Worker (unset = 404)
+- `SUPPORT_TOKEN_SECRET`: HS256 secret (32+ bytes) for support tokens from `POST /api/support/token`
 
 ## Testing Strategy
 
@@ -139,6 +141,11 @@ These are development-only tools and should not be used in production.
 - `GET /api/account/txs` - Transaction history
 - `GET /api/stake/pending` - Pending stake transactions
 - `GET /api/unstake/pending` - Pending unstake transactions
+
+**Support (Liquidium Support Worker):**
+
+- `POST /api/support/token` - Mint a 15-minute support token for the wallet session (browser)
+- `POST /api/support/{verify,context,item,list,lookup,health}` - Read-only, `Authorization: Bearer $SUPPORT_API_KEY`
 
 **Critical Cron Jobs:**
 

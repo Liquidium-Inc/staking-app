@@ -104,6 +104,7 @@ describe('runeProvider.runes.walletActivity', () => {
         },
       ],
       block_height: 0,
+      complete: true,
     });
 
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledWith(address, {
@@ -168,6 +169,7 @@ describe('runeProvider.runes.walletActivity', () => {
         },
       ],
       block_height: 0,
+      complete: true,
     });
 
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledWith(address, {
@@ -209,6 +211,7 @@ describe('runeProvider.runes.walletActivity', () => {
     expect(result).toEqual({
       data: [],
       block_height: 0,
+      complete: true,
     });
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(1);
   });
@@ -247,6 +250,7 @@ describe('runeProvider.runes.walletActivity', () => {
     expect(result).toEqual({
       data: [],
       block_height: 0,
+      complete: true,
     });
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(1);
   });
@@ -268,6 +272,8 @@ describe('runeProvider.runes.walletActivity', () => {
     });
 
     expect(result.data).toEqual([]);
+    // Older pages were never read, so the history isn't complete.
+    expect(result.complete).toBe(false);
     expect(mocks.ordiscan.rune.walletActivity).toHaveBeenCalledTimes(MAX_WALLET_ACTIVITY_PAGES);
   });
 });
