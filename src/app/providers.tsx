@@ -15,8 +15,10 @@ import { toast } from 'sonner';
 import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
+import { SupportWidget } from '@/components/support/support-widget';
 import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
 import { config, PublicEnvironment } from '@/config/public';
+import { isSupportWidgetEnabled } from '@/lib/support';
 
 const network = config.network === 'testnet4' ? TESTNET4 : MAINNET;
 const isDevelopment = config.env === PublicEnvironment.development;
@@ -42,6 +44,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           <WalletAuthProvider>
             <UnisatAddressGuard />
             <OnboardingTrigger />
+            {isSupportWidgetEnabled && <SupportWidget />}
             {children}
             <CookieConsentBanner />
           </WalletAuthProvider>
