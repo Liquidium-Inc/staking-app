@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const TransactionErrorCode = {
   MixedRuneUtxo: 'mixed_rune_utxo',
   WalletIdentityMismatch: 'wallet_identity_mismatch',
+  SignatureExpired: 'signature_expired',
 } as const;
 
 export const TransactionStage = {
@@ -32,6 +33,14 @@ export const WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE =
 
 export const INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE =
   'Not enough BTC for the network fee. Add BTC to your Bitcoin payment address, then try withdrawing again.';
+
+export const SIGNATURE_EXPIRED_ERROR_MESSAGE =
+  'This transaction request has expired. Please start again to create a new transaction.';
+
+export const signatureExpiredErrorResponseSchema = z.object({
+  error: z.literal(SIGNATURE_EXPIRED_ERROR_MESSAGE),
+  error_code: z.literal(TransactionErrorCode.SignatureExpired),
+});
 
 export const PROTOCOL_FEE_PAYER_ERROR_MESSAGE = 'Protocol wallets cannot pay transaction fees';
 

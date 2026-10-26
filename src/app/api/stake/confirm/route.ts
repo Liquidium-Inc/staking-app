@@ -6,9 +6,15 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
+import { isCanisterSignatureExpired } from '@/lib/canister-signature';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
+import {
+  SIGNATURE_EXPIRED_ERROR_MESSAGE,
+  signatureExpiredErrorResponseSchema,
+  TransactionErrorCode,
+} from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
 import { BroadcastService } from '@/services/broadcast';
@@ -47,6 +53,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
+    // The row is inserted right after the canister signs, so its timestamp is the signing time.
+    // Stale signatures are discarded so they can never be broadcast.
+    if (isCanisterSignatureExpired(stakeEntry.timestamp)) {
+      await db.stake.remove([stakeEntry.id]);
+      logger.info('Rejected expired canister signature', { id: stakeEntry.id, tempTxid });
+      return NextResponse.json(
+        signatureExpiredErrorResponseSchema.parse({
+          error: SIGNATURE_EXPIRED_ERROR_MESSAGE,
+          error_code: TransactionErrorCode.SignatureExpired,
+        }),
+        { status: 410 },
+      );
+    }
+
     // Load the canister-signed PSBT and combine with user signatures
     const canisterSignedPsbt = bitcoin.Psbt.fromBase64(stakeEntry.psbt, {
       network: canister.network,
@@ -59,8 +79,8 @@ export async function POST(req: NextRequest) {
     try {
       const result = await broadcastService.broadcast();
 
-      // Update the database with the actual transaction ID
-      await db.stake.update([stakeEntry.id], { txid: result.txid });
+      // Record the actual transaction ID and drop the stored canister signature
+      await db.stake.update([stakeEntry.id], { txid: result.txid, psbt: null });
 
       return NextResponse.json(result);
     } catch (broadcastError) {

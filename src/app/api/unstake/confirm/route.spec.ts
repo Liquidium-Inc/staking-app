@@ -2,6 +2,8 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+import { CANISTER_SIGNATURE_MAX_AGE_MS } from '@/lib/canister-signature';
+import { SIGNATURE_EXPIRED_ERROR_MESSAGE } from '@/lib/transaction-errors';
 import { BroadcastService } from '@/services/broadcast';
 
 import { POST } from './route';
@@ -93,6 +95,7 @@ describe('POST', () => {
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
     });
 
     const buildResult = { txid: 'test-txid', fee: '1000', feeRate: 5 };
@@ -102,7 +105,7 @@ describe('POST', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(buildResult);
-    expect(mock.unstake.update).toHaveBeenCalledWith([1], { txid: 'test-txid' });
+    expect(mock.unstake.update).toHaveBeenCalledWith([1], { txid: 'test-txid', psbt: null });
   });
 
   it('returns 401 when session address does not match unstake entry', async () => {
@@ -120,6 +123,7 @@ describe('POST', () => {
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
     });
 
     const response = await POST(req);
@@ -138,6 +142,7 @@ describe('POST', () => {
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
     });
 
     const response = await POST(req);
@@ -155,6 +160,7 @@ describe('POST', () => {
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
     });
 
     mock.broadcast.mockRejectedValue(new BroadcastService.InvalidExchangeRate());
@@ -176,6 +182,7 @@ describe('POST', () => {
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
     });
 
     mock.broadcast.mockRejectedValueOnce(new Error('fail'));
@@ -195,6 +202,98 @@ describe('POST', () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({
       error: 'Unstake entry not found or missing canister signature',
+    });
+  });
+
+  describe('canister signature deadline', () => {
+    const expiredResponse = {
+      error: SIGNATURE_EXPIRED_ERROR_MESSAGE,
+      error_code: 'signature_expired',
+    };
+
+    it('broadcasts when the signature is just within the deadline', async () => {
+      const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+      mock.unstake.getByTxid.mockResolvedValue({
+        id: 1,
+        psbt: canisterPsbt,
+        address: 'addr',
+        timestamp: new Date(Date.now() - CANISTER_SIGNATURE_MAX_AGE_MS + 60_000),
+      });
+      mock.broadcast.mockResolvedValue({ txid: 'test-txid', fee: '1000', feeRate: 5 });
+
+      const response = await POST(req);
+
+      expect(response.status).toBe(200);
+      expect(mock.broadcast).toHaveBeenCalledTimes(1);
+      expect(mock.unstake.update).toHaveBeenCalledWith([1], { txid: 'test-txid', psbt: null });
+      expect(mock.unstake.remove).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired signature and removes the stored PSBT', async () => {
+      const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+      mock.unstake.getByTxid.mockResolvedValue({
+        id: 1,
+        psbt: canisterPsbt,
+        address: 'addr',
+        timestamp: new Date(Date.now() - CANISTER_SIGNATURE_MAX_AGE_MS - 1000),
+      });
+
+      const response = await POST(req);
+
+      expect(response.status).toBe(410);
+      expect(await response.json()).toEqual(expiredResponse);
+      expect(mock.broadcast).not.toHaveBeenCalled();
+      expect(mock.unstake.remove).toHaveBeenCalledWith([1]);
+      expect(mock.unstake.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an entry without a signing timestamp', async () => {
+      const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+      mock.unstake.getByTxid.mockResolvedValue({
+        id: 1,
+        psbt: canisterPsbt,
+        address: 'addr',
+        timestamp: null,
+      });
+
+      const response = await POST(req);
+
+      expect(response.status).toBe(410);
+      expect(await response.json()).toEqual(expiredResponse);
+      expect(mock.broadcast).not.toHaveBeenCalled();
+      expect(mock.unstake.remove).toHaveBeenCalledWith([1]);
+    });
+
+    it('does not touch an expired entry owned by another wallet', async () => {
+      const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+      mock.unstake.getByTxid.mockResolvedValue({
+        id: 1,
+        psbt: canisterPsbt,
+        address: 'someone-else',
+        timestamp: new Date(0),
+      });
+
+      const response = await POST(req);
+
+      expect(response.status).not.toBe(410);
+      expect(mock.unstake.remove).not.toHaveBeenCalled();
+      expect(mock.broadcast).not.toHaveBeenCalled();
+    });
+
+    it('cannot reuse the signature after it was rejected', async () => {
+      const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
+      mock.unstake.getByTxid
+        .mockResolvedValueOnce({
+          id: 1,
+          psbt: canisterPsbt,
+          address: 'addr',
+          timestamp: new Date(Date.now() - CANISTER_SIGNATURE_MAX_AGE_MS - 1000),
+        })
+        .mockResolvedValueOnce(undefined);
+
+      expect((await POST(req)).status).toBe(410);
+      expect((await POST(req)).status).toBe(404);
+      expect(mock.broadcast).not.toHaveBeenCalled();
     });
   });
 });

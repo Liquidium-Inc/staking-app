@@ -6,6 +6,8 @@ import React from 'react';
 import { toast } from 'sonner';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { SIGNATURE_EXPIRED_ERROR_MESSAGE } from '@/lib/transaction-errors';
+
 import { useUnstakeMutation } from './useUnstakeMutation';
 
 const captureMock = vi.fn();
@@ -118,6 +120,30 @@ describe('useUnstakeMutation', () => {
       error_code: 'mixed_rune_utxo',
       stage: 'prepare_unstake',
     });
+  });
+
+  it('shows the start-again message without the retry prefix when the signature expired', async () => {
+    axiosMock.post
+      .mockResolvedValueOnce({ data: { psbt: 'psbt-data', toSign: ['input1'] } })
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 410,
+          data: { error: SIGNATURE_EXPIRED_ERROR_MESSAGE, error_code: 'signature_expired' },
+        },
+      });
+    const { result } = renderHook(() => useUnstakeMutation(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ amount: new Big(100), stakedAmount: new Big(50) }),
+    ).rejects.toThrow(SIGNATURE_EXPIRED_ERROR_MESSAGE);
+    expect(toastMock.error).toHaveBeenCalledWith(
+      SIGNATURE_EXPIRED_ERROR_MESSAGE,
+      expect.objectContaining({ id: 'toast-id' }),
+    );
+    expect(captureMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ error_code: 'signature_expired', stage: 'confirm_unstake' }),
+    );
   });
 
   it('handles axios error with non-string error', async () => {
