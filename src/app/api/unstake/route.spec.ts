@@ -143,6 +143,7 @@ describe('POST', () => {
       feeRate: 1,
     });
     expect(mock.unstake.insert).toHaveBeenCalledWith({
+      timestamp: expect.any(Date),
       address: 'addr',
       amount: '1000',
       sAmount: '2000',

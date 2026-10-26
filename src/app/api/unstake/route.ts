@@ -126,7 +126,9 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Save canister-signed PSBT to database (psbt column stores the canister signature)
+    // Signing time, written by the app clock like the confirm deadline cutoff
     await db.unstake.insert({
+      timestamp: new Date(),
       address: sender.address,
       amount: amount.toString(),
       sAmount: sAmount.toString(),
