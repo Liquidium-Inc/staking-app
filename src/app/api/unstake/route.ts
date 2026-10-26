@@ -25,7 +25,10 @@ import {
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
-import { alreadySubmittedResponse } from '@/server/transactions/stored-signature';
+import {
+  alreadySubmittedResponse,
+  hasUsableSignature,
+} from '@/server/transactions/stored-signature';
 import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
@@ -118,12 +121,24 @@ export const POST = async (req: NextRequest) => {
     if (existingUnstake) {
       logger.debug('Unstake transaction already exists', { tempTxid });
       // Same tx as an earlier request. If that one was ever handed to the network, don't re-arm it.
-      if (
+      const reachedNetwork =
         existingUnstake.block !== null ||
-        (existingUnstake.claimedAt !== null && (await isTxKnown(existingUnstake.txid)))
-      ) {
-        if (existingUnstake.invalidatedAt)
-          await db.unstake.update([existingUnstake.id], { invalidatedAt: null });
+        (existingUnstake.claimedAt !== null && (await isTxKnown(existingUnstake.txid)));
+      if (reachedNetwork && existingUnstake.invalidatedAt) {
+        await db.unstake.update([existingUnstake.id], { invalidatedAt: null });
+      }
+      // Otherwise store the fresh signature if the old one is invalidated, expired or stale, and
+      // only hand out the PSBT if a usable signature is stored for it
+      const usable =
+        !reachedNetwork &&
+        ((await db.unstake.refreshSignedPsbt(
+          existingUnstake.id,
+          canisterResponse.signed_psbt,
+          canisterSignatureCutoff(),
+          canisterClaimStaleBefore(),
+        )) ||
+          hasUsableSignature(await db.unstake.getByTxid(tempTxid)));
+      if (!usable) {
         await redis.utxo
           .free(
             getPsbtInputOutpointsForAddress(psbt, canister.address, canister.network),
@@ -132,13 +147,6 @@ export const POST = async (req: NextRequest) => {
           .catch((unlockError) => logger.warn('Failed to unlock UTXOs', { error: unlockError }));
         return alreadySubmittedResponse();
       }
-      // Otherwise store the fresh signature if the old one is invalidated, expired or stale
-      await db.unstake.refreshSignedPsbt(
-        existingUnstake.id,
-        canisterResponse.signed_psbt,
-        canisterSignatureCutoff(),
-        canisterClaimStaleBefore(),
-      );
       return NextResponse.json({
         psbt: unsignedPsbt,
         toSign,

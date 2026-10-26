@@ -34,6 +34,15 @@ export async function GET(req: NextRequest) {
     return [];
   });
 
+  // A tx the network knows about is live, even if its broadcast looked failed
+  const knownInvalidated = entries
+    .filter((entry, i) => blockHeights[i].status === 'fulfilled' && entry.invalidatedAt)
+    .map((entry) => entry.id);
+  if (knownInvalidated.length > 0) {
+    logger.info(`Restoring ${knownInvalidated.length} stakes found on the network`);
+    await db.stake.update(knownInvalidated, { invalidatedAt: null });
+  }
+
   // TODO: filter the ones that have the same block height
 
   for (const [block, entries] of Map.groupBy(validUpdates, (v) => v.block_height).entries()) {

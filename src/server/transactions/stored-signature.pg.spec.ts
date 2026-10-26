@@ -315,6 +315,29 @@ describe.each([
     expect(await table.invalidateClaim(id, claimedAt)).toBe(false);
   });
 
+  it('does not hand out a PSBT for a tx whose confirm is still in flight', async () => {
+    await table.claimSignedPsbt((await row()).id, signedPsbt, new Date(0));
+
+    expect((await prepareRequest()).status).toBe(409);
+    expect(await row()).toMatchObject({ psbt: null, invalidatedAt: null });
+  });
+
+  it('hands out the PSBT again while the stored signature is still usable', async () => {
+    expect((await prepareRequest()).status).toBe(200);
+    mock.broadcast.mockResolvedValue(ok);
+    expect((await confirmRequest()).status).toBe(200);
+  });
+
+  it('restores an invalidated row once the monitor sees its tx in the mempool', async () => {
+    mock.broadcast.mockRejectedValueOnce(new BroadcastService.BroadcastError('timeout'));
+    expect((await confirmRequest()).status).toBe(400);
+    expect(await row()).toMatchObject({ invalidatedAt: expect.any(Date) });
+
+    mock.getTxStatus.mockResolvedValue({ confirmed: false });
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({ invalidatedAt: null, block: null });
+  });
+
   it('keeps an abandoned claim whose tx reached the network', async () => {
     await table.claimSignedPsbt((await row()).id, signedPsbt, new Date(0));
     at(CANISTER_CLAIM_STALE_MS + 1000);

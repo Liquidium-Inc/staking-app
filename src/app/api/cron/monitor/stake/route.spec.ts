@@ -70,6 +70,26 @@ describe('GET', () => {
     });
   });
 
+  it('restores invalidated stakes the network knows about, confirmed or not', async () => {
+    mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
+    mock.mempool.transactions.getTxStatus
+      .mockResolvedValueOnce({ confirmed: false })
+      .mockResolvedValueOnce({ confirmed: true, block_height: 99 })
+      .mockRejectedValueOnce(new Error('not found'))
+      .mockResolvedValueOnce({ confirmed: false });
+    mock.db.stake.getAfterBlock.mockResolvedValue([
+      { id: 1, txid: 'tx1', invalidatedAt: new Date() },
+      { id: 2, txid: 'tx2', invalidatedAt: new Date() },
+      { id: 3, txid: 'tx3', invalidatedAt: new Date() },
+      { id: 4, txid: 'tx4', invalidatedAt: null },
+    ]);
+
+    await GET(createRequest(config.secrets.cron));
+
+    expect(mock.db.stake.update).toHaveBeenCalledTimes(1);
+    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { invalidatedAt: null });
+  });
+
   it('does not update if confirmations are not enough', async () => {
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(95);
     mock.db.stake.getAfterBlock.mockResolvedValue([{ id: 1, txid: 'tx1' }]);

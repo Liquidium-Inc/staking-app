@@ -30,6 +30,14 @@ export const alreadySubmittedResponse = () =>
     { status: 409 },
   );
 
+/** Whether the row holds a stored signature that a confirm request could still claim. */
+export const hasUsableSignature = (row: Entry | undefined) =>
+  !!row?.psbt &&
+  !row.invalidatedAt &&
+  row.block === null &&
+  !!row.timestamp &&
+  row.timestamp >= canisterSignatureCutoff();
+
 const expiredResponse = () =>
   NextResponse.json(
     signatureExpiredErrorResponseSchema.parse({

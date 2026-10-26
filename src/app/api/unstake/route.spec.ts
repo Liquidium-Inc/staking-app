@@ -182,6 +182,7 @@ describe('POST', () => {
     mock.getTxStatus.mockRejectedValue(
       Object.assign(new Error('not found'), { isAxiosError: true, response: { status: 404 } }),
     );
+    mock.unstake.refreshSignedPsbt.mockResolvedValue(true);
 
     const response = await POST(req);
 
