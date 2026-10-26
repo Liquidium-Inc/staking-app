@@ -176,15 +176,8 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
         superseded = rows.filter((row) => row !== canonical);
       }
 
-      for (const row of superseded) {
-        await db
-          .update(t)
-          .set({ psbt: null, invalidatedAt: new Date(), supersededAt: new Date() })
-          .where(eq(t.id, row.id));
-        result.superseded++;
-      }
-
-      // A duplicate may carry the withdrawal; it belongs on the canonical row
+      // A duplicate may carry the withdrawal; it belongs on the canonical row. Moved before
+      // superseding (no transactions here), so a failed run retries it.
       if (name === 'unstakes' && superseded.length > 0) {
         const [withdrawal] = await db
           .select({ claimTx: unstakes.claimTx, claimTxBlock: unstakes.claimTxBlock })
@@ -206,6 +199,14 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
             .set(withdrawal)
             .where(and(eq(unstakes.id, canonicalId), isNull(unstakes.claimTx)));
         }
+      }
+
+      for (const row of superseded) {
+        await db
+          .update(t)
+          .set({ psbt: null, invalidatedAt: new Date(), supersededAt: new Date() })
+          .where(eq(t.id, row.id));
+        result.superseded++;
       }
     }
   }
