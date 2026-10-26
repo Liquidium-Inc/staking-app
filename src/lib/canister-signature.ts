@@ -4,11 +4,7 @@
  */
 export const CANISTER_SIGNATURE_MAX_AGE_MS = 30 * 60 * 1000;
 
-/** Rows without a valid signing timestamp are treated as expired. */
-export function isCanisterSignatureExpired(
-  signedAt: Date | null | undefined,
-  now: number = Date.now(),
-): boolean {
-  if (!(signedAt instanceof Date) || Number.isNaN(signedAt.getTime())) return true;
-  return now - signedAt.getTime() > CANISTER_SIGNATURE_MAX_AGE_MS;
+/** Signatures created before the returned time are expired. */
+export function canisterSignatureCutoff(now: number = Date.now()): Date {
+  return new Date(now - CANISTER_SIGNATURE_MAX_AGE_MS);
 }

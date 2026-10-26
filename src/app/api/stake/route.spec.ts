@@ -13,6 +13,7 @@ const mock = vi.hoisted(() => {
     stake: {
       insert: vi.fn(),
       getByTxid: vi.fn(),
+      refreshSignedPsbt: vi.fn(),
     },
     canister: {
       stake: vi.fn(),
@@ -146,6 +147,27 @@ describe('POST', () => {
       psbt: validPsbt,
       block: null,
     });
+  });
+
+  it('stores the fresh canister signature on an existing row for the same tx', async () => {
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: { public: 'pub', address: 'addr' },
+        amount: '1000',
+        sAmount: '2000',
+        feeRate: 1,
+      }),
+    } as unknown as NextRequest;
+    mock.build.mockResolvedValue({ psbt: 'unsigned-psbt-data', toSign: [], feeRate: 1 });
+    const validPsbt = new bitcoin.Psbt().toBase64();
+    mock.canister.stake.mockResolvedValue({ signed_psbt: validPsbt });
+    mock.stake.getByTxid.mockResolvedValue({ id: 7 });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(200);
+    expect(mock.stake.insert).not.toHaveBeenCalled();
+    expect(mock.stake.refreshSignedPsbt).toHaveBeenCalledWith(7, validPsbt, expect.any(Date));
   });
 
   it.each(['address', 'retention'] as const)(

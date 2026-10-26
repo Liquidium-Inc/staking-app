@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
 
     const ids = entries.map((e) => e.id);
     logger.info(`Updating ${ids.length} stakes to block ${block}`);
-    await db.stake.update(ids, { block });
+    // Confirmed on-chain, so the tx is live even if an earlier broadcast reported failure
+    await db.stake.update(ids, { block, invalidatedAt: null });
   }
 
   return Response.json({ success: true });

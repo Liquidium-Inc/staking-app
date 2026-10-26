@@ -12,12 +12,14 @@ const mocks = vi.hoisted(() => ({
   orderBy: vi.fn(),
   limit: vi.fn(),
   drizzle: {
-    and: vi.fn((a, b) => ({ type: 'and', conditions: [a, b] })),
+    and: vi.fn((...conditions) => ({ type: 'and', conditions })),
     eq: vi.fn((col, val) => ({ type: 'eq', column: col, value: val })),
     isNull: vi.fn((col) => ({ type: 'isNull', column: col })),
+    isNotNull: vi.fn((col) => ({ type: 'isNotNull', column: col })),
     inArray: vi.fn((col, vals) => ({ type: 'inArray', column: col, values: vals })),
     or: vi.fn((...conditions) => ({ type: 'or', conditions })),
     gte: vi.fn((col, val) => ({ type: 'gte', column: col, value: val })),
+    lt: vi.fn((col, val) => ({ type: 'lt', column: col, value: val })),
     desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
@@ -33,9 +35,11 @@ vi.mock('drizzle-orm', () => ({
   and: mocks.drizzle.and,
   eq: mocks.drizzle.eq,
   isNull: mocks.drizzle.isNull,
+  isNotNull: mocks.drizzle.isNotNull,
   inArray: mocks.drizzle.inArray,
   or: mocks.drizzle.or,
   gte: mocks.drizzle.gte,
+  lt: mocks.drizzle.lt,
   desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
@@ -108,6 +112,7 @@ describe('stake service', () => {
         conditions: [
           { type: 'eq', column: stakes.address, value: address },
           { type: 'isNull', column: stakes.block },
+          { type: 'isNull', column: stakes.invalidatedAt },
         ],
       });
       expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
@@ -170,6 +175,92 @@ describe('stake service', () => {
         type: 'inArray',
         column: stakes.id,
         values: ids,
+      });
+    });
+  });
+
+  describe('signed PSBT lifecycle', () => {
+    const signedAfter = new Date('2026-01-01T12:00:00Z');
+    const returning = (rows: unknown[]) => {
+      const fn = vi.fn().mockResolvedValue(rows);
+      mocks.where.mockReturnValueOnce({ returning: fn });
+      return fn;
+    };
+
+    test('claimSignedPsbt clears the exact stored PSBT only while fresh and valid', async () => {
+      returning([{ id: 1 }]);
+
+      await expect(stake.claimSignedPsbt(1, 'stored-psbt', signedAfter)).resolves.toBe(true);
+
+      expect(sql.update).toHaveBeenCalledWith(stakes);
+      expect(mocks.set).toHaveBeenCalledWith({ psbt: null });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: stakes.id, value: 1 },
+          { type: 'eq', column: stakes.psbt, value: 'stored-psbt' },
+          { type: 'isNull', column: stakes.invalidatedAt },
+          { type: 'gte', column: stakes.timestamp, value: signedAfter },
+        ],
+      });
+    });
+
+    test('claimSignedPsbt reports when no row was claimed', async () => {
+      returning([]);
+      await expect(stake.claimSignedPsbt(1, 'stored-psbt', signedAfter)).resolves.toBe(false);
+    });
+
+    test('expireSignedPsbt invalidates only a still-stored, stale signature', async () => {
+      returning([{ id: 1 }]);
+
+      await expect(stake.expireSignedPsbt(1, signedAfter)).resolves.toBe(true);
+
+      expect(mocks.set).toHaveBeenCalledWith({ psbt: null, invalidatedAt: expect.any(Date) });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: stakes.id, value: 1 },
+          { type: 'isNotNull', column: stakes.psbt },
+          { type: 'isNull', column: stakes.invalidatedAt },
+          {
+            type: 'or',
+            conditions: [
+              { type: 'isNull', column: stakes.timestamp },
+              { type: 'lt', column: stakes.timestamp, value: signedAfter },
+            ],
+          },
+        ],
+      });
+    });
+
+    test('refreshSignedPsbt only replaces invalidated or expired signatures', async () => {
+      mocks.where.mockResolvedValueOnce(undefined);
+
+      await stake.refreshSignedPsbt(1, 'fresh-psbt', signedAfter);
+
+      expect(mocks.set).toHaveBeenCalledWith({
+        psbt: 'fresh-psbt',
+        timestamp: expect.any(Date),
+        invalidatedAt: null,
+      });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: stakes.id, value: 1 },
+          {
+            type: 'or',
+            conditions: [
+              { type: 'isNotNull', column: stakes.invalidatedAt },
+              {
+                type: 'and',
+                conditions: [
+                  { type: 'isNotNull', column: stakes.psbt },
+                  { type: 'lt', column: stakes.timestamp, value: signedAfter },
+                ],
+              },
+            ],
+          },
+        ],
       });
     });
   });

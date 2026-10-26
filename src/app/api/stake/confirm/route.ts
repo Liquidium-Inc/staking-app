@@ -6,11 +6,12 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
-import { isCanisterSignatureExpired } from '@/lib/canister-signature';
+import { canisterSignatureCutoff } from '@/lib/canister-signature';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
 import {
+  ALREADY_SUBMITTED_ERROR_MESSAGE,
   SIGNATURE_EXPIRED_ERROR_MESSAGE,
   signatureExpiredErrorResponseSchema,
   TransactionErrorCode,
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     // Find the stake entry with the saved canister signature
     const stakeEntry = await db.stake.getByTxid(tempTxid);
-    if (!stakeEntry || !stakeEntry.psbt) {
+    if (!stakeEntry) {
       return NextResponse.json(
         { error: 'Stake entry not found or missing canister signature' },
         { status: 404 },
@@ -53,25 +54,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // The row is inserted right after the canister signs, so its timestamp is the signing time.
-    // Stale signatures are discarded so they can never be broadcast.
-    if (isCanisterSignatureExpired(stakeEntry.timestamp)) {
-      await db.stake.remove([stakeEntry.id]);
-      logger.info('Rejected expired canister signature', { id: stakeEntry.id, tempTxid });
-      return NextResponse.json(
-        signatureExpiredErrorResponseSchema.parse({
-          error: SIGNATURE_EXPIRED_ERROR_MESSAGE,
-          error_code: TransactionErrorCode.SignatureExpired,
-        }),
-        { status: 410 },
-      );
-    }
+    // Combine first so a malformed request can't consume the stored signature
+    const storedPsbt = stakeEntry.psbt;
+    const combinedPsbt = storedPsbt
+      ? bitcoin.Psbt.fromBase64(storedPsbt, { network: canister.network }).combine(userSignedPsbt)
+      : undefined;
 
-    // Load the canister-signed PSBT and combine with user signatures
-    const canisterSignedPsbt = bitcoin.Psbt.fromBase64(stakeEntry.psbt, {
-      network: canister.network,
-    });
-    const combinedPsbt = canisterSignedPsbt.combine(userSignedPsbt);
+    // The row is inserted right after the canister signs, so its timestamp is the signing time.
+    // Claiming clears the stored PSBT atomically, so at most one request can broadcast it, and
+    // only before the deadline.
+    const signedAfter = canisterSignatureCutoff();
+    const claimed =
+      !!storedPsbt && (await db.stake.claimSignedPsbt(stakeEntry.id, storedPsbt, signedAfter));
+
+    if (!claimed || !combinedPsbt) {
+      const expired =
+        !!stakeEntry.invalidatedAt || (await db.stake.expireSignedPsbt(stakeEntry.id, signedAfter));
+      if (expired) {
+        logger.info('Rejected expired canister signature', { id: stakeEntry.id, tempTxid });
+        return NextResponse.json(
+          signatureExpiredErrorResponseSchema.parse({
+            error: SIGNATURE_EXPIRED_ERROR_MESSAGE,
+            error_code: TransactionErrorCode.SignatureExpired,
+          }),
+          { status: 410 },
+        );
+      }
+      // Another request already took the signature (in flight or broadcast)
+      return NextResponse.json({ error: ALREADY_SUBMITTED_ERROR_MESSAGE }, { status: 409 });
+    }
 
     // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
     const broadcastService = new BroadcastService(combinedPsbt, 'stake', true);
@@ -79,13 +90,13 @@ export async function POST(req: NextRequest) {
     try {
       const result = await broadcastService.broadcast();
 
-      // Record the actual transaction ID and drop the stored canister signature
-      await db.stake.update([stakeEntry.id], { txid: result.txid, psbt: null });
+      // Update the database with the actual transaction ID
+      await db.stake.update([stakeEntry.id], { txid: result.txid });
 
       return NextResponse.json(result);
     } catch (broadcastError) {
-      // Clean up database entry on broadcast failure
-      await db.stake.remove([stakeEntry.id]);
+      // Keep the row for history but mark it dead; the user starts over with a fresh signature
+      await db.stake.update([stakeEntry.id], { invalidatedAt: new Date() });
       throw broadcastError;
     }
   } catch (error) {

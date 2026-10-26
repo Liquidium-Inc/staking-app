@@ -7,6 +7,7 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
+import { canisterSignatureCutoff } from '@/lib/canister-signature';
 import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
@@ -108,6 +109,12 @@ export const POST = async (req: NextRequest) => {
     const existingStake = await db.stake.getByTxid(tempTxid);
     if (existingStake) {
       logger.debug('Stake transaction already exists', { tempTxid });
+      // Same tx as an earlier request whose signature expired or failed: store the fresh one
+      await db.stake.refreshSignedPsbt(
+        existingStake.id,
+        canisterResponse.signed_psbt,
+        canisterSignatureCutoff(),
+      );
       return NextResponse.json({
         psbt: unsignedPsbt,
         toSign,

@@ -63,7 +63,7 @@ describe('GET', () => {
     expect(mock.mempool.blocks.getBlocksTipHeight).toHaveBeenCalled();
     expect(mock.db.stake.getAfterBlock).toHaveBeenCalledWith(100 - expectedConfirmations);
     expect(mock.mempool.transactions.getTxStatus).toHaveBeenCalledTimes(2);
-    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { block: 90 });
+    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { block: 90, invalidatedAt: null });
   });
 
   it('does not update if confirmations are not enough', async () => {
@@ -95,7 +95,7 @@ describe('GET', () => {
     const req = createRequest(config.secrets.cron);
     const res = await GET(req);
 
-    expect(mock.db.stake.update).toHaveBeenCalledWith([2], { block: 90 });
+    expect(mock.db.stake.update).toHaveBeenCalledWith([2], { block: 90, invalidatedAt: null });
     const json = await res.json();
     expect(json).toEqual({ success: true });
   });

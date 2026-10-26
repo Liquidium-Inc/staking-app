@@ -37,6 +37,8 @@ export const INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE =
 export const SIGNATURE_EXPIRED_ERROR_MESSAGE =
   'This transaction request has expired. Please start again to create a new transaction.';
 
+export const ALREADY_SUBMITTED_ERROR_MESSAGE = 'This transaction has already been submitted.';
+
 export const signatureExpiredErrorResponseSchema = z.object({
   error: z.literal(SIGNATURE_EXPIRED_ERROR_MESSAGE),
   error_code: z.literal(TransactionErrorCode.SignatureExpired),

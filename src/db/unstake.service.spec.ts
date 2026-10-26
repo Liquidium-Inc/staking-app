@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     inArray: vi.fn((col, vals) => ({ type: 'inArray', column: col, values: vals })),
     or: vi.fn((...conditions) => ({ type: 'or', conditions })),
     gte: vi.fn((col, val) => ({ type: 'gte', column: col, value: val })),
+    lt: vi.fn((col, val) => ({ type: 'lt', column: col, value: val })),
     desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
@@ -38,6 +39,7 @@ vi.mock('drizzle-orm', () => ({
   inArray: mocks.drizzle.inArray,
   or: mocks.drizzle.or,
   gte: mocks.drizzle.gte,
+  lt: mocks.drizzle.lt,
   desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
@@ -115,6 +117,7 @@ describe('unstake service', () => {
         conditions: [
           { type: 'eq', column: unstakes.address, value: address },
           { type: 'isNull', column: unstakes.claimTx },
+          { type: 'isNull', column: unstakes.invalidatedAt },
         ],
       });
       expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
@@ -289,6 +292,92 @@ describe('unstake service', () => {
         type: 'inArray',
         column: unstakes.id,
         values: ids,
+      });
+    });
+  });
+
+  describe('signed PSBT lifecycle', () => {
+    const signedAfter = new Date('2026-01-01T12:00:00Z');
+    const returning = (rows: unknown[]) => {
+      const fn = vi.fn().mockResolvedValue(rows);
+      mocks.where.mockReturnValueOnce({ returning: fn });
+      return fn;
+    };
+
+    test('claimSignedPsbt clears the exact stored PSBT only while fresh and valid', async () => {
+      returning([{ id: 1 }]);
+
+      await expect(unstake.claimSignedPsbt(1, 'stored-psbt', signedAfter)).resolves.toBe(true);
+
+      expect(sql.update).toHaveBeenCalledWith(unstakes);
+      expect(mocks.set).toHaveBeenCalledWith({ psbt: null });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: unstakes.id, value: 1 },
+          { type: 'eq', column: unstakes.psbt, value: 'stored-psbt' },
+          { type: 'isNull', column: unstakes.invalidatedAt },
+          { type: 'gte', column: unstakes.timestamp, value: signedAfter },
+        ],
+      });
+    });
+
+    test('claimSignedPsbt reports when no row was claimed', async () => {
+      returning([]);
+      await expect(unstake.claimSignedPsbt(1, 'stored-psbt', signedAfter)).resolves.toBe(false);
+    });
+
+    test('expireSignedPsbt invalidates only a still-stored, stale signature', async () => {
+      returning([{ id: 1 }]);
+
+      await expect(unstake.expireSignedPsbt(1, signedAfter)).resolves.toBe(true);
+
+      expect(mocks.set).toHaveBeenCalledWith({ psbt: null, invalidatedAt: expect.any(Date) });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: unstakes.id, value: 1 },
+          { type: 'isNotNull', column: unstakes.psbt },
+          { type: 'isNull', column: unstakes.invalidatedAt },
+          {
+            type: 'or',
+            conditions: [
+              { type: 'isNull', column: unstakes.timestamp },
+              { type: 'lt', column: unstakes.timestamp, value: signedAfter },
+            ],
+          },
+        ],
+      });
+    });
+
+    test('refreshSignedPsbt only replaces invalidated or expired signatures', async () => {
+      mocks.where.mockResolvedValueOnce(undefined);
+
+      await unstake.refreshSignedPsbt(1, 'fresh-psbt', signedAfter);
+
+      expect(mocks.set).toHaveBeenCalledWith({
+        psbt: 'fresh-psbt',
+        timestamp: expect.any(Date),
+        invalidatedAt: null,
+      });
+      expect(mocks.where).toHaveBeenCalledWith({
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: unstakes.id, value: 1 },
+          {
+            type: 'or',
+            conditions: [
+              { type: 'isNotNull', column: unstakes.invalidatedAt },
+              {
+                type: 'and',
+                conditions: [
+                  { type: 'isNotNull', column: unstakes.psbt },
+                  { type: 'lt', column: unstakes.timestamp, value: signedAfter },
+                ],
+              },
+            ],
+          },
+        ],
       });
     });
   });
