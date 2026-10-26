@@ -281,6 +281,20 @@ describe('POST', () => {
       expect(mock.broadcast).not.toHaveBeenCalled();
     });
 
+    it('invalidates the claimed row when the broadcast cannot be prepared', async () => {
+      const { row } = useRow();
+      at(CANISTER_SIGNATURE_MAX_AGE_MS - 1000);
+      vi.mocked(BroadcastService).mockImplementationOnce(function () {
+        throw new BroadcastService.InvalidExchangeRate();
+      });
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(400);
+      expect(row.psbt).toBeNull();
+      expect(row.invalidatedAt).toBeInstanceOf(Date);
+    });
+
     it('lets only one of two concurrent confirms broadcast', async () => {
       const { row } = useRow();
       at(CANISTER_SIGNATURE_MAX_AGE_MS - 1000);

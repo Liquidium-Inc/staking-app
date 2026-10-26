@@ -85,10 +85,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: ALREADY_SUBMITTED_ERROR_MESSAGE }, { status: 409 });
     }
 
-    // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
-    const broadcastService = new BroadcastService(combinedPsbt, 'unstake', true);
-
     try {
+      // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
+      const broadcastService = new BroadcastService(combinedPsbt, 'unstake', true);
       const result = await broadcastService.broadcast();
 
       // Update the database with the actual transaction ID
