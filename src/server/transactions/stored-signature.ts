@@ -61,7 +61,9 @@ export async function reuseExistingEntry(
   const table = db[kind];
   try {
     const reachedNetwork =
-      existing.block !== null || (existing.claimedAt !== null && (await isTxKnown(existing.txid)));
+      existing.block !== null ||
+      existing.broadcastAt !== null ||
+      (existing.claimedAt !== null && (await isTxKnown(existing.txid)));
     if (reachedNetwork && existing.invalidatedAt) {
       await table.update([existing.id], { invalidatedAt: null });
     }
@@ -123,7 +125,7 @@ export async function broadcastWithStoredSignature(
 
   // Claimed by another request. If that request died long ago without the tx reaching the
   // network, release the row so the user can start again.
-  if (row.claimedAt && row.claimedAt < canisterClaimStaleBefore()) {
+  if (!row.broadcastAt && row.claimedAt && row.claimedAt < canisterClaimStaleBefore()) {
     if (await isTxKnown(row.txid)) return alreadySubmittedResponse();
     if (await table.invalidateClaim(row.id, row.claimedAt)) {
       logger.warn(`Released stale ${kind} claim`, { id: row.id, txid: row.txid });
@@ -167,6 +169,7 @@ async function broadcastClaimed(
       : false;
     if (known) {
       logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid: networkTxid });
+      await markBroadcast(kind, entry.id);
       return NextResponse.json({ txid: networkTxid });
     }
     // Unknown lookup result: leave the claim; it is reconciled once stale
@@ -180,5 +183,14 @@ async function broadcastClaimed(
     throw broadcastError;
   }
 
+  await markBroadcast(kind, entry.id);
   return NextResponse.json(result);
+}
+
+// The network has the tx: from now on the claim is never released or re-armed. A failed write
+// only loses that protection; the monitor sets it again once it sees the tx.
+async function markBroadcast(kind: Kind, id: number) {
+  await db[kind]
+    .markBroadcast(id)
+    .catch((markError) => logger.error(`Failed to record ${kind} broadcast`, { id, markError }));
 }

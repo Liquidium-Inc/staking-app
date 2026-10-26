@@ -1,5 +1,5 @@
 import * as bitcoin from 'bitcoinjs-lib';
-import { and, desc, eq, gte, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { stakes, unstakes } from './schema';
@@ -38,7 +38,8 @@ type Summary = {
  * claim with its PSBT retired, so the monitor reconciles it by txid. If a row already holds the
  * identity, it stays canonical and takes over a broadcast txid. Every other row in the group is
  * superseded: PSBT retired, invalidated, and left out of the monitor and pending lists, so a
- * duplicate can never settle a second time. Rows are kept for history.
+ * duplicate can never settle a second time; a withdrawal claim it carries moves to the canonical
+ * row. Rows are kept for history.
  *
  * Rows with an unreadable PSBT, and groups whose rows carry more than one network txid, are skipped
  * untouched and reported for manual repair. Superseded rows get supersededAt, so txid lookups
@@ -143,7 +144,9 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
       const broadcast = rows.find((row) => row.txid !== identity);
 
       let superseded = rows;
+      let canonicalId: number;
       if (holder) {
+        canonicalId = holder.id;
         if (broadcast && (holder.txid === identity || holder.invalidatedAt)) {
           await db
             .update(t)
@@ -151,15 +154,23 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
               txid: broadcast.txid,
               psbt: null,
               invalidatedAt: null,
+              broadcastAt: broadcast.timestamp,
               claimedAt: holder.claimedAt ?? staleClaim(holder.timestamp),
             })
             .where(eq(t.id, holder.id));
         }
       } else {
         const canonical = broadcast ?? rows[0];
+        canonicalId = canonical.id;
         await db
           .update(t)
-          .set({ prepareTxid: identity, claimedAt: staleClaim(canonical.timestamp), psbt: null })
+          .set({
+            prepareTxid: identity,
+            claimedAt: staleClaim(canonical.timestamp),
+            psbt: null,
+            // A txid that moved off the identity proves the old code broadcast it
+            broadcastAt: canonical === broadcast ? canonical.timestamp : null,
+          })
           .where(eq(t.id, canonical.id));
         result.updated++;
         superseded = rows.filter((row) => row !== canonical);
@@ -171,6 +182,30 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
           .set({ psbt: null, invalidatedAt: new Date(), supersededAt: new Date() })
           .where(eq(t.id, row.id));
         result.superseded++;
+      }
+
+      // A duplicate may carry the withdrawal; it belongs on the canonical row
+      if (name === 'unstakes' && superseded.length > 0) {
+        const [withdrawal] = await db
+          .select({ claimTx: unstakes.claimTx, claimTxBlock: unstakes.claimTxBlock })
+          .from(unstakes)
+          .where(
+            and(
+              inArray(
+                unstakes.id,
+                superseded.map((row) => row.id),
+              ),
+              isNotNull(unstakes.claimTx),
+            ),
+          )
+          .orderBy(desc(unstakes.id))
+          .limit(1);
+        if (withdrawal) {
+          await db
+            .update(unstakes)
+            .set(withdrawal)
+            .where(and(eq(unstakes.id, canonicalId), isNull(unstakes.claimTx)));
+        }
       }
     }
   }

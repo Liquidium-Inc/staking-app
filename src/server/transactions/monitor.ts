@@ -94,14 +94,13 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
       return status === SKIPPED ? [] : [{ ...entry, ...status }];
     });
 
-    // A stale claim whose tx the network doesn't know was never (or no longer) broadcast: release
-    // it like confirm does. Invalidated rows are still polled for a week, so a lagging tx recovers.
-    const staleBefore = canisterClaimStaleBefore();
-    for (const entry of unknown) {
-      if (!entry.psbt && !entry.invalidatedAt && entry.claimedAt && entry.claimedAt < staleBefore) {
-        await table.invalidateClaim(entry.id, entry.claimedAt);
-      }
-    }
+    // A stale claim the network doesn't know, and that was never accepted, may never have been
+    // broadcast: release it like confirm does. Invalidated rows are still polled for a week, so a
+    // lagging tx recovers. Accepted broadcasts are never released on a 404.
+    await table.releaseStaleClaims(
+      unknown.map((entry) => entry.id),
+      canisterClaimStaleBefore(),
+    );
 
     // The network knows these txs: retire any stored signature so it can never be broadcast again,
     // and un-hide rows whose broadcast looked failed
@@ -110,6 +109,8 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
       logger.info(`Retiring signatures of ${retire.length} ${kind}s found on the network`);
       await table.update(retire, { psbt: null, invalidatedAt: null });
     }
+    const accepted = known.filter((entry) => !entry.broadcastAt).map((e) => e.id);
+    if (accepted.length > 0) await table.update(accepted, { broadcastAt: new Date() });
 
     const settled = known.filter(
       (entry) =>

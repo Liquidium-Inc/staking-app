@@ -3,6 +3,7 @@ import {
   asc,
   eq,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -14,7 +15,8 @@ import {
 import { sql } from './client';
 import { stakes, unstakes } from './schema';
 
-const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long rows that may never have reached the network are polled. */
+export const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Lifecycle of the canister-signed PSBT stored on a stake/unstake row. Every transition is a
@@ -33,6 +35,8 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
   // Both tables share these columns; drizzle can't build queries over a table union.
   const t = table as typeof stakes;
   const notConfirmed = isNull(t.block);
+  // Once the network accepted the tx, the claim must never be released or re-armed
+  const notBroadcast = isNull(t.broadcastAt);
 
   async function getByPrepareTxid(prepareTxid: string) {
     const [value] = await sql.select().from(t).where(eq(t.prepareTxid, prepareTxid)).limit(1);
@@ -53,8 +57,9 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
         and(
           notConfirmed,
           isNotNull(t.claimedAt),
-          // Valid claims are checked until they settle; invalidated ones only for a while
-          or(isNull(t.invalidatedAt), gte(t.timestamp, pendingCutoff)),
+          isNull(t.supersededAt),
+          // Valid and broadcast claims are checked until they settle; invalidated ones for a while
+          or(isNull(t.invalidatedAt), isNotNull(t.broadcastAt), gte(t.timestamp, pendingCutoff)),
           exclude.length > 0 ? notInArray(t.id, exclude) : undefined,
         ),
       )
@@ -124,10 +129,40 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
           isNull(t.psbt),
           isNull(t.invalidatedAt),
           notConfirmed,
+          notBroadcast,
         ),
       )
       .returning({ id: t.id });
     return rows.length > 0;
+  }
+
+  /**
+   * Releases claims among `ids` made before `claimStaleBefore` whose tx the network doesn't know.
+   * One statement per monitor page; broadcast or newer claims are never touched.
+   */
+  async function releaseStaleClaims(ids: number[], claimStaleBefore: Date) {
+    if (ids.length === 0) return;
+    await sql
+      .update(t)
+      .set({ invalidatedAt: new Date() })
+      .where(
+        and(
+          inArray(t.id, ids),
+          lt(t.claimedAt, claimStaleBefore),
+          isNull(t.psbt),
+          isNull(t.invalidatedAt),
+          notConfirmed,
+          notBroadcast,
+        ),
+      );
+  }
+
+  /** Records that the network accepted (or already knew) the tx of this claim. */
+  async function markBroadcast(id: number) {
+    await sql
+      .update(t)
+      .set({ broadcastAt: new Date() })
+      .where(and(eq(t.id, id), notBroadcast));
   }
 
   /**
@@ -149,6 +184,7 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
         and(
           eq(t.id, id),
           notConfirmed,
+          notBroadcast,
           or(
             isNotNull(t.invalidatedAt),
             and(isNotNull(t.psbt), lt(t.timestamp, signedAfter)),
@@ -167,6 +203,8 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
     recordBroadcastTxid,
     expireSignedPsbt,
     invalidateClaim,
+    releaseStaleClaims,
+    markBroadcast,
     refreshSignedPsbt,
   };
 }

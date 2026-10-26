@@ -179,6 +179,7 @@ describe('POST', () => {
       prepareTxid: 'prep-txid',
       block: null,
       claimedAt: new Date(),
+      broadcastAt: null,
       invalidatedAt: new Date(),
     });
     mock.getTxStatus.mockRejectedValue(
@@ -217,6 +218,7 @@ describe('POST', () => {
       prepareTxid: 'prep-txid',
       block: null,
       claimedAt: new Date(),
+      broadcastAt: null,
       invalidatedAt: new Date(),
     });
     mock.getTxStatus.mockResolvedValue({ confirmed: false });

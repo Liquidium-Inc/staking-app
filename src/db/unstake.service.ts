@@ -4,11 +4,10 @@ import { pick } from '@/lib/pick';
 
 import { sql } from './client';
 import { unstakes } from './schema';
-import { signedPsbtQueries } from './signed-psbt';
+import { MONITOR_PENDING_MAX_AGE_MS, signedPsbtQueries } from './signed-psbt';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
-const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function insert(...values: (typeof unstakes.$inferInsert)[]) {
   return await sql.insert(unstakes).values(values);
@@ -19,7 +18,12 @@ async function getPendingsOf(address: string) {
     .select(pick(unstakes, 'txid', 'amount', 'sAmount', 'timestamp', 'claimTx', 'claimTxBlock'))
     .from(unstakes)
     .where(
-      and(eq(unstakes.address, address), isNull(unstakes.claimTx), isNull(unstakes.invalidatedAt)),
+      and(
+        eq(unstakes.address, address),
+        isNull(unstakes.claimTx),
+        isNull(unstakes.invalidatedAt),
+        isNull(unstakes.supersededAt),
+      ),
     )
     .orderBy(desc(unstakes.id))
     .limit(PENDING_RESULT_LIMIT);
@@ -29,6 +33,7 @@ async function getWithdrawAfterBlock(block: number) {
   const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
   const claimIsNotSettled = and(
     isNotNull(unstakes.claimTx),
+    isNull(unstakes.supersededAt),
     or(
       and(isNull(unstakes.claimTxBlock), gte(unstakes.timestamp, pendingCutoff)),
       gte(unstakes.claimTxBlock, block),
@@ -45,6 +50,7 @@ async function getWithdrawAfterBlock(block: number) {
 async function getWithdrawAfterBlockForAddress(block: number, address: string) {
   const claimIsNotSettled = and(
     eq(unstakes.address, address),
+    isNull(unstakes.supersededAt),
     isNotNull(unstakes.claimTx),
     or(isNull(unstakes.claimTxBlock), gte(unstakes.claimTxBlock, block)),
   );

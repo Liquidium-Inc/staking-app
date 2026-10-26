@@ -407,6 +407,30 @@ describe.each(
     expect(net.posted).toHaveLength(1);
   });
 
+  it('never releases or re-arms an accepted broadcast on a later 404, even past a week', async () => {
+    expect((await confirmRequest()).status).toBe(200);
+    expect((await row()).broadcastAt).toBeInstanceOf(Date);
+
+    // The mempool API loses track of the tx
+    net.lagging = true;
+    at(CANISTER_CLAIM_STALE_MS + 1000);
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({ invalidatedAt: null });
+    expect((await confirmRequest()).status).toBe(409);
+    expect((await prepareRequest()).status).toBe(409);
+
+    at(8 * 24 * 60 * 60 * 1000);
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({ invalidatedAt: null, block: null });
+
+    // The lookup recovers: it settles, and it was only ever broadcast once
+    net.lagging = false;
+    confirmOnChain(net.posted[0]);
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({ block: 990, invalidatedAt: null });
+    expect(net.posted).toHaveLength(1);
+  });
+
   it('recovers an abandoned claim once it is stale and the tx is unknown', async () => {
     await table.claimSignedPsbt((await row()).id, tx.unsigned, new Date(0));
     expect((await confirmRequest()).status).toBe(409);
@@ -704,6 +728,23 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
       prepareTxid: tx.prepareTxid,
     });
     expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+  });
+
+  it('moves a withdrawal carried by a superseded duplicate onto the canonical row', async () => {
+    if (kind !== 'unstake') return;
+    const tx = await buildTx(kind, 'p2wpkh');
+    await sql.insert(unstakes).values([
+      { ...legacy, address: 'u', txid: tx.prepareTxid, psbt: tx.unsigned, claimTx: 'claim-1' },
+      { ...legacy, address: 'u', txid: tx.prepareTxid, psbt: tx.unsigned },
+    ]);
+
+    await backfillSignedPsbtState(sql);
+
+    const canonical = await db.unstake.getByPrepareTxid(tx.prepareTxid);
+    expect(canonical).toMatchObject({ claimTx: 'claim-1' });
+    const withdrawals = await db.unstake.getWithdrawAfterBlockForAddress(0, 'u');
+    expect(withdrawals.map((w) => w.id)).toEqual([canonical!.id]);
+    expect((await db.unstake.getWithdrawAfterBlock(0)).map((w) => w.id)).toEqual([canonical!.id]);
   });
 
   it('skips a group whose rows carry different network txids, for manual repair', async () => {

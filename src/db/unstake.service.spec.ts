@@ -118,6 +118,7 @@ describe('unstake service', () => {
           { type: 'eq', column: unstakes.address, value: address },
           { type: 'isNull', column: unstakes.claimTx },
           { type: 'isNull', column: unstakes.invalidatedAt },
+          { type: 'isNull', column: unstakes.supersededAt },
         ],
       });
       expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
@@ -152,6 +153,7 @@ describe('unstake service', () => {
         type: 'and',
         conditions: [
           { type: 'eq', column: unstakes.address, value: 'test-address' },
+          { type: 'isNull', column: unstakes.supersededAt },
           { type: 'isNotNull', column: unstakes.claimTx },
           {
             type: 'or',
@@ -177,6 +179,7 @@ describe('unstake service', () => {
         type: 'and',
         conditions: [
           { type: 'isNotNull', column: unstakes.claimTx },
+          { type: 'isNull', column: unstakes.supersededAt },
           {
             type: 'or',
             conditions: [

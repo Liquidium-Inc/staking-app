@@ -113,6 +113,7 @@ describe('stake service', () => {
           { type: 'eq', column: stakes.address, value: address },
           { type: 'isNull', column: stakes.block },
           { type: 'isNull', column: stakes.invalidatedAt },
+          { type: 'isNull', column: stakes.supersededAt },
         ],
       });
       expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });

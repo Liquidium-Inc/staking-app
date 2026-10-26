@@ -52,6 +52,8 @@ export const stakes = pgTable('stakes', {
   prepareTxid: varchar({ length: 255 }).unique(),
   // Set when a confirm request takes the stored canister signature to broadcast it
   claimedAt: timestamp(),
+  // Set once the network accepted the tx (or already knew it); such a claim is never released
+  broadcastAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
   // When the monitor last looked this tx up; it checks the least recently checked rows first
@@ -80,6 +82,8 @@ export const unstakes = pgTable('unstakes', {
   prepareTxid: varchar({ length: 255 }).unique(),
   // Set when a confirm request takes the stored canister signature to broadcast it
   claimedAt: timestamp(),
+  // Set once the network accepted the tx (or already knew it); such a claim is never released
+  broadcastAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
   // When the monitor last looked this tx up; it checks the least recently checked rows first

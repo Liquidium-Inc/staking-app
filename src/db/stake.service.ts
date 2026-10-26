@@ -16,7 +16,14 @@ async function getPendingsOf(address: string) {
   return await sql
     .select(pick(stakes, 'txid', 'amount', 'sAmount', 'timestamp'))
     .from(stakes)
-    .where(and(eq(stakes.address, address), isNull(stakes.block), isNull(stakes.invalidatedAt)))
+    .where(
+      and(
+        eq(stakes.address, address),
+        isNull(stakes.block),
+        isNull(stakes.invalidatedAt),
+        isNull(stakes.supersededAt),
+      ),
+    )
     .orderBy(desc(stakes.id))
     .limit(PENDING_RESULT_LIMIT);
 }
