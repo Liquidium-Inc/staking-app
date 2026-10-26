@@ -218,7 +218,7 @@ describe('POST', () => {
 
       const response = await POST(req);
 
-      expect(response.status).not.toBe(410);
+      expect(response.status).toBe(403);
       expect(mock.stake.remove).not.toHaveBeenCalled();
       expect(mock.broadcast).not.toHaveBeenCalled();
     });
