@@ -28,9 +28,8 @@ function unsignedTxid(psbtBase64: string | null) {
  * - the stored PSBT is retired
  * Idempotent: it only touches unsettled rows that have neither prepareTxid nor claimedAt.
  */
-export async function backfillSignedPsbtState(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: PgDatabase<PgQueryResultHKT, any>,
+export async function backfillSignedPsbtState<TSchema extends Record<string, unknown>>(
+  db: PgDatabase<PgQueryResultHKT, TSchema>,
 ) {
   const summary: Record<string, { updated: number; duplicates: number }> = {};
   for (const [name, t] of [
