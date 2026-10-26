@@ -25,6 +25,9 @@ import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
 
+// Explicit so the deploy drain has a known bound (canister calls can retry for ~30s)
+export const maxDuration = 120;
+
 const body = z.object({
   sender: z.object({
     public: z.string(),

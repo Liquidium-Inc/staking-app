@@ -502,7 +502,7 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
     } finally {
       Object.assign(MONITOR_LIMITS, {
         budgetMs: 45_000,
-        lookupTimeoutMs: 5_000,
+        lookupTimeoutMs: 10_000,
         concurrency: 8,
         pageSize: 100,
       });
@@ -544,7 +544,7 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     await sql.insert(t).values({ ...legacy, txid: 'network-txid', psbt: tx.unsigned });
 
     expect(await backfillSignedPsbtState(sql)).toMatchObject({
-      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 1, duplicates: 0 },
+      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 1, superseded: 0 },
     });
     expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
       txid: 'network-txid',
@@ -570,7 +570,7 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     expect(net.posted).toHaveLength(1);
   });
 
-  it('gives the identity to the newest duplicate, keeps all of them monitored, and is idempotent', async () => {
+  it('keeps one canonical row per identity, never settling a duplicate, and is idempotent', async () => {
     const tx = await buildTx(kind, 'p2wpkh');
     await sql.insert(t).values([
       { ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned },
@@ -581,13 +581,114 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
 
     await backfillSignedPsbtState(sql);
     const rows = await sql.select().from(t).orderBy(t.id);
-    expect(rows.map((r) => r.prepareTxid)).toEqual([null, tx.prepareTxid, 'no-psbt', null]);
-    expect(rows.slice(0, 3).every((r) => r.claimedAt && r.psbt === null)).toBe(true);
-    expect(rows[3]).toMatchObject({ claimedAt: null, psbt: tx.unsigned });
+    expect(rows[0]).toMatchObject({ prepareTxid: null, claimedAt: null, psbt: null });
+    expect(rows[0].invalidatedAt).toBeInstanceOf(Date);
+    expect(rows[1]).toMatchObject({ prepareTxid: tx.prepareTxid, psbt: null, invalidatedAt: null });
+    expect(rows[1].claimedAt).toBeInstanceOf(Date);
+    expect(rows[2]).toMatchObject({ prepareTxid: 'no-psbt', psbt: null });
+    expect(rows[3]).toMatchObject({ prepareTxid: null, claimedAt: null, psbt: tx.unsigned });
+
+    // Both share the network txid; only the canonical row is monitored and settles
+    net.txs.set(tx.prepareTxid, { confirmed: true, block_height: 990 });
+    await monitor(cronRequest());
+    const settled = (await sql.select().from(t)).filter((r) => r.block === 990);
+    expect(settled.map((r) => r.id)).toEqual([rows[1].id]);
 
     expect(await backfillSignedPsbtState(sql)).toMatchObject({
-      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 0 },
+      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 0, superseded: 0 },
     });
+  });
+
+  it.each(['older', 'newer'] as const)(
+    'makes the broadcast row canonical when it is the %s duplicate',
+    async (position) => {
+      const tx = await buildTx(kind, 'p2sh');
+      const broadcastRow = { ...legacy, txid: 'network-txid', psbt: tx.unsigned };
+      const unbroadcastRow = { ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned };
+      await sql
+        .insert(t)
+        .values(
+          position === 'older' ? [broadcastRow, unbroadcastRow] : [unbroadcastRow, broadcastRow],
+        );
+      net.txs.set('network-txid', { confirmed: false });
+
+      await backfillSignedPsbtState(sql);
+      expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+        txid: 'network-txid',
+      });
+
+      // The tx is on the network: no second broadcast, and only one row settles
+      expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+      expect((await confirm(request({ psbt: tx.signed }))).status).toBe(409);
+      net.txs.set('network-txid', { confirmed: true, block_height: 990 });
+      await monitor(cronRequest());
+      expect((await sql.select().from(t)).filter((r) => r.block === 990)).toHaveLength(1);
+      expect(net.posted).toHaveLength(0);
+    },
+  );
+
+  it('moves a broadcast txid onto a row that already holds the identity', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    await sql.insert(t).values([
+      { ...legacy, txid: tx.prepareTxid, prepareTxid: tx.prepareTxid, psbt: tx.unsigned },
+      { ...legacy, txid: 'network-txid', psbt: tx.unsigned },
+    ]);
+    net.txs.set('network-txid', { confirmed: false });
+
+    await backfillSignedPsbtState(sql);
+
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+      txid: 'network-txid',
+      psbt: null,
+      claimedAt: expect.any(Date),
+    });
+    expect(await db[kind].getByTxid('network-txid')).toMatchObject({
+      prepareTxid: tx.prepareTxid,
+    });
+    expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+  });
+
+  it('skips and reports rows with an unreadable PSBT, leaving them untouched', async () => {
+    await sql.insert(t).values({ ...legacy, txid: 'broken', psbt: 'not-a-psbt' });
+
+    const summary = await backfillSignedPsbtState(sql);
+
+    const [row] = await sql.select().from(t);
+    expect(summary[kind === 'stake' ? 'stakes' : 'unstakes'].skipped).toEqual([row.id]);
+    expect(row).toMatchObject({ psbt: 'not-a-psbt', prepareTxid: null, claimedAt: null });
+  });
+
+  it('after a rollback, reconciles rows the old code may have confirmed', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    // Prepared by the new build, then confirmed by the rolled-back old build: txid updated,
+    // PSBT kept, no claim recorded
+    const rollbackStart = new Date(Date.now() - 60_000);
+    await sql.insert(t).values({
+      ...legacy,
+      txid: 'network-txid',
+      prepareTxid: tx.prepareTxid,
+      psbt: tx.unsigned,
+    });
+    net.txs.set('network-txid', { confirmed: false });
+
+    // Without the rollback mode the row is not picked up
+    await backfillSignedPsbtState(sql);
+    expect((await db[kind].getByPrepareTxid(tx.prepareTxid))?.claimedAt).toBeNull();
+
+    expect(await backfillSignedPsbtState(sql, { since: rollbackStart })).toMatchObject({
+      [kind === 'stake' ? 'stakes' : 'unstakes']: { rollback: 1 },
+    });
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+      prepareTxid: tx.prepareTxid,
+      psbt: null,
+      claimedAt: expect.any(Date),
+    });
+    expect((await confirm(request({ psbt: tx.signed }))).status).toBe(409);
+    expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+    net.txs.set('network-txid', { confirmed: true, block_height: 990 });
+    await monitor(cronRequest());
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({ block: 990 });
+    expect(net.posted).toHaveLength(0);
   });
 
   it('picks up rows written by old code after the migration when re-run', async () => {

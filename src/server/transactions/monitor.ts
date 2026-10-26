@@ -8,7 +8,8 @@ import { mempool } from '@/providers/mempool';
 export const MONITOR_LIMITS = {
   /** No new lookups are started after this much of the run has passed. */
   budgetMs: 45_000,
-  lookupTimeoutMs: 5_000,
+  /** Generous so slow but healthy lookups still settle; budget + timeout stays under 60s. */
+  lookupTimeoutMs: 10_000,
   concurrency: 8,
   pageSize: 100,
 };
