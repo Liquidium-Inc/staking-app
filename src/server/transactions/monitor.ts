@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { mapWithConcurrencyLimit } from '@/lib/async';
@@ -68,10 +70,15 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
     const known = batch.flatMap((entry, i) => {
       const result = results[i];
       if (result.status === 'rejected') {
-        logger.warn(`Failed to fetch ${kind} transaction status`, {
-          txid: entry.txid,
-          error: result.reason,
-        });
+        // 404 just means the network doesn't know the tx (yet); only real failures are warnings
+        const notFound =
+          axios.isAxiosError(result.reason) && result.reason.response?.status === 404;
+        if (!notFound) {
+          logger.warn(`Failed to fetch ${kind} transaction status`, {
+            txid: entry.txid,
+            error: result.reason,
+          });
+        }
         return [];
       }
       const status = result.value;
