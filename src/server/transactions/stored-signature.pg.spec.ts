@@ -7,10 +7,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as ecc from '@bitcoinerlab/secp256k1';
-import { PGlite } from '@electric-sql/pglite';
 import * as bitcoin from 'bitcoinjs-lib';
 import { toXOnly } from 'bitcoinjs-lib/src/psbt/bip371';
-import { drizzle } from 'drizzle-orm/pglite';
 import { ECPairFactory } from 'ecpair';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,12 +22,14 @@ import { POST as prepareUnstake } from '@/app/api/unstake/route';
 import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
+import { backfillSignedPsbtState } from '@/db/backfill-signed-psbt-state';
 import { sql } from '@/db/client';
 import { stakes, unstakes } from '@/db/schema';
 import { CANISTER_CLAIM_STALE_MS, CANISTER_SIGNATURE_MAX_AGE_MS } from '@/lib/canister-signature';
 import { RunePSBT, RunePSBTInput } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
 
+import { MONITOR_LIMITS } from './monitor';
 import { broadcastWithStoredSignature } from './stored-signature';
 
 bitcoin.initEccLib(ecc);
@@ -42,6 +42,8 @@ const net = vi.hoisted(() => ({
   lagging: false,
   lookupFails: false,
   loseResponse: false,
+  // Lookups for these txids never answer
+  slow: new Set<string>(),
   hold: undefined as Promise<void> | undefined,
   build: { psbt: '', toSign: [] as number[] },
 }));
@@ -63,6 +65,7 @@ vi.mock('@/providers/mempool', async () => {
       transactions: {
         getTxStatus: async ({ txid }: { txid: string }) => {
           if (net.lookupFails) throw axiosError(502, 'bad gateway');
+          if (net.slow.has(txid)) await new Promise(() => {});
           const status = net.txs.get(txid);
           if (!status || (net.lagging && !status.confirmed)) {
             throw axiosError(404, 'Transaction not found');
@@ -226,6 +229,7 @@ beforeEach(async () => {
   await sql.execute('TRUNCATE stakes, unstakes');
   net.txs.clear();
   net.posted = [];
+  net.slow.clear();
   Object.assign(net, { lagging: false, lookupFails: false, loseResponse: false, hold: undefined });
 });
 
@@ -463,6 +467,48 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
     expect(await db[kind].getByTxid('old')).toMatchObject({ block: 990 });
   });
 
+  it('eventually checks every row when lookups are slow', async () => {
+    vi.useRealTimers();
+    Object.assign(MONITOR_LIMITS, {
+      budgetMs: 150,
+      lookupTimeoutMs: 30,
+      concurrency: 2,
+      pageSize: 5,
+    });
+    try {
+      // 30 never-answering lookups ahead of a confirmed row that was checked a while ago
+      await sql.insert(t).values(
+        Array.from({ length: 30 }, (_, i) => ({
+          ...base,
+          txid: `slow-${i}`,
+          prepareTxid: `s${i}`,
+        })),
+      );
+      await sql
+        .insert(t)
+        .values({ ...base, txid: 'target', prepareTxid: 't', lastCheckedAt: new Date(0) });
+      for (let i = 0; i < 30; i++) net.slow.add(`slow-${i}`);
+      net.txs.set('target', { confirmed: true, block_height: 990 });
+
+      const started = Date.now();
+      await monitor(cronRequest());
+      expect(Date.now() - started).toBeLessThan(150 + 30 + 100);
+      expect(await db[kind].getByTxid('target')).toMatchObject({ block: null });
+
+      for (let run = 0; run < 10 && !(await db[kind].getByTxid('target'))?.block; run++) {
+        await monitor(cronRequest());
+      }
+      expect(await db[kind].getByTxid('target')).toMatchObject({ block: 990 });
+    } finally {
+      Object.assign(MONITOR_LIMITS, {
+        budgetMs: 45_000,
+        lookupTimeoutMs: 5_000,
+        concurrency: 8,
+        pageSize: 100,
+      });
+    }
+  }, 30_000);
+
   it('skips rows that were never handed to the network', async () => {
     await sql.insert(t).values({ ...base, txid: 'unclaimed', prepareTxid: 'u', claimedAt: null });
     net.txs.set('unclaimed', { confirmed: true, block_height: 990 });
@@ -473,26 +519,86 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
   });
 });
 
-describe('migration 0001 backfill', () => {
-  it('gives unsettled legacy rows an identity and treats them as possibly broadcast', async () => {
-    const pg = new PGlite();
-    const legacy = drizzle(pg);
-    await migrate(legacy, 0, 1);
-    await pg.exec(`
-      INSERT INTO unstakes (address, amount, "sAmount", txid, psbt, block)
-      VALUES ('a', 1, 1, 'dup', 'p', NULL), ('a', 1, 1, 'dup', 'p', NULL),
-             ('a', 1, 1, 'settled', 'p', 900);
-    `);
-    await migrate(legacy, 1);
+describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, monitor }) => {
+  const t = kind === 'stake' ? stakes : unstakes;
+  const legacy = { address: 'a', amount: '1', sAmount: '1', block: null };
+  const prepareRequest = async (unsigned: string) => {
+    vi.spyOn(canister, kind).mockImplementationOnce(async (psbt: string) => ({
+      signed_psbt: psbt,
+      debug: {},
+    }));
+    net.build = { psbt: unsigned, toSign: [1, 2] };
+    return prepare(
+      request({
+        sender: { public: userPublicKey, address: userRuneAddress },
+        amount: '1000',
+        sAmount: '1000',
+      }),
+    );
+  };
 
-    const { rows } = await pg.query<{
-      txid: string;
-      prepareTxid: string | null;
-      psbt: string | null;
-      claimedAt: Date | null;
-    }>('SELECT txid, "prepareTxid", psbt, "claimedAt" FROM unstakes ORDER BY id');
-    expect(rows.map((r) => r.prepareTxid)).toEqual([null, 'dup', null]);
-    expect(rows.slice(0, 2).every((r) => r.psbt === null && r.claimedAt !== null)).toBe(true);
-    expect(rows[2]).toMatchObject({ psbt: 'p', claimedAt: null });
-  }, 30_000);
+  it('recovers the unsigned identity of a broadcast P2SH row and never re-arms it', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    // Old code broadcast it, overwrote txid with the network txid and kept the PSBT
+    net.txs.set('network-txid', { confirmed: false });
+    await sql.insert(t).values({ ...legacy, txid: 'network-txid', psbt: tx.unsigned });
+
+    expect(await backfillSignedPsbtState(sql)).toMatchObject({
+      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 1, duplicates: 0 },
+    });
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+      txid: 'network-txid',
+      psbt: null,
+      claimedAt: expect.any(Date),
+    });
+
+    // Re-preparing the same tx finds the row, sees the tx on the network and refuses
+    expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+    expect((await confirm(request({ psbt: tx.signed }))).status).toBe(409);
+    expect(await sql.select().from(t)).toHaveLength(1);
+    expect(net.posted).toHaveLength(0);
+  });
+
+  it('re-arms a legacy row whose tx never reached the network', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    await sql.insert(t).values({ ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned });
+    await backfillSignedPsbtState(sql);
+
+    expect((await prepareRequest(tx.unsigned)).status).toBe(200);
+    expect((await confirm(request({ psbt: tx.signed }))).status).toBe(200);
+    expect(await sql.select().from(t)).toHaveLength(1);
+    expect(net.posted).toHaveLength(1);
+  });
+
+  it('gives the identity to the newest duplicate, keeps all of them monitored, and is idempotent', async () => {
+    const tx = await buildTx(kind, 'p2wpkh');
+    await sql.insert(t).values([
+      { ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned },
+      { ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned },
+      { ...legacy, txid: 'no-psbt', psbt: null },
+      { ...legacy, txid: 'settled', psbt: tx.unsigned, block: 900 },
+    ]);
+
+    await backfillSignedPsbtState(sql);
+    const rows = await sql.select().from(t).orderBy(t.id);
+    expect(rows.map((r) => r.prepareTxid)).toEqual([null, tx.prepareTxid, 'no-psbt', null]);
+    expect(rows.slice(0, 3).every((r) => r.claimedAt && r.psbt === null)).toBe(true);
+    expect(rows[3]).toMatchObject({ claimedAt: null, psbt: tx.unsigned });
+
+    expect(await backfillSignedPsbtState(sql)).toMatchObject({
+      [kind === 'stake' ? 'stakes' : 'unstakes']: { updated: 0 },
+    });
+  });
+
+  it('picks up rows written by old code after the migration when re-run', async () => {
+    // Without a backfill, such a row is invisible to the monitor and to confirm
+    await sql.insert(t).values({ ...legacy, txid: 'late', psbt: null });
+    net.txs.set('late', { confirmed: true, block_height: 990 });
+    await monitor(cronRequest());
+    expect(await db[kind].getByTxid('late')).toMatchObject({ block: null });
+
+    await backfillSignedPsbtState(sql);
+    await monitor(cronRequest());
+    expect(await db[kind].getByTxid('late')).toMatchObject({ block: 990 });
+  });
 });

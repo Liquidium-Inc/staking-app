@@ -54,6 +54,8 @@ export const stakes = pgTable('stakes', {
   claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
+  // When the monitor last looked this tx up; it checks the least recently checked rows first
+  lastCheckedAt: timestamp(),
   //canisterOutpoints: text().array(),
 });
 
@@ -78,6 +80,8 @@ export const unstakes = pgTable('unstakes', {
   claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
+  // When the monitor last looked this tx up; it checks the least recently checked rows first
+  lastCheckedAt: timestamp(),
 });
 
 export const emailSubscriptions = pgTable(

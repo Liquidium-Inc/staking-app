@@ -1,9 +1,19 @@
-import { and, desc, eq, gte, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql as sqlTag,
+} from 'drizzle-orm';
 
 import { sql } from './client';
 import { stakes, unstakes } from './schema';
 
-const MONITOR_BATCH_LIMIT = 100;
 const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -30,25 +40,24 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
   }
 
   /**
-   * Rows the monitor must check: unsettled rows that were handed to (or may be on) the network,
-   * and recently settled ones. Pages by descending id; pass the last id seen as `beforeId`.
+   * Unsettled rows that were handed to (or may be on) the network, least recently checked first.
+   * `exclude` holds ids already checked in the current monitor run.
    */
-  async function getMonitorBatch(settledAfterBlock: number, beforeId?: number) {
+  async function getMonitorBatch(exclude: number[], limit: number) {
     const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
     return await sql
       .select()
       .from(t)
       .where(
         and(
-          beforeId === undefined ? undefined : lt(t.id, beforeId),
-          or(
-            and(notConfirmed, isNotNull(t.claimedAt), gte(t.timestamp, pendingCutoff)),
-            gte(t.block, settledAfterBlock),
-          ),
+          notConfirmed,
+          isNotNull(t.claimedAt),
+          gte(t.timestamp, pendingCutoff),
+          exclude.length > 0 ? notInArray(t.id, exclude) : undefined,
         ),
       )
-      .orderBy(desc(t.id))
-      .limit(MONITOR_BATCH_LIMIT);
+      .orderBy(sqlTag`${t.lastCheckedAt} asc nulls first`, asc(t.id))
+      .limit(limit);
   }
 
   /** Takes the stored PSBT for broadcasting. Returns the claim time, or null if not claimable. */
