@@ -56,6 +56,8 @@ export const stakes = pgTable('stakes', {
   invalidatedAt: timestamp(),
   // When the monitor last looked this tx up; it checks the least recently checked rows first
   lastCheckedAt: timestamp(),
+  // Set by the backfill on a duplicate of another row's tx; such rows are history only
+  supersededAt: timestamp(),
   //canisterOutpoints: text().array(),
 });
 
@@ -82,6 +84,8 @@ export const unstakes = pgTable('unstakes', {
   invalidatedAt: timestamp(),
   // When the monitor last looked this tx up; it checks the least recently checked rows first
   lastCheckedAt: timestamp(),
+  // Set by the backfill on a duplicate of another row's tx; such rows are history only
+  supersededAt: timestamp(),
 });
 
 export const emailSubscriptions = pgTable(

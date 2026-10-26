@@ -1,5 +1,5 @@
 {
-  "id": "fa3fc7b9-f084-4902-aca5-524af5cdd4f0",
+  "id": "6073b542-13a0-418f-a1fd-80c64c4df3f1",
   "prevId": "78350128-5a6b-47c1-8640-9c976a38a01d",
   "version": "7",
   "dialect": "postgresql",
@@ -312,6 +312,12 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "supersededAt": {
+          "name": "supersededAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -475,6 +481,12 @@
         },
         "lastCheckedAt": {
           "name": "lastCheckedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supersededAt": {
+          "name": "supersededAt",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false

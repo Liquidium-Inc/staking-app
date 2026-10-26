@@ -41,6 +41,7 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
 
   /**
    * Unsettled rows that were handed to (or may be on) the network, least recently checked first.
+   * Invalidated rows are only polled for a week, so abandoned attempts stop being checked.
    * `exclude` holds ids already checked in the current monitor run.
    */
   async function getMonitorBatch(exclude: number[], limit: number) {
@@ -52,7 +53,8 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
         and(
           notConfirmed,
           isNotNull(t.claimedAt),
-          gte(t.timestamp, pendingCutoff),
+          // Valid claims are checked until they settle; invalidated ones only for a while
+          or(isNull(t.invalidatedAt), gte(t.timestamp, pendingCutoff)),
           exclude.length > 0 ? notInArray(t.id, exclude) : undefined,
         ),
       )

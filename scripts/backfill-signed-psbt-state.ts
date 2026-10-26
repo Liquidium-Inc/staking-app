@@ -21,6 +21,8 @@ if (since && Number.isNaN(since.getTime())) throw new Error('--since needs an IS
 const summary = await backfillSignedPsbtState(drizzle(neon(url)), { since });
 console.log(JSON.stringify(summary));
 if (Object.values(summary).some((table) => table.skipped.length > 0)) {
-  console.error('Some rows have an unreadable PSBT and were left untouched; repair them manually.');
+  console.error(
+    'Some rows were left untouched (unreadable PSBT or conflicting network txids); repair them manually.',
+  );
   process.exitCode = 1;
 }

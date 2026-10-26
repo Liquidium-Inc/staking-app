@@ -69,7 +69,12 @@ async function getWithdrawAfterBlockForAddress(block: number, address: string) {
 }
 
 async function getByTxid(txid: string) {
-  const [value] = await sql.select().from(unstakes).where(eq(unstakes.txid, txid)).limit(1);
+  // Backfill-superseded duplicates share the network txid; only the canonical row counts
+  const [value] = await sql
+    .select()
+    .from(unstakes)
+    .where(and(eq(unstakes.txid, txid), isNull(unstakes.supersededAt)))
+    .limit(1);
   return value;
 }
 

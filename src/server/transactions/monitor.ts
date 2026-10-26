@@ -8,9 +8,12 @@ import { mempool } from '@/providers/mempool';
 
 /** Tunables for one monitor run; the cron routes have maxDuration = 60s. */
 export const MONITOR_LIMITS = {
-  /** No new lookups are started after this much of the run has passed. */
-  budgetMs: 45_000,
-  /** Generous so slow but healthy lookups still settle; budget + timeout stays under 60s. */
+  /**
+   * No new lookups are started after this much of the run has passed (the tip call counts too).
+   * The last lookups then need at most lookupTimeoutMs, leaving ~10s for DB writes before 60s.
+   */
+  budgetMs: 40_000,
+  /** Generous so slow but healthy lookups still settle. */
   lookupTimeoutMs: 10_000,
   concurrency: 8,
   pageSize: 100,
@@ -36,7 +39,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number) {
 export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
   const table = db[kind];
   const deadline = Date.now() + MONITOR_LIMITS.budgetMs;
-  const lastBlock = await mempool.blocks.getBlocksTipHeight();
+  const lastBlock = await withTimeout(
+    mempool.blocks.getBlocksTipHeight(),
+    MONITOR_LIMITS.lookupTimeoutMs,
+  );
   const settledBelow = lastBlock - publicConfig.protocol.expectedConfirmations;
   const checkedIds: number[] = [];
 

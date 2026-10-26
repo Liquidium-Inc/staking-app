@@ -19,6 +19,7 @@ import { POST as confirmStake } from '@/app/api/stake/confirm/route';
 import { POST as prepareStake } from '@/app/api/stake/route';
 import { POST as confirmUnstake } from '@/app/api/unstake/confirm/route';
 import { POST as prepareUnstake } from '@/app/api/unstake/route';
+import { POST as confirmWithdraw } from '@/app/api/withdraw/confirm/route';
 import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
@@ -44,6 +45,9 @@ const net = vi.hoisted(() => ({
   loseResponse: false,
   // Lookups for these txids never answer
   slow: new Set<string>(),
+  tipHangs: false,
+  // txid -> mempool getTx payload, for withdrawals
+  fullTxs: new Map<string, unknown>(),
   hold: undefined as Promise<void> | undefined,
   build: { psbt: '', toSign: [] as number[] },
 }));
@@ -61,7 +65,12 @@ vi.mock('@/providers/mempool', async () => {
     Object.assign(new Error(data), { isAxiosError: true, response: { status, data } });
   return {
     mempool: {
-      blocks: { getBlocksTipHeight: async () => 1000 },
+      blocks: {
+        getBlocksTipHeight: async () => {
+          if (net.tipHangs) await new Promise(() => {});
+          return 1000;
+        },
+      },
       transactions: {
         getTxStatus: async ({ txid }: { txid: string }) => {
           if (net.lookupFails) throw axiosError(502, 'bad gateway');
@@ -72,6 +81,7 @@ vi.mock('@/providers/mempool', async () => {
           }
           return status;
         },
+        getTx: async ({ txid }: { txid: string }) => net.fullTxs.get(txid),
         postTx: async ({ txhex }: { txhex: string }) => {
           await net.hold;
           const txid = lib.Transaction.fromHex(txhex).getId();
@@ -230,6 +240,8 @@ beforeEach(async () => {
   net.txs.clear();
   net.posted = [];
   net.slow.clear();
+  net.fullTxs.clear();
+  net.tipHangs = false;
   Object.assign(net, { lagging: false, lookupFails: false, loseResponse: false, hold: undefined });
 });
 
@@ -501,13 +513,41 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
       expect(await db[kind].getByTxid('target')).toMatchObject({ block: 990 });
     } finally {
       Object.assign(MONITOR_LIMITS, {
-        budgetMs: 45_000,
+        budgetMs: 40_000,
         lookupTimeoutMs: 10_000,
         concurrency: 8,
         pageSize: 100,
       });
     }
   }, 30_000);
+
+  it('keeps checking valid claims past a week but stops polling old invalidated ones', async () => {
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await sql.insert(t).values([
+      { ...base, txid: 'old-valid', prepareTxid: 'ov', timestamp: old },
+      { ...base, txid: 'old-invalid', prepareTxid: 'oi', timestamp: old, invalidatedAt: old },
+    ]);
+    net.txs.set('old-valid', { confirmed: true, block_height: 990 });
+    net.txs.set('old-invalid', { confirmed: true, block_height: 990 });
+
+    await monitor(cronRequest());
+
+    expect(await db[kind].getByTxid('old-valid')).toMatchObject({ block: 990 });
+    expect(await db[kind].getByTxid('old-invalid')).toMatchObject({ block: null });
+  });
+
+  it('gives up quickly when the tip lookup hangs', async () => {
+    vi.useRealTimers();
+    Object.assign(MONITOR_LIMITS, { lookupTimeoutMs: 30 });
+    net.tipHangs = true;
+    try {
+      const started = Date.now();
+      await expect(monitor(cronRequest())).rejects.toThrow('timed out');
+      expect(Date.now() - started).toBeLessThan(1000);
+    } finally {
+      Object.assign(MONITOR_LIMITS, { lookupTimeoutMs: 10_000 });
+    }
+  });
 
   it('skips rows that were never handed to the network', async () => {
     await sql.insert(t).values({ ...base, txid: 'unclaimed', prepareTxid: 'u', claimedAt: null });
@@ -648,6 +688,43 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     expect((await prepareRequest(tx.unsigned)).status).toBe(409);
   });
 
+  it('skips a group whose rows carry different network txids, for manual repair', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    await sql.insert(t).values([
+      { ...legacy, txid: 'network-a', psbt: tx.unsigned },
+      { ...legacy, txid: 'network-b', psbt: tx.unsigned },
+    ]);
+
+    const summary = await backfillSignedPsbtState(sql);
+
+    const rows = await sql.select().from(t).orderBy(t.id);
+    expect(summary[kind === 'stake' ? 'stakes' : 'unstakes'].skipped.sort()).toEqual(
+      rows.map((r) => r.id).sort(),
+    );
+    expect(rows.every((r) => r.psbt === tx.unsigned && !r.prepareTxid && !r.claimedAt)).toBe(true);
+  });
+
+  it('lets an invalidated identity holder take over a broadcast txid', async () => {
+    const tx = await buildTx(kind, 'p2sh');
+    await sql.insert(t).values([
+      {
+        ...legacy,
+        txid: tx.prepareTxid,
+        prepareTxid: tx.prepareTxid,
+        claimedAt: new Date(T0),
+        invalidatedAt: new Date(T0),
+      },
+      { ...legacy, txid: 'network-txid', psbt: tx.unsigned },
+    ]);
+
+    await backfillSignedPsbtState(sql);
+
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+      txid: 'network-txid',
+      invalidatedAt: null,
+    });
+  });
+
   it('skips and reports rows with an unreadable PSBT, leaving them untouched', async () => {
     await sql.insert(t).values({ ...legacy, txid: 'broken', psbt: 'not-a-psbt' });
 
@@ -671,8 +748,8 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     });
     net.txs.set('network-txid', { confirmed: false });
 
-    // Without the rollback mode the row is not picked up
-    await backfillSignedPsbtState(sql);
+    // A normal run refuses: only the old build leaves this state
+    await expect(backfillSignedPsbtState(sql)).rejects.toThrow('--since');
     expect((await db[kind].getByPrepareTxid(tx.prepareTxid))?.claimedAt).toBeNull();
 
     expect(await backfillSignedPsbtState(sql, { since: rollbackStart })).toMatchObject({
@@ -702,4 +779,67 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     await monitor(cronRequest());
     expect(await db[kind].getByTxid('late')).toMatchObject({ block: 990 });
   });
+});
+
+describe('withdraw confirm with a superseded duplicate', () => {
+  const retentionScript = bitcoin.address.toOutputScript(canister.retention, network);
+  const payerScript = p2wpkhPayer.output!;
+  const unstakeTxid = 'ab'.repeat(32);
+
+  async function withdrawRequest() {
+    const psbt = new bitcoin.Psbt({ network });
+    psbt.addInput({
+      hash: Buffer.from(unstakeTxid, 'hex').reverse(),
+      index: 1,
+      witnessUtxo: { script: retentionScript, value: 10_000n },
+    });
+    psbt.addInput({
+      hash: 'cd'.repeat(32),
+      index: 0,
+      witnessUtxo: { script: payerScript, value: 20_000n },
+    });
+    psbt.addOutput({ address: userRuneAddress, value: 29_000n });
+    psbt.signInput(1, user);
+    return request({ sender: 'session', psbt: psbt.toBase64() });
+  }
+
+  it.each(['first', 'last'] as const)(
+    'records the claim on the canonical row when the duplicate is inserted %s',
+    async (order) => {
+      const canonical = {
+        address: 'session',
+        amount: '1',
+        sAmount: '1',
+        txid: unstakeTxid,
+        prepareTxid: 'prep',
+        claimedAt: new Date(T0),
+        block: 990,
+      };
+      const duplicate = {
+        address: 'session',
+        amount: '1',
+        sAmount: '1',
+        txid: unstakeTxid,
+        invalidatedAt: new Date(T0),
+        supersededAt: new Date(T0),
+      };
+      await sql
+        .insert(unstakes)
+        .values(order === 'first' ? [duplicate, canonical] : [canonical, duplicate]);
+      net.fullTxs.set(unstakeTxid, {
+        txid: unstakeTxid,
+        vout: [{ scriptpubkey_address: 'session' }, { scriptpubkey_address: canister.retention }],
+        status: { confirmed: true, block_time: 1_000 },
+      });
+
+      const response = await confirmWithdraw(await withdrawRequest());
+
+      expect(response.status).toBe(200);
+      const rows = await sql.select().from(unstakes).orderBy(unstakes.id);
+      const byPrepare = rows.find((r) => r.prepareTxid === 'prep')!;
+      const superseded = rows.find((r) => r.supersededAt)!;
+      expect(byPrepare.claimTx).toBe(net.posted[0]);
+      expect(superseded.claimTx).toBeNull();
+    },
+  );
 });

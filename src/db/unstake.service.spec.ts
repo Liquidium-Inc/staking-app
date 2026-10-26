@@ -218,9 +218,11 @@ describe('unstake service', () => {
       expect(sql.select).toHaveBeenCalled();
       expect(mocks.from).toHaveBeenCalledWith(unstakes);
       expect(mocks.where).toHaveBeenCalledWith({
-        type: 'eq',
-        column: unstakes.txid,
-        value: txid,
+        type: 'and',
+        conditions: [
+          { type: 'eq', column: unstakes.txid, value: txid },
+          { type: 'isNull', column: unstakes.supersededAt },
+        ],
       });
       expect(mocks.limit).toHaveBeenCalledWith(1);
     });

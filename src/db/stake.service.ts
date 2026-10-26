@@ -26,7 +26,12 @@ async function update(ids: number[], payload: Partial<typeof stakes.$inferInsert
 }
 
 async function getByTxid(txid: string) {
-  const [value] = await sql.select().from(stakes).where(eq(stakes.txid, txid)).limit(1);
+  // Backfill-superseded duplicates share the network txid; only the canonical row counts
+  const [value] = await sql
+    .select()
+    .from(stakes)
+    .where(and(eq(stakes.txid, txid), isNull(stakes.supersededAt)))
+    .limit(1);
   return value;
 }
 

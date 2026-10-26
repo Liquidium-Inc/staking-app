@@ -1,5 +1,5 @@
 import * as bitcoin from 'bitcoinjs-lib';
-import { and, desc, eq, gte, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull, ne } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { stakes, unstakes } from './schema';
@@ -19,7 +19,13 @@ function unsignedTxid(psbtBase64: string) {
   }
 }
 
-type Summary = { updated: number; superseded: number; skipped: number[]; rollback: number };
+type Summary = {
+  updated: number;
+  superseded: number;
+  /** Unreadable PSBT, or rows of a group with conflicting network txids: repair by hand. */
+  skipped: number[];
+  rollback: number;
+};
 
 /**
  * Brings unsettled rows written by code from before the signed-PSBT state columns into that state.
@@ -34,7 +40,9 @@ type Summary = { updated: number; superseded: number; skipped: number[]; rollbac
  * superseded: PSBT retired, invalidated, and left out of the monitor and pending lists, so a
  * duplicate can never settle a second time. Rows are kept for history.
  *
- * Rows with an unreadable PSBT are skipped untouched and reported for manual repair.
+ * Rows with an unreadable PSBT, and groups whose rows carry more than one network txid, are skipped
+ * untouched and reported for manual repair. Superseded rows get supersededAt, so txid lookups
+ * ignore them. Refuses to run without `since` if rows show the old build ran after a rollback.
  *
  * With `since` (after a rollback to the old build): unsettled rows that already have prepareTxid
  * but no claim and were prepared since then may have been confirmed by the old code, which never
@@ -53,6 +61,27 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
   ] as const) {
     const result: Summary = { updated: 0, superseded: 0, skipped: [], rollback: 0 };
     summary[name] = result;
+
+    // Only old code (after a rollback) leaves an unclaimed row whose txid moved off its identity
+    if (!options.since) {
+      const [rolledBack] = await db
+        .select({ id: t.id })
+        .from(t)
+        .where(
+          and(
+            isNull(t.block),
+            isNotNull(t.prepareTxid),
+            isNull(t.claimedAt),
+            ne(t.txid, t.prepareTxid),
+          ),
+        )
+        .limit(1);
+      if (rolledBack) {
+        throw new Error(
+          `${name} row ${rolledBack.id} was confirmed by the old build after a rollback; run with --since <time the new build first went live>`,
+        );
+      }
+    }
 
     if (options.since) {
       const rows = await db
@@ -89,21 +118,39 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
     }
 
     for (const [identity, rows] of groups) {
-      const broadcast = rows.find((row) => row.txid !== identity);
       const [holder] = await db
-        .select({ id: t.id, txid: t.txid, claimedAt: t.claimedAt, timestamp: t.timestamp })
+        .select({
+          id: t.id,
+          txid: t.txid,
+          claimedAt: t.claimedAt,
+          invalidatedAt: t.invalidatedAt,
+          timestamp: t.timestamp,
+        })
         .from(t)
         .where(eq(t.prepareTxid, identity))
         .limit(1);
 
+      // The same unsigned tx can only have one network txid; anything else needs a human
+      const networkTxids = new Set(
+        [...rows.map((row) => row.txid), ...(holder ? [holder.txid] : [])].filter(
+          (txid) => txid !== identity,
+        ),
+      );
+      if (networkTxids.size > 1) {
+        result.skipped.push(...rows.map((row) => row.id));
+        continue;
+      }
+      const broadcast = rows.find((row) => row.txid !== identity);
+
       let superseded = rows;
       if (holder) {
-        if (broadcast && holder.txid === identity) {
+        if (broadcast && (holder.txid === identity || holder.invalidatedAt)) {
           await db
             .update(t)
             .set({
               txid: broadcast.txid,
               psbt: null,
+              invalidatedAt: null,
               claimedAt: holder.claimedAt ?? staleClaim(holder.timestamp),
             })
             .where(eq(t.id, holder.id));
@@ -119,7 +166,10 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
       }
 
       for (const row of superseded) {
-        await db.update(t).set({ psbt: null, invalidatedAt: new Date() }).where(eq(t.id, row.id));
+        await db
+          .update(t)
+          .set({ psbt: null, invalidatedAt: new Date(), supersededAt: new Date() })
+          .where(eq(t.id, row.id));
         result.superseded++;
       }
     }
