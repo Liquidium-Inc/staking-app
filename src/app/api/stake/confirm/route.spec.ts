@@ -61,6 +61,7 @@ describe('POST', () => {
     Object.values(mock.stake).forEach((fn) => fn.mockReset());
     mock.stake.claimSignedPsbt.mockResolvedValue(true);
     mock.stake.expireSignedPsbt.mockResolvedValue(false);
+    mock.stake.update.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -293,6 +294,33 @@ describe('POST', () => {
       expect(response.status).toBe(400);
       expect(row.psbt).toBeNull();
       expect(row.invalidatedAt).toBeInstanceOf(Date);
+    });
+
+    it('still succeeds and keeps the row live if recording the txid fails', async () => {
+      const { row } = useRow();
+      at(CANISTER_SIGNATURE_MAX_AGE_MS - 1000);
+      mock.broadcast.mockResolvedValue({ txid: 'final-txid', fee: '1000', feeRate: 5 });
+      mock.stake.update.mockRejectedValueOnce(new Error('db down'));
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ txid: 'final-txid' });
+      expect(row.invalidatedAt).toBeNull();
+    });
+
+    it('keeps the broadcast error if invalidating the row fails', async () => {
+      useRow();
+      at(CANISTER_SIGNATURE_MAX_AGE_MS - 1000);
+      mock.broadcast.mockRejectedValue(new BroadcastService.InvalidExchangeRate());
+      mock.stake.update.mockRejectedValueOnce(new Error('db down'));
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: new BroadcastService.InvalidExchangeRate().message,
+      });
     });
 
     it('lets only one of two concurrent confirms broadcast', async () => {

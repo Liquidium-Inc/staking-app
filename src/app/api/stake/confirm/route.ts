@@ -84,20 +84,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: ALREADY_SUBMITTED_ERROR_MESSAGE }, { status: 409 });
     }
 
+    let result: Awaited<ReturnType<BroadcastService['broadcast']>>;
     try {
       // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
       const broadcastService = new BroadcastService(combinedPsbt, 'stake', true);
-      const result = await broadcastService.broadcast();
-
-      // Update the database with the actual transaction ID
-      await db.stake.update([stakeEntry.id], { txid: result.txid });
-
-      return NextResponse.json(result);
+      result = await broadcastService.broadcast();
     } catch (broadcastError) {
       // Keep the row for history but mark it dead; the user starts over with a fresh signature
-      await db.stake.update([stakeEntry.id], { invalidatedAt: new Date() });
+      await db.stake
+        .update([stakeEntry.id], { invalidatedAt: new Date() })
+        .catch((invalidateError) =>
+          logger.error('Failed to invalidate stake after broadcast error', {
+            id: stakeEntry.id,
+            error: invalidateError,
+          }),
+        );
       throw broadcastError;
     }
+
+    // The tx is broadcast at this point; a failed bookkeeping update must not fail the request
+    try {
+      await db.stake.update([stakeEntry.id], { txid: result.txid });
+    } catch (updateError) {
+      logger.error('Failed to record broadcast stake txid', {
+        id: stakeEntry.id,
+        txid: result.txid,
+        error: updateError,
+      });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
