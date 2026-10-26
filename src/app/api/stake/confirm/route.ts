@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     ).tx.getId();
 
     // Find the stake entry with the saved canister signature
-    const stakeEntry = await db.stake.getByTxid(tempTxid);
+    const stakeEntry = await db.stake.getByPrepareTxid(tempTxid);
     if (!stakeEntry) {
       return NextResponse.json(
         { error: 'Stake entry not found or missing canister signature' },
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    return await broadcastWithStoredSignature('stake', stakeEntry, userSignedPsbt, tempTxid);
+    return await broadcastWithStoredSignature('stake', stakeEntry, userSignedPsbt);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

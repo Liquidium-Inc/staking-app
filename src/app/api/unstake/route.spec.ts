@@ -13,7 +13,7 @@ const mock = vi.hoisted(() => {
     getTxStatus: vi.fn(),
     unstake: {
       insert: vi.fn(),
-      getByTxid: vi.fn(),
+      getByPrepareTxid: vi.fn(),
       refreshSignedPsbt: vi.fn(),
       update: vi.fn(),
     },
@@ -130,7 +130,7 @@ describe('POST', () => {
     mock.canister.unstake.mockResolvedValue(canisterResult);
 
     // Mock no existing transaction
-    mock.unstake.getByTxid.mockResolvedValue(null);
+    mock.unstake.getByPrepareTxid.mockResolvedValue(null);
 
     const response = await POST(req);
 
@@ -150,6 +150,7 @@ describe('POST', () => {
     });
     expect(mock.unstake.insert).toHaveBeenCalledWith({
       timestamp: expect.any(Date),
+      prepareTxid: expect.any(String),
       address: 'addr',
       amount: '1000',
       sAmount: '2000',
@@ -172,9 +173,10 @@ describe('POST', () => {
     const validPsbt = new bitcoin.Psbt().toBase64();
     mock.canister.unstake.mockResolvedValue({ signed_psbt: validPsbt });
     mock.canister.getUnstakeUtxos.mockResolvedValue([]);
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 7,
       txid: 'existing-txid',
+      prepareTxid: 'prep-txid',
       block: null,
       claimedAt: new Date(),
       invalidatedAt: new Date(),
@@ -209,9 +211,10 @@ describe('POST', () => {
     mock.build.mockResolvedValue({ psbt: 'unsigned-psbt-data', toSign: [], feeRate: 1 });
     mock.canister.unstake.mockResolvedValue({ signed_psbt: new bitcoin.Psbt().toBase64() });
     mock.canister.getUnstakeUtxos.mockResolvedValue([]);
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 7,
       txid: 'existing-txid',
+      prepareTxid: 'prep-txid',
       block: null,
       claimedAt: new Date(),
       invalidatedAt: new Date(),

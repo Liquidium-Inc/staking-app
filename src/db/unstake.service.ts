@@ -25,20 +25,6 @@ async function getPendingsOf(address: string) {
     .limit(PENDING_RESULT_LIMIT);
 }
 
-async function getAfterBlock(block: number) {
-  const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
-  const isNotSettled = or(
-    and(isNull(unstakes.block), gte(unstakes.timestamp, pendingCutoff)),
-    gte(unstakes.block, block),
-  );
-  return await sql
-    .select()
-    .from(unstakes)
-    .where(isNotSettled)
-    .orderBy(desc(unstakes.id))
-    .limit(MONITOR_BATCH_LIMIT);
-}
-
 async function getWithdrawAfterBlock(block: number) {
   const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
   const claimIsNotSettled = and(
@@ -99,7 +85,6 @@ export const unstake = {
   insert,
   getPendingsOf,
   update,
-  getAfterBlock,
   getWithdrawAfterBlock,
   getWithdrawAfterBlockForAddress,
   getByTxid,

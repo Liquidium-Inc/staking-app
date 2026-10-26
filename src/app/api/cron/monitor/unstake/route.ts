@@ -18,7 +18,16 @@ export async function GET(req: NextRequest) {
 
   const last_block = await mempool.blocks.getBlocksTipHeight();
 
-  const entries = await db.unstake.getAfterBlock(last_block - expectedConfirmations);
+  // Page through every eligible row so old ones are never starved by newer ones
+  const settledAfter = last_block - expectedConfirmations;
+  const entries: Awaited<ReturnType<typeof db.unstake.getMonitorBatch>> = [];
+  for (
+    let batch = await db.unstake.getMonitorBatch(settledAfter);
+    batch.length > 0;
+    batch = await db.unstake.getMonitorBatch(settledAfter, batch[batch.length - 1].id)
+  ) {
+    entries.push(...batch);
+  }
   const blockHeights = await mapWithConcurrencyLimit(entries, MONITOR_CONCURRENCY, (entry) =>
     mempool.transactions.getTxStatus({ txid: entry.txid! }),
   );
@@ -34,13 +43,16 @@ export async function GET(req: NextRequest) {
     return [];
   });
 
-  // A tx the network knows about is live, even if its broadcast looked failed
-  const knownInvalidated = entries
-    .filter((entry, i) => blockHeights[i].status === 'fulfilled' && entry.invalidatedAt)
+  // The network knows these txs: retire any stored signature so it can never be broadcast again,
+  // and un-hide rows whose broadcast looked failed
+  const known = entries
+    .filter(
+      (entry, i) => blockHeights[i].status === 'fulfilled' && (entry.psbt || entry.invalidatedAt),
+    )
     .map((entry) => entry.id);
-  if (knownInvalidated.length > 0) {
-    logger.info(`Restoring ${knownInvalidated.length} unstakes found on the network`);
-    await db.unstake.update(knownInvalidated, { invalidatedAt: null });
+  if (known.length > 0) {
+    logger.info(`Retiring signatures of ${known.length} unstakes found on the network`);
+    await db.unstake.update(known, { psbt: null, invalidatedAt: null });
   }
 
   // TODO: filter the ones that have the same block height

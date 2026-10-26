@@ -19,7 +19,7 @@ import { canister } from '@/providers/canister';
 import { BroadcastService } from '@/services/broadcast';
 
 type Kind = 'stake' | 'unstake';
-type Entry = NonNullable<Awaited<ReturnType<(typeof db)['stake']['getByTxid']>>>;
+type Entry = NonNullable<Awaited<ReturnType<(typeof db)['stake']['getByPrepareTxid']>>>;
 
 export const alreadySubmittedResponse = () =>
   NextResponse.json(
@@ -30,14 +30,6 @@ export const alreadySubmittedResponse = () =>
     { status: 409 },
   );
 
-/** Whether the row holds a stored signature that a confirm request could still claim. */
-export const hasUsableSignature = (row: Entry | undefined) =>
-  !!row?.psbt &&
-  !row.invalidatedAt &&
-  row.block === null &&
-  !!row.timestamp &&
-  row.timestamp >= canisterSignatureCutoff();
-
 const expiredResponse = () =>
   NextResponse.json(
     signatureExpiredErrorResponseSchema.parse({
@@ -46,6 +38,50 @@ const expiredResponse = () =>
     }),
     { status: 410 },
   );
+
+/** Whether the row holds a stored signature that a confirm request could still claim. */
+const hasUsableSignature = (row: Entry | undefined) =>
+  !!row?.psbt &&
+  !row.invalidatedAt &&
+  row.block === null &&
+  !!row.timestamp &&
+  row.timestamp >= canisterSignatureCutoff();
+
+/**
+ * Prepare found an existing row for the same unsigned tx. Re-arms it with the fresh canister
+ * signature when that is safe and returns null (hand out the PSBT), otherwise releases the
+ * caller's UTXO locks and returns a 409. Never re-arms a tx that was handed to the network.
+ */
+export async function reuseExistingEntry(
+  kind: Kind,
+  existing: Entry,
+  signedPsbt: string,
+  releaseLocks: () => Promise<unknown>,
+) {
+  const table = db[kind];
+  try {
+    const reachedNetwork =
+      existing.block !== null || (existing.claimedAt !== null && (await isTxKnown(existing.txid)));
+    if (reachedNetwork && existing.invalidatedAt) {
+      await table.update([existing.id], { invalidatedAt: null });
+    }
+    const usable =
+      !reachedNetwork &&
+      ((await table.refreshSignedPsbt(
+        existing.id,
+        signedPsbt,
+        canisterSignatureCutoff(),
+        canisterClaimStaleBefore(),
+      )) ||
+        hasUsableSignature(await table.getByPrepareTxid(existing.prepareTxid!)));
+    if (usable) return null;
+  } catch (error) {
+    await releaseLocks();
+    throw error;
+  }
+  await releaseLocks();
+  return alreadySubmittedResponse();
+}
 
 /**
  * Combines the user's signatures with the stored canister signature and broadcasts the tx.
@@ -56,8 +92,8 @@ export async function broadcastWithStoredSignature(
   kind: Kind,
   entry: Entry,
   userSignedPsbt: bitcoin.Psbt,
-  tempTxid: string,
-) {
+  retryClaim = true,
+): Promise<NextResponse> {
   const table = db[kind];
   const storedPsbt = entry.psbt;
   if (storedPsbt && entry.block === null) {
@@ -70,13 +106,19 @@ export async function broadcastWithStoredSignature(
   }
 
   // Not claimable: work out why from the current row
-  const row = await table.getByTxid(tempTxid);
+  const row = await table.getByPrepareTxid(entry.prepareTxid!);
   if (!row || row.block !== null) return alreadySubmittedResponse();
+  // A concurrent prepare stored a fresh signature for the same tx: claim that one instead
+  if (retryClaim && row.psbt !== storedPsbt && hasUsableSignature(row)) {
+    return broadcastWithStoredSignature(kind, row, userSignedPsbt, false);
+  }
   if (row.invalidatedAt) return expiredResponse();
   if (row.psbt) {
-    await table.expireSignedPsbt(row.id, canisterSignatureCutoff());
-    logger.info(`Rejected expired canister signature for ${kind}`, { id: row.id, tempTxid });
-    return expiredResponse();
+    if (await table.expireSignedPsbt(row.id, canisterSignatureCutoff())) {
+      logger.info(`Rejected expired canister signature for ${kind}`, { id: row.id });
+      return expiredResponse();
+    }
+    return alreadySubmittedResponse();
   }
 
   // Claimed by another request. If that request died long ago without the tx reaching the
@@ -98,28 +140,39 @@ async function broadcastClaimed(
   claimedAt: Date,
 ) {
   const table = db[kind];
+  // The final txid (differs from the unsigned one for P2SH inputs), persisted before broadcasting
+  let networkTxid: string | undefined;
+  const recordNetworkTxid = async (txid: string) => {
+    if (!(await table.recordBroadcastTxid(entry.id, claimedAt, txid))) {
+      throw new BroadcastService.BroadcastError('Transaction claim was lost');
+    }
+    networkTxid = txid;
+  };
+
   let result: Awaited<ReturnType<BroadcastService['broadcast']>>;
   try {
     // Skip the database insert since the entry already exists
-    result = await new BroadcastService(combinedPsbt, kind, true).broadcast();
+    result = await new BroadcastService(combinedPsbt, kind, true, recordNetworkTxid).broadcast();
   } catch (broadcastError) {
-    const txid =
-      (broadcastError instanceof BroadcastService.BroadcastError && broadcastError.txid) ||
-      entry.txid;
-    // A failed or lost response doesn't mean the tx didn't reach the network
-    const known = await isTxKnown(txid).catch((lookupError) => {
-      logger.error(`Could not check ${kind} tx after broadcast error`, { txid, lookupError });
-      return undefined;
-    });
+    // Not handed to the network yet: the claim is dead. Otherwise a failed or lost response
+    // doesn't mean the tx didn't reach the network, so check first.
+    const known = networkTxid
+      ? await isTxKnown(networkTxid).catch((lookupError) => {
+          logger.error(`Could not check ${kind} tx after broadcast error`, {
+            txid: networkTxid,
+            lookupError,
+          });
+          return undefined;
+        })
+      : false;
     if (known) {
-      logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid });
-      await recordTxid(kind, entry.id, txid);
-      return NextResponse.json({ txid });
+      logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid: networkTxid });
+      return NextResponse.json({ txid: networkTxid });
     }
     // Unknown lookup result: leave the claim; it is reconciled once stale
     if (known === false) {
       await table
-        .invalidateClaim(entry.id, claimedAt, txid)
+        .invalidateClaim(entry.id, claimedAt)
         .catch((invalidateError) =>
           logger.error(`Failed to invalidate ${kind} claim`, { id: entry.id, invalidateError }),
         );
@@ -127,15 +180,5 @@ async function broadcastClaimed(
     throw broadcastError;
   }
 
-  await recordTxid(kind, entry.id, result.txid);
   return NextResponse.json(result);
-}
-
-// The tx is on the network at this point; a failed bookkeeping update must not fail the request
-async function recordTxid(kind: Kind, id: number, txid: string) {
-  try {
-    await db[kind].update([id], { txid });
-  } catch (updateError) {
-    logger.error(`Failed to record broadcast ${kind} txid`, { id, txid, updateError });
-  }
 }

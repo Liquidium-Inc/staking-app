@@ -11,7 +11,7 @@ const mock = vi.hoisted(() => {
     broadcast: vi.fn(),
     getTxStatus: vi.fn(),
     stake: {
-      getByTxid: vi.fn(),
+      getByPrepareTxid: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
       claimSignedPsbt: vi.fn(),
@@ -96,12 +96,13 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -112,19 +113,19 @@ describe('POST', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(buildResult);
-    expect(mock.stake.update).toHaveBeenCalledWith([1], { txid: 'test-txid' });
   });
 
   it('should forward the BroadcastService.Error', async () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -136,7 +137,7 @@ describe('POST', () => {
     expect(await response.json()).toEqual({
       error: new BroadcastService.InvalidExchangeRate().message,
     });
-    expect(mock.stake.invalidateClaim).toHaveBeenCalledWith(1, expect.any(Date), 'temp-txid');
+    expect(mock.stake.invalidateClaim).toHaveBeenCalledWith(1, expect.any(Date));
     expect(mock.stake.remove).not.toHaveBeenCalled();
   });
 
@@ -144,12 +145,13 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -163,7 +165,7 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock no database entry found
-    mock.stake.getByTxid.mockResolvedValue(null);
+    mock.stake.getByPrepareTxid.mockResolvedValue(null);
 
     const response = await POST(req);
 

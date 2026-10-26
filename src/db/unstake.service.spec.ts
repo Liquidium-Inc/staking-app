@@ -125,46 +125,6 @@ describe('unstake service', () => {
     });
   });
 
-  describe('getAfterBlock', () => {
-    test('should get unstakes after specified block', async () => {
-      const blockNumber = 1000;
-      const mockUnstakes = [
-        {
-          id: 1,
-          address: 'test-address',
-          txid: 'test-txid',
-          amount: '1000',
-          sAmount: '5000',
-          timestamp: new Date(),
-          block: 1001,
-        },
-      ];
-
-      mocks.limit.mockResolvedValue(mockUnstakes);
-
-      const result = await unstake.getAfterBlock(blockNumber);
-
-      expect(result).toEqual(mockUnstakes);
-      expect(sql.select).toHaveBeenCalled();
-      expect(mocks.from).toHaveBeenCalledWith(unstakes);
-      expect(mocks.where).toHaveBeenCalledWith({
-        type: 'or',
-        conditions: [
-          {
-            type: 'and',
-            conditions: [
-              { type: 'isNull', column: unstakes.block },
-              { type: 'gte', column: unstakes.timestamp, value: expect.any(Date) },
-            ],
-          },
-          { type: 'gte', column: unstakes.block, value: blockNumber },
-        ],
-      });
-      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: unstakes.id });
-      expect(mocks.limit).toHaveBeenCalledWith(100);
-    });
-  });
-
   describe('getWithdrawAfterBlockForAddress', () => {
     test('should get withdrawals after specified block', async () => {
       const blockNumber = 1000;

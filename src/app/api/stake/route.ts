@@ -7,11 +7,6 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
-import {
-  canisterClaimStaleBefore,
-  canisterSignatureCutoff,
-  isTxKnown,
-} from '@/lib/canister-signature';
 import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
@@ -25,10 +20,7 @@ import {
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
-import {
-  alreadySubmittedResponse,
-  hasUsableSignature,
-} from '@/server/transactions/stored-signature';
+import { reuseExistingEntry } from '@/server/transactions/stored-signature';
 import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
@@ -114,36 +106,22 @@ export const POST = async (req: NextRequest) => {
     ).tx.getId();
 
     // Check if transaction already exists to prevent duplicates
-    const existingStake = await db.stake.getByTxid(tempTxid);
+    const existingStake = await db.stake.getByPrepareTxid(tempTxid);
     if (existingStake) {
       logger.debug('Stake transaction already exists', { tempTxid });
-      // Same tx as an earlier request. If that one was ever handed to the network, don't re-arm it.
-      const reachedNetwork =
-        existingStake.block !== null ||
-        (existingStake.claimedAt !== null && (await isTxKnown(existingStake.txid)));
-      if (reachedNetwork && existingStake.invalidatedAt) {
-        await db.stake.update([existingStake.id], { invalidatedAt: null });
-      }
-      // Otherwise store the fresh signature if the old one is invalidated, expired or stale, and
-      // only hand out the PSBT if a usable signature is stored for it
-      const usable =
-        !reachedNetwork &&
-        ((await db.stake.refreshSignedPsbt(
-          existingStake.id,
-          canisterResponse.signed_psbt,
-          canisterSignatureCutoff(),
-          canisterClaimStaleBefore(),
-        )) ||
-          hasUsableSignature(await db.stake.getByTxid(tempTxid)));
-      if (!usable) {
-        await redis.utxo
-          .free(
-            getPsbtInputOutpointsForAddress(psbt, canister.address, canister.network),
-            sender.address,
-          )
-          .catch((unlockError) => logger.warn('Failed to unlock UTXOs', { error: unlockError }));
-        return alreadySubmittedResponse();
-      }
+      const refused = await reuseExistingEntry(
+        'stake',
+        existingStake,
+        canisterResponse.signed_psbt,
+        () =>
+          redis.utxo
+            .free(
+              getPsbtInputOutpointsForAddress(psbt, canister.address, canister.network),
+              sender.address,
+            )
+            .catch((unlockError) => logger.warn('Failed to unlock UTXOs', { error: unlockError })),
+      );
+      if (refused) return refused;
       return NextResponse.json({
         psbt: unsignedPsbt,
         toSign,
@@ -155,6 +133,7 @@ export const POST = async (req: NextRequest) => {
     // Signing time, written by the app clock like the confirm deadline cutoff
     await db.stake.insert({
       timestamp: new Date(),
+      prepareTxid: tempTxid,
       address: sender.address,
       amount: amount.toString(),
       sAmount: sAmount.toString(),

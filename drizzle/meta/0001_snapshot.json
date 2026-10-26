@@ -1,5 +1,5 @@
 {
-  "id": "2d6f27ca-81a7-440a-ad1c-8e1389029f76",
+  "id": "192e722e-da8e-4048-8830-ee15777526a9",
   "prevId": "78350128-5a6b-47c1-8640-9c976a38a01d",
   "version": "7",
   "dialect": "postgresql",
@@ -289,6 +289,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "prepareTxid": {
+          "name": "prepareTxid",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "claimedAt": {
           "name": "claimedAt",
           "type": "timestamp",
@@ -310,6 +316,11 @@
           "name": "stakes_uuid_unique",
           "nullsNotDistinct": false,
           "columns": ["uuid"]
+        },
+        "stakes_prepareTxid_unique": {
+          "name": "stakes_prepareTxid_unique",
+          "nullsNotDistinct": false,
+          "columns": ["prepareTxid"]
         }
       },
       "policies": {},
@@ -438,6 +449,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "prepareTxid": {
+          "name": "prepareTxid",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "claimedAt": {
           "name": "claimedAt",
           "type": "timestamp",
@@ -459,6 +476,11 @@
           "name": "unstakes_uuid_unique",
           "nullsNotDistinct": false,
           "columns": ["uuid"]
+        },
+        "unstakes_prepareTxid_unique": {
+          "name": "unstakes_prepareTxid_unique",
+          "nullsNotDistinct": false,
+          "columns": ["prepareTxid"]
         }
       },
       "policies": {},

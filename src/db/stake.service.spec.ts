@@ -120,46 +120,6 @@ describe('stake service', () => {
     });
   });
 
-  describe('getAfterBlock', () => {
-    test('should get stakes after specified block', async () => {
-      const blockNumber = 1000;
-      const mockStakes = [
-        {
-          id: 1,
-          address: 'test-address',
-          txid: 'test-txid',
-          amount: '1000',
-          sAmount: '5000',
-          timestamp: new Date(),
-          block: 1001,
-        },
-      ];
-
-      mocks.limit.mockResolvedValue(mockStakes);
-
-      const result = await stake.getAfterBlock(blockNumber);
-
-      expect(result).toEqual(mockStakes);
-      expect(sql.select).toHaveBeenCalled();
-      expect(mocks.from).toHaveBeenCalledWith(stakes);
-      expect(mocks.where).toHaveBeenCalledWith({
-        type: 'or',
-        conditions: [
-          {
-            type: 'and',
-            conditions: [
-              { type: 'isNull', column: stakes.block },
-              { type: 'gte', column: stakes.timestamp, value: expect.any(Date) },
-            ],
-          },
-          { type: 'gte', column: stakes.block, value: blockNumber },
-        ],
-      });
-      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
-      expect(mocks.limit).toHaveBeenCalledWith(100);
-    });
-  });
-
   describe('update', () => {
     test('should update stake records', async () => {
       const ids = [1, 2];

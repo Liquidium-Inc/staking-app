@@ -47,6 +47,9 @@ export const stakes = pgTable('stakes', {
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   psbt: text(),
+  // Unsigned txid of the prepared tx: the request identity, never changes. `txid` is the network
+  // txid, which differs once a P2SH payer input is finalized.
+  prepareTxid: varchar({ length: 255 }).unique(),
   // Set when a confirm request takes the stored canister signature to broadcast it
   claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
@@ -68,6 +71,9 @@ export const unstakes = pgTable('unstakes', {
   claimTx: varchar({ length: 255 }),
   claimTxBlock: integer(),
   psbt: text(),
+  // Unsigned txid of the prepared tx: the request identity, never changes. `txid` is the network
+  // txid, which differs once a P2SH payer input is finalized.
+  prepareTxid: varchar({ length: 255 }).unique(),
   // Set when a confirm request takes the stored canister signature to broadcast it
   claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us

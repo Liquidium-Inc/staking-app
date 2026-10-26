@@ -89,6 +89,8 @@ export class BroadcastService {
     public readonly psbt: bitcoin.Psbt,
     public readonly operation: 'stake' | 'unstake',
     private readonly skipDatabaseInsert: boolean = false,
+    /** Runs with the final txid after signing, before the tx is handed to the network. */
+    private readonly beforeBroadcast?: (txid: string) => Promise<void>,
   ) {}
 
   get runestone() {
@@ -231,6 +233,8 @@ export class BroadcastService {
       if (!(await redis.utxo.extend(utxos, sender, 300))) {
         throw new BroadcastService.TransactionExpired();
       }
+
+      await this.beforeBroadcast?.(tx.getId());
 
       logger.info(`broadcasting tx with fee ${feeRate} sat/vbyte`);
       try {

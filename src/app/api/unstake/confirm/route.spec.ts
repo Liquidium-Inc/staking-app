@@ -11,7 +11,7 @@ const mock = vi.hoisted(() => {
     broadcast: vi.fn(),
     getTxStatus: vi.fn(),
     unstake: {
-      getByTxid: vi.fn(),
+      getByPrepareTxid: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
       claimSignedPsbt: vi.fn(),
@@ -109,12 +109,13 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -125,7 +126,6 @@ describe('POST', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(buildResult);
-    expect(mock.unstake.update).toHaveBeenCalledWith([1], { txid: 'test-txid' });
   });
 
   it('returns 401 when session address does not match unstake entry', async () => {
@@ -139,12 +139,13 @@ describe('POST', () => {
       lastActiveAt: new Date(),
     });
 
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -160,12 +161,13 @@ describe('POST', () => {
 
     requireSessionMock.mockRejectedValueOnce(new UnauthorizedErrorMock('Unauthorized'));
 
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -173,19 +175,20 @@ describe('POST', () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'Unauthorized' });
-    expect(mock.unstake.getByTxid).not.toHaveBeenCalled();
+    expect(mock.unstake.getByPrepareTxid).not.toHaveBeenCalled();
   });
 
   it('should forward the BroadcastService.Error', async () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -197,7 +200,7 @@ describe('POST', () => {
     expect(await response.json()).toEqual({
       error: new BroadcastService.InvalidExchangeRate().message,
     });
-    expect(mock.unstake.invalidateClaim).toHaveBeenCalledWith(1, expect.any(Date), 'temp-txid');
+    expect(mock.unstake.invalidateClaim).toHaveBeenCalledWith(1, expect.any(Date));
     expect(mock.unstake.remove).not.toHaveBeenCalled();
   });
 
@@ -205,12 +208,13 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.unstake.getByTxid.mockResolvedValue({
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
       timestamp: new Date(),
       txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
       block: null,
     });
 
@@ -224,7 +228,7 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock no database entry found
-    mock.unstake.getByTxid.mockResolvedValue(null);
+    mock.unstake.getByPrepareTxid.mockResolvedValue(null);
 
     const response = await POST(req);
 

@@ -12,7 +12,7 @@ const mock = vi.hoisted(() => ({
     transactions: { getTxStatus: vi.fn() },
   },
   db: {
-    stake: { getAfterBlock: vi.fn(), update: vi.fn() },
+    stake: { getMonitorBatch: vi.fn(), update: vi.fn() },
   },
 }));
 vi.mock('@/providers/mempool', () => ({ mempool: mock.mempool }));
@@ -48,7 +48,7 @@ describe('GET', () => {
     mock.mempool.transactions.getTxStatus
       .mockResolvedValueOnce({ confirmed: true, block_height: 90 })
       .mockResolvedValueOnce({ confirmed: true, block_height: 90 });
-    mock.db.stake.getAfterBlock.mockResolvedValue([
+    mock.db.stake.getMonitorBatch.mockResolvedValue([]).mockResolvedValueOnce([
       { id: 1, txid: 'tx1' },
       { id: 2, txid: 'tx2' },
     ]);
@@ -61,7 +61,7 @@ describe('GET', () => {
     expect(json).toEqual({ success: true });
 
     expect(mock.mempool.blocks.getBlocksTipHeight).toHaveBeenCalled();
-    expect(mock.db.stake.getAfterBlock).toHaveBeenCalledWith(100 - expectedConfirmations);
+    expect(mock.db.stake.getMonitorBatch).toHaveBeenCalledWith(100 - expectedConfirmations);
     expect(mock.mempool.transactions.getTxStatus).toHaveBeenCalledTimes(2);
     expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], {
       block: 90,
@@ -70,14 +70,14 @@ describe('GET', () => {
     });
   });
 
-  it('restores invalidated stakes the network knows about, confirmed or not', async () => {
+  it('retires signatures of stakes the network knows about, confirmed or not', async () => {
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
     mock.mempool.transactions.getTxStatus
       .mockResolvedValueOnce({ confirmed: false })
       .mockResolvedValueOnce({ confirmed: true, block_height: 99 })
       .mockRejectedValueOnce(new Error('not found'))
       .mockResolvedValueOnce({ confirmed: false });
-    mock.db.stake.getAfterBlock.mockResolvedValue([
+    mock.db.stake.getMonitorBatch.mockResolvedValue([]).mockResolvedValueOnce([
       { id: 1, txid: 'tx1', invalidatedAt: new Date() },
       { id: 2, txid: 'tx2', invalidatedAt: new Date() },
       { id: 3, txid: 'tx3', invalidatedAt: new Date() },
@@ -87,12 +87,14 @@ describe('GET', () => {
     await GET(createRequest(config.secrets.cron));
 
     expect(mock.db.stake.update).toHaveBeenCalledTimes(1);
-    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { invalidatedAt: null });
+    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { psbt: null, invalidatedAt: null });
   });
 
   it('does not update if confirmations are not enough', async () => {
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(95);
-    mock.db.stake.getAfterBlock.mockResolvedValue([{ id: 1, txid: 'tx1' }]);
+    mock.db.stake.getMonitorBatch
+      .mockResolvedValue([])
+      .mockResolvedValueOnce([{ id: 1, txid: 'tx1' }]);
     mock.mempool.transactions.getTxStatus.mockResolvedValueOnce({
       confirmed: true,
       block_height: 94,
@@ -108,7 +110,7 @@ describe('GET', () => {
 
   it('filters out unconfirmed transactions', async () => {
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
-    mock.db.stake.getAfterBlock.mockResolvedValue([
+    mock.db.stake.getMonitorBatch.mockResolvedValue([]).mockResolvedValueOnce([
       { id: 1, txid: 'tx1' },
       { id: 2, txid: 'tx2' },
     ]);
