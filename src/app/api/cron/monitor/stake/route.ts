@@ -18,16 +18,24 @@ export async function GET(req: NextRequest) {
 
   const last_block = await mempool.blocks.getBlocksTipHeight();
 
-  // Page through every eligible row so old ones are never starved by newer ones
+  // Page through every eligible row so old ones are never starved by newer ones. Each page is
+  // fully processed before the next is fetched, so progress survives a timeout.
   const settledAfter = last_block - expectedConfirmations;
-  const entries: Awaited<ReturnType<typeof db.stake.getMonitorBatch>> = [];
   for (
     let batch = await db.stake.getMonitorBatch(settledAfter);
     batch.length > 0;
     batch = await db.stake.getMonitorBatch(settledAfter, batch[batch.length - 1].id)
   ) {
-    entries.push(...batch);
+    await processBatch(batch, last_block);
   }
+
+  return Response.json({ success: true });
+}
+
+async function processBatch(
+  entries: Awaited<ReturnType<typeof db.stake.getMonitorBatch>>,
+  last_block: number,
+) {
   const blockHeights = await mapWithConcurrencyLimit(entries, MONITOR_CONCURRENCY, (entry) =>
     mempool.transactions.getTxStatus({ txid: entry.txid! }),
   );
@@ -66,6 +74,4 @@ export async function GET(req: NextRequest) {
     // stored signature must never be broadcast again
     await db.stake.update(ids, { block, invalidatedAt: null, psbt: null });
   }
-
-  return Response.json({ success: true });
 }

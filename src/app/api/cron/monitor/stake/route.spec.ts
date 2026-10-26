@@ -90,6 +90,27 @@ describe('GET', () => {
     expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { psbt: null, invalidatedAt: null });
   });
 
+  it('finishes each page before fetching the next one', async () => {
+    mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
+    mock.mempool.transactions.getTxStatus.mockResolvedValue({ confirmed: true, block_height: 90 });
+    mock.db.stake.getMonitorBatch
+      .mockResolvedValueOnce([{ id: 9, txid: 'tx9' }])
+      .mockResolvedValueOnce([{ id: 3, txid: 'tx3' }])
+      .mockResolvedValue([]);
+
+    await GET(createRequest(config.secrets.cron));
+
+    expect(mock.db.stake.getMonitorBatch).toHaveBeenNthCalledWith(
+      2,
+      100 - expectedConfirmations,
+      9,
+    );
+    const [firstUpdate] = mock.db.stake.update.mock.invocationCallOrder;
+    const secondFetch = mock.db.stake.getMonitorBatch.mock.invocationCallOrder[1];
+    expect(firstUpdate).toBeLessThan(secondFetch);
+    expect(mock.db.stake.update).toHaveBeenCalledWith([3], expect.objectContaining({ block: 90 }));
+  });
+
   it('does not update if confirmations are not enough', async () => {
     mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(95);
     mock.db.stake.getMonitorBatch
