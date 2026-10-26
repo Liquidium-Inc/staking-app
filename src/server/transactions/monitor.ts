@@ -3,6 +3,7 @@ import axios from 'axios';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { mapWithConcurrencyLimit } from '@/lib/async';
+import { canisterClaimStaleBefore } from '@/lib/canister-signature';
 import { logger } from '@/lib/logger';
 import { mempool } from '@/providers/mempool';
 
@@ -73,13 +74,15 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
       );
     }
 
+    const unknown: typeof batch = [];
     const known = batch.flatMap((entry, i) => {
       const result = results[i];
       if (result.status === 'rejected') {
         // 404 just means the network doesn't know the tx (yet); only real failures are warnings
         const notFound =
           axios.isAxiosError(result.reason) && result.reason.response?.status === 404;
-        if (!notFound) {
+        if (notFound) unknown.push(entry);
+        else {
           logger.warn(`Failed to fetch ${kind} transaction status`, {
             txid: entry.txid,
             error: result.reason,
@@ -90,6 +93,15 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
       const status = result.value;
       return status === SKIPPED ? [] : [{ ...entry, ...status }];
     });
+
+    // A stale claim whose tx the network doesn't know was never (or no longer) broadcast: release
+    // it like confirm does. Invalidated rows are still polled for a week, so a lagging tx recovers.
+    const staleBefore = canisterClaimStaleBefore();
+    for (const entry of unknown) {
+      if (!entry.psbt && !entry.invalidatedAt && entry.claimedAt && entry.claimedAt < staleBefore) {
+        await table.invalidateClaim(entry.id, entry.claimedAt);
+      }
+    }
 
     // The network knows these txs: retire any stored signature so it can never be broadcast again,
     // and un-hide rows whose broadcast looked failed

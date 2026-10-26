@@ -536,6 +536,24 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
     expect(await db[kind].getByTxid('old-invalid')).toMatchObject({ block: null });
   });
 
+  it('releases a stale claim whose tx the network does not know, and restores it if it shows up', async () => {
+    await sql.insert(t).values({ ...base, txid: 'ghost', prepareTxid: 'g' });
+
+    // Claim is recent: left alone
+    at(0);
+    await sql.update(t).set({ claimedAt: new Date(T0) });
+    await monitor(cronRequest());
+    expect(await db[kind].getByTxid('ghost')).toMatchObject({ invalidatedAt: null });
+
+    at(CANISTER_CLAIM_STALE_MS + 1000);
+    await monitor(cronRequest());
+    expect(await db[kind].getByTxid('ghost')).toMatchObject({ invalidatedAt: expect.any(Date) });
+
+    net.txs.set('ghost', { confirmed: true, block_height: 990 });
+    await monitor(cronRequest());
+    expect(await db[kind].getByTxid('ghost')).toMatchObject({ invalidatedAt: null, block: 990 });
+  });
+
   it('gives up quickly when the tip lookup hangs', async () => {
     vi.useRealTimers();
     Object.assign(MONITOR_LIMITS, { lookupTimeoutMs: 30 });
