@@ -10,7 +10,7 @@ import { useAnalytics } from '@/components/privacy/analytics-consent-provider';
 import { useFeeSelection } from '@/components/ui/fee-selector';
 import { getApiErrorMessage, showErrorToast } from '@/lib/normalizeErrorMessage';
 import { GENERATING_TRANSACTION_TOAST } from '@/lib/toastMessages';
-import { TransactionErrorCode, TransactionStage } from '@/lib/transaction-errors';
+import { NO_RETRY_HINT_ERROR_CODES, TransactionStage } from '@/lib/transaction-errors';
 import { resolveSigningKeys } from '@/lib/wallet-keys';
 import type { ApiOutput } from '@/utils/api-output';
 
@@ -104,8 +104,8 @@ export const useUnstakeMutation = () => {
         showErrorToast(errorMessage, {
           id: toastId,
           description: '',
-          // Expired requests already tell the user to start again
-          appendRetryMessage: responseErrorCode !== TransactionErrorCode.SignatureExpired,
+          // These messages already tell the user what to do next
+          appendRetryMessage: !NO_RETRY_HINT_ERROR_CODES.includes(responseErrorCode ?? ''),
         });
         throw new Error(errorMessage);
       }

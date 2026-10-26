@@ -7,7 +7,11 @@ import { config } from '@/config/config';
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
-import { canisterSignatureCutoff } from '@/lib/canister-signature';
+import {
+  canisterClaimStaleBefore,
+  canisterSignatureCutoff,
+  isTxKnown,
+} from '@/lib/canister-signature';
 import { FeePolicyError, MAX_FEE_RATE_SATS_PER_VBYTE } from '@/lib/fee-rate';
 import { logger } from '@/lib/logger';
 import { getPsbtInputOutpointsForAddress } from '@/lib/psbt-locks';
@@ -21,6 +25,7 @@ import {
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { alreadySubmittedResponse } from '@/server/transactions/stored-signature';
 import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
@@ -109,11 +114,27 @@ export const POST = async (req: NextRequest) => {
     const existingStake = await db.stake.getByTxid(tempTxid);
     if (existingStake) {
       logger.debug('Stake transaction already exists', { tempTxid });
-      // Same tx as an earlier request whose signature expired or failed: store the fresh one
+      // Same tx as an earlier request. If that one was ever handed to the network, don't re-arm it.
+      if (
+        existingStake.block !== null ||
+        (existingStake.claimedAt !== null && (await isTxKnown(existingStake.txid)))
+      ) {
+        if (existingStake.invalidatedAt)
+          await db.stake.update([existingStake.id], { invalidatedAt: null });
+        await redis.utxo
+          .free(
+            getPsbtInputOutpointsForAddress(psbt, canister.address, canister.network),
+            sender.address,
+          )
+          .catch((unlockError) => logger.warn('Failed to unlock UTXOs', { error: unlockError }));
+        return alreadySubmittedResponse();
+      }
+      // Otherwise store the fresh signature if the old one is invalidated, expired or stale
       await db.stake.refreshSignedPsbt(
         existingStake.id,
         canisterResponse.signed_psbt,
         canisterSignatureCutoff(),
+        canisterClaimStaleBefore(),
       );
       return NextResponse.json({
         psbt: unsignedPsbt,

@@ -6,7 +6,10 @@ import React from 'react';
 import { toast } from 'sonner';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { SIGNATURE_EXPIRED_ERROR_MESSAGE } from '@/lib/transaction-errors';
+import {
+  ALREADY_SUBMITTED_ERROR_MESSAGE,
+  SIGNATURE_EXPIRED_ERROR_MESSAGE,
+} from '@/lib/transaction-errors';
 
 import { useStakeMutation } from './useStakeMutation';
 
@@ -163,6 +166,30 @@ describe('useStakeMutation', () => {
     expect(captureMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ error_code: 'signature_expired', stage: 'confirm_stake' }),
+    );
+  });
+
+  it('tells the user the tx was already submitted without the retry prefix', async () => {
+    axiosMock.post
+      .mockResolvedValueOnce({ data: { psbt: 'psbt-data', toSign: ['input1'] } })
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { error: ALREADY_SUBMITTED_ERROR_MESSAGE, error_code: 'already_submitted' },
+        },
+      });
+    const { result } = renderHook(() => useStakeMutation(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ amount: new Big(100), stakedAmount: new Big(50) }),
+    ).rejects.toThrow(ALREADY_SUBMITTED_ERROR_MESSAGE);
+    expect(toastMock.error).toHaveBeenCalledWith(
+      ALREADY_SUBMITTED_ERROR_MESSAGE,
+      expect.objectContaining({ id: 'toast-id' }),
+    );
+    expect(captureMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ error_code: 'already_submitted', stage: 'confirm_stake' }),
     );
   });
 

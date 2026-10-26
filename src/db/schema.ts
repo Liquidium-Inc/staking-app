@@ -47,6 +47,8 @@ export const stakes = pgTable('stakes', {
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   psbt: text(),
+  // Set when a confirm request takes the stored canister signature to broadcast it
+  claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
   //canisterOutpoints: text().array(),
@@ -66,6 +68,8 @@ export const unstakes = pgTable('unstakes', {
   claimTx: varchar({ length: 255 }),
   claimTxBlock: integer(),
   psbt: text(),
+  // Set when a confirm request takes the stored canister signature to broadcast it
+  claimedAt: timestamp(),
   // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
   invalidatedAt: timestamp(),
 });

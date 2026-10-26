@@ -4,6 +4,7 @@ export const TransactionErrorCode = {
   MixedRuneUtxo: 'mixed_rune_utxo',
   WalletIdentityMismatch: 'wallet_identity_mismatch',
   SignatureExpired: 'signature_expired',
+  AlreadySubmitted: 'already_submitted',
 } as const;
 
 export const TransactionStage = {
@@ -37,7 +38,19 @@ export const INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE =
 export const SIGNATURE_EXPIRED_ERROR_MESSAGE =
   'This transaction request has expired. Please start again to create a new transaction.';
 
-export const ALREADY_SUBMITTED_ERROR_MESSAGE = 'This transaction has already been submitted.';
+export const ALREADY_SUBMITTED_ERROR_MESSAGE =
+  'This transaction was already submitted. Check your pending transactions before trying again.';
+
+export const alreadySubmittedErrorResponseSchema = z.object({
+  error: z.literal(ALREADY_SUBMITTED_ERROR_MESSAGE),
+  error_code: z.literal(TransactionErrorCode.AlreadySubmitted),
+});
+
+/** Error codes whose message already tells the user what to do, so no generic retry hint. */
+export const NO_RETRY_HINT_ERROR_CODES: readonly string[] = [
+  TransactionErrorCode.SignatureExpired,
+  TransactionErrorCode.AlreadySubmitted,
+];
 
 export const signatureExpiredErrorResponseSchema = z.object({
   error: z.literal(SIGNATURE_EXPIRED_ERROR_MESSAGE),

@@ -6,18 +6,12 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { addressesMatch } from '@/lib/address';
-import { canisterSignatureCutoff } from '@/lib/canister-signature';
 import { logger } from '@/lib/logger';
 import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
-import {
-  ALREADY_SUBMITTED_ERROR_MESSAGE,
-  SIGNATURE_EXPIRED_ERROR_MESSAGE,
-  signatureExpiredErrorResponseSchema,
-  TransactionErrorCode,
-} from '@/lib/transaction-errors';
 import { canister } from '@/providers/canister';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { broadcastWithStoredSignature } from '@/server/transactions/stored-signature';
 import { BroadcastService } from '@/services/broadcast';
 
 export const maxDuration = 120;
@@ -54,66 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // Combine first so a malformed request can't consume the stored signature
-    const storedPsbt = stakeEntry.psbt;
-    const combinedPsbt = storedPsbt
-      ? bitcoin.Psbt.fromBase64(storedPsbt, { network: canister.network }).combine(userSignedPsbt)
-      : undefined;
-
-    // The row is inserted right after the canister signs, so its timestamp is the signing time.
-    // Claiming clears the stored PSBT atomically, so at most one request can broadcast it, and
-    // only before the deadline.
-    const signedAfter = canisterSignatureCutoff();
-    const claimed =
-      !!storedPsbt && (await db.stake.claimSignedPsbt(stakeEntry.id, storedPsbt, signedAfter));
-
-    if (!claimed || !combinedPsbt) {
-      const expired =
-        !!stakeEntry.invalidatedAt || (await db.stake.expireSignedPsbt(stakeEntry.id, signedAfter));
-      if (expired) {
-        logger.info('Rejected expired canister signature', { id: stakeEntry.id, tempTxid });
-        return NextResponse.json(
-          signatureExpiredErrorResponseSchema.parse({
-            error: SIGNATURE_EXPIRED_ERROR_MESSAGE,
-            error_code: TransactionErrorCode.SignatureExpired,
-          }),
-          { status: 410 },
-        );
-      }
-      // Another request already took the signature (in flight or broadcast)
-      return NextResponse.json({ error: ALREADY_SUBMITTED_ERROR_MESSAGE }, { status: 409 });
-    }
-
-    let result: Awaited<ReturnType<BroadcastService['broadcast']>>;
-    try {
-      // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
-      const broadcastService = new BroadcastService(combinedPsbt, 'stake', true);
-      result = await broadcastService.broadcast();
-    } catch (broadcastError) {
-      // Keep the row for history but mark it dead; the user starts over with a fresh signature
-      await db.stake
-        .update([stakeEntry.id], { invalidatedAt: new Date() })
-        .catch((invalidateError) =>
-          logger.error('Failed to invalidate stake after broadcast error', {
-            id: stakeEntry.id,
-            error: invalidateError,
-          }),
-        );
-      throw broadcastError;
-    }
-
-    // The tx is broadcast at this point; a failed bookkeeping update must not fail the request
-    try {
-      await db.stake.update([stakeEntry.id], { txid: result.txid });
-    } catch (updateError) {
-      logger.error('Failed to record broadcast stake txid', {
-        id: stakeEntry.id,
-        txid: result.txid,
-        error: updateError,
-      });
-    }
-
-    return NextResponse.json(result);
+    return await broadcastWithStoredSignature('stake', stakeEntry, userSignedPsbt, tempTxid);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

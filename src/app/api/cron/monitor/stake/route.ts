@@ -41,8 +41,9 @@ export async function GET(req: NextRequest) {
 
     const ids = entries.map((e) => e.id);
     logger.info(`Updating ${ids.length} stakes to block ${block}`);
-    // Confirmed on-chain, so the tx is live even if an earlier broadcast reported failure
-    await db.stake.update(ids, { block, invalidatedAt: null });
+    // Confirmed on-chain: the tx is live even if an earlier broadcast reported failure, and its
+    // stored signature must never be broadcast again
+    await db.stake.update(ids, { block, invalidatedAt: null, psbt: null });
   }
 
   return Response.json({ success: true });
