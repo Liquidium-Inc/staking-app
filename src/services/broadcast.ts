@@ -73,15 +73,19 @@ export class BroadcastService {
   static BroadcastError = class BroadcastError extends BroadcastService.Error {
     public readonly code?: BroadcastErrorCode;
     public readonly txid?: string;
+    /** The node answered and refused this tx itself, so it was not accepted. */
+    public readonly rejectedByNode: boolean;
 
     constructor(
       message = 'Transaction broadcast failed',
       code?: BroadcastErrorCode,
       txid?: string,
+      rejectedByNode = false,
     ) {
       super(message);
       this.code = code;
       this.txid = txid;
+      this.rejectedByNode = rejectedByNode;
     }
   };
 
@@ -242,8 +246,16 @@ export class BroadcastService {
         broadcastAccepted = true;
       } catch (error) {
         // Check for known mempool error patterns and map to error codes
-        const errorData = (error as { response?: { data?: string } })?.response?.data;
+        const response = (error as { response?: { status?: number; data?: string } })?.response;
+        const errorData = response?.data;
         if (errorData && typeof errorData === 'string') {
+          // A 4xx from the node refusing the tx itself. Not "already known/in mempool" or missing
+          // inputs: those can mean this very tx is already on the network.
+          const rejectedByNode =
+            !!response?.status &&
+            response.status >= 400 &&
+            response.status < 500 &&
+            !/already|known|missing/i.test(errorData);
           // Find matching error pattern
           const matchedPattern = Object.keys(MEMPOOL_ERROR_PATTERNS).find((pattern) =>
             errorData.includes(pattern),
@@ -253,7 +265,12 @@ export class BroadcastService {
             const errorCode =
               MEMPOOL_ERROR_PATTERNS[matchedPattern as keyof typeof MEMPOOL_ERROR_PATTERNS];
             const message = formatBroadcastErrorMessage(errorCode, errorData);
-            throw new BroadcastService.BroadcastError(message, errorCode, tx.getId());
+            throw new BroadcastService.BroadcastError(
+              message,
+              errorCode,
+              tx.getId(),
+              rejectedByNode,
+            );
           }
 
           // Generic mempool error with data
@@ -261,6 +278,7 @@ export class BroadcastService {
             `Transaction broadcast failed: ${errorData}`,
             BROADCAST_ERROR_CODES.BROADCAST_FAILED,
             tx.getId(),
+            rejectedByNode,
           );
         }
 

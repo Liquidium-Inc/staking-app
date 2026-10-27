@@ -174,11 +174,23 @@ async function broadcastClaimed(
         txid: networkTxid,
         lookupError,
       });
-      return false;
+      return null;
     });
     if (known) {
       logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid: networkTxid });
       return NextResponse.json({ txid: networkTxid });
+    }
+    // The node refused it outright and nobody else holds the signed tx: the send didn't happen
+    if (
+      known === false &&
+      broadcastError instanceof BroadcastService.BroadcastError &&
+      broadcastError.rejectedByNode
+    ) {
+      await table
+        .releaseRejectedSend(entry.id, claimedAt)
+        .catch((releaseError) =>
+          logger.error(`Failed to release rejected ${kind} send`, { id: entry.id, releaseError }),
+        );
     }
     throw broadcastError;
   }

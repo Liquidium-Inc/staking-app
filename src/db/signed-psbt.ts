@@ -149,6 +149,25 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
   }
 
   /**
+   * Releases a claim whose send the node explicitly refused (and the network doesn't know): the
+   * attempt is cleared, so the user can start again with the same tx.
+   */
+  async function releaseRejectedSend(id: number, claimedAt: Date) {
+    await sql
+      .update(t)
+      .set({ invalidatedAt: new Date(), broadcastAt: null })
+      .where(
+        and(
+          eq(t.id, id),
+          eq(t.claimedAt, claimedAt),
+          isNull(t.psbt),
+          isNull(t.invalidatedAt),
+          notConfirmed,
+        ),
+      );
+  }
+
+  /**
    * Releases claims among `ids` made before `claimStaleBefore` whose tx the network doesn't know.
    * One statement per monitor page; broadcast or newer claims are never touched.
    */
@@ -248,6 +267,7 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
     expireSignedPsbt,
     invalidateClaim,
     releaseStaleClaims,
+    releaseRejectedSend,
     giveUpAttempts,
     settle,
     refreshSignedPsbt,

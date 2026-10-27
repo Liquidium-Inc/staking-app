@@ -45,6 +45,8 @@ const net = vi.hoisted(() => ({
   loseResponse: false,
   // Lookups for these txids never answer
   slow: new Set<string>(),
+  // The node refuses the next broadcast with this message (HTTP 400)
+  reject: undefined as string | undefined,
   tipHangs: false,
   // txid -> mempool getTx payload, for withdrawals
   fullTxs: new Map<string, unknown>(),
@@ -85,6 +87,7 @@ vi.mock('@/providers/mempool', async () => {
         postTx: async ({ txhex }: { txhex: string }) => {
           await net.hold;
           const txid = lib.Transaction.fromHex(txhex).getId();
+          if (net.reject) throw axiosError(400, net.reject);
           if (net.txs.has(txid)) throw axiosError(400, 'txn-already-in-mempool');
           net.txs.set(txid, { confirmed: false });
           net.posted.push(txid);
@@ -242,6 +245,7 @@ beforeEach(async () => {
   net.slow.clear();
   net.fullTxs.clear();
   net.tipHangs = false;
+  net.reject = undefined;
   Object.assign(net, { lagging: false, lookupFails: false, loseResponse: false, hold: undefined });
 });
 
@@ -435,6 +439,24 @@ describe.each(
     expect(net.posted).toHaveLength(0);
     expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });
     expect((await prepareRequest()).status).toBe(200);
+  });
+
+  it('releases a send the node refused outright, so the same tx can be retried', async () => {
+    net.reject = 'min relay fee not met, 100 < 200';
+    expect((await confirmRequest()).status).toBe(400);
+    expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });
+
+    net.reject = undefined;
+    expect((await prepareRequest()).status).toBe(200);
+    expect((await confirmRequest()).status).toBe(200);
+    expect(net.posted).toHaveLength(1);
+  });
+
+  it('keeps the attempt when a refusal may mean the tx is already on the network', async () => {
+    net.reject = 'bad-txns-inputs-missingorspent';
+    expect((await confirmRequest()).status).toBe(400);
+    expect(await row()).toMatchObject({ broadcastAt: expect.any(Date), invalidatedAt: null });
+    expect((await prepareRequest()).status).toBe(409);
   });
 
   it('still releases a stale claim that never reached the send step', async () => {
