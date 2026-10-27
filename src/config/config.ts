@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { SUPPORT_TOKEN_SECRET_MIN_BYTES } from '@/server/support/constants';
+
 const initializeConfig = () => {
   const protocol = z.object({
     desiredUtxos: z.coerce.number().min(0).default(0),
@@ -62,7 +64,13 @@ const initializeConfig = () => {
 
   const support = z.object({
     apiKey: z.string().optional(),
-    tokenSecret: z.string().optional(),
+    tokenSecret: z
+      .string()
+      .refine(
+        (value) => Buffer.byteLength(value) >= SUPPORT_TOKEN_SECRET_MIN_BYTES,
+        `SUPPORT_TOKEN_SECRET must be ${SUPPORT_TOKEN_SECRET_MIN_BYTES}+ bytes`,
+      )
+      .optional(),
   });
 
   const configSchema = z.object({

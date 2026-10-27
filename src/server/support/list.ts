@@ -40,7 +40,7 @@ const oneOrMany = <Value extends z.ZodType>(value: Value) =>
 const commonFilter = {
   from: dateBound.optional(),
   to: dateBound.optional(),
-  q: z.string().trim().min(1).max(MAX_QUERY_LENGTH).optional(),
+  q: z.string().trim().toLowerCase().min(1).max(MAX_QUERY_LENGTH).optional(),
 };
 
 const FILTER_SCHEMAS = {

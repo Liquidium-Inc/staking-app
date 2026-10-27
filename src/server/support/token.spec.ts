@@ -47,9 +47,14 @@ describe('support token', () => {
 
   it('rejects a tampered payload', () => {
     const { token } = issueSupportToken(ADDRESS, SECRET, NOW_MS);
-    const [header, , signature] = token.split('.');
+    const [header, originalPayload, signature] = token.split('.');
+    const claims = JSON.parse(Buffer.from(originalPayload, 'base64url').toString());
     const payload = Buffer.from(
-      JSON.stringify({ sub: 'attacker', addrs: [{ address: 'x', kind: 'k', chain: 'c' }] }),
+      JSON.stringify({
+        ...claims,
+        sub: 'attacker',
+        addrs: [{ address: 'attacker', kind: 'ordinals', chain: 'bitcoin' }],
+      }),
     ).toString('base64url');
 
     expect(verifySupportToken(`${header}.${payload}.${signature}`, SECRET, NOW_MS)).toBeNull();

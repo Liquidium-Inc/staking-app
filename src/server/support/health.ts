@@ -2,6 +2,8 @@ import { db } from '@/db';
 import { canister } from '@/providers/canister';
 import { mempool } from '@/providers/mempool';
 
+import { createBudget, withinBudget } from './budget';
+
 // The exchange-rate pusher runs every 10 minutes; three missed runs is unhealthy.
 export const EXCHANGE_RATE_PUSH_MAX_AGE_MS = 30 * 60 * 1000;
 const MS_PER_MINUTE = 60 * 1000;
@@ -17,7 +19,8 @@ async function check(run: () => Promise<HealthCheck>): Promise<HealthCheck> {
 }
 
 export async function getSupportHealth(nowMs = Date.now()) {
-  const latestSnapshot = db.poolBalance.getLatest();
+  const budget = createBudget();
+  const latestSnapshot = withinBudget(budget, () => db.poolBalance.getLatest());
   const [database, exchangeRatePush, mempoolCheck, canisterCheck] = await Promise.all([
     check(async () => {
       await latestSnapshot;
@@ -33,11 +36,11 @@ export async function getSupportHealth(nowMs = Date.now()) {
       };
     }),
     check(async () => {
-      const tip = await mempool.blocks.getBlocksTipHeight();
+      const tip = await withinBudget(budget, () => mempool.blocks.getBlocksTipHeight());
       return { ok: true, detail: `tip ${tip}` };
     }),
     check(async () => {
-      await canister.getExchangeRate();
+      await withinBudget(budget, () => canister.getExchangeRate());
       return { ok: true };
     }),
   ]);

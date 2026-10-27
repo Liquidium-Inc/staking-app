@@ -12,7 +12,7 @@ import { unstakeItem } from './summary';
 export const SUPPORT_ITEM_KINDS = ['stake', 'unstake'] as const;
 export const itemRequestSchema = z.object({
   kind: z.enum(SUPPORT_ITEM_KINDS),
-  id: z.string().trim().min(1).max(128),
+  id: z.string().trim().toLowerCase().min(1).max(128),
 });
 export type ItemRequest = z.infer<typeof itemRequestSchema>;
 
