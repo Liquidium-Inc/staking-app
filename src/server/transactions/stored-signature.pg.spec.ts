@@ -29,6 +29,7 @@ import { stakes, unstakes } from '@/db/schema';
 import { CANISTER_CLAIM_STALE_MS, CANISTER_SIGNATURE_MAX_AGE_MS } from '@/lib/canister-signature';
 import { RunePSBT, RunePSBTInput } from '@/lib/psbt';
 import { canister } from '@/providers/canister';
+import { redis } from '@/providers/redis';
 
 import { MONITOR_LIMITS } from './monitor';
 import { broadcastWithStoredSignature } from './stored-signature';
@@ -113,7 +114,9 @@ vi.mock('@/services/psbt', async (importOriginal) => {
 });
 
 vi.mock('@/providers/redis', () => ({
-  redis: { utxo: { extend: async () => true, free: async () => true, lock: async () => true } },
+  redis: {
+    utxo: { extend: async () => true, free: vi.fn(async () => true), lock: async () => true },
+  },
 }));
 
 vi.mock('@/server/auth/session', () => ({
@@ -345,8 +348,11 @@ describe.each(
 
   it('treats a lost broadcast response as success when the tx reached the network', async () => {
     net.loseResponse = true;
+    vi.mocked(redis.utxo.free).mockClear();
 
     const response = await confirmRequest();
+    // The inputs may be spent: their locks lapse instead of being freed
+    expect(redis.utxo.free).not.toHaveBeenCalled();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ txid: net.posted[0] });
@@ -449,8 +455,10 @@ describe.each(
 
   it('sends nothing and releases the claim when the send attempt cannot be recorded', async () => {
     vi.spyOn(table, 'recordBroadcastTxid').mockRejectedValueOnce(new Error('db down'));
+    vi.mocked(redis.utxo.free).mockClear();
 
     expect((await confirmRequest()).status).toBe(500);
+    expect(redis.utxo.free).toHaveBeenCalled();
 
     expect(net.posted).toHaveLength(0);
     expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });

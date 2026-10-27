@@ -183,6 +183,8 @@ export class BroadcastService {
   async broadcast() {
     let [sender, utxos] = ['' as string, [] as string[]] as const;
     let broadcastAccepted = false;
+    // Once sending starts, the inputs may be spent on the network: let the lock TTL lapse instead
+    let handedToNetwork = false;
     try {
       const { psbt, runestone } = this;
       this.assertRunestone(runestone);
@@ -238,6 +240,7 @@ export class BroadcastService {
 
       logger.info(`broadcasting tx with fee ${feeRate} sat/vbyte`);
       try {
+        handedToNetwork = true;
         await mempool.transactions.postTx({ txhex: tx.toHex() });
         broadcastAccepted = true;
       } catch (error) {
@@ -288,7 +291,7 @@ export class BroadcastService {
         txid: tx.getId(),
       };
     } catch (error) {
-      if (!broadcastAccepted) await redis.utxo.free(utxos, sender);
+      if (!broadcastAccepted && !handedToNetwork) await redis.utxo.free(utxos, sender);
       throw error;
     }
   }
