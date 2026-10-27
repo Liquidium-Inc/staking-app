@@ -142,7 +142,8 @@ async function broadcastClaimed(
   claimedAt: Date,
 ) {
   const table = db[kind];
-  // The final txid (differs from the unsigned one for P2SH inputs), persisted before broadcasting
+  // The final txid (differs from the unsigned one for P2SH inputs). It is persisted together with
+  // the send attempt right before broadcasting, so from then on the claim is never released.
   let networkTxid: string | undefined;
   const recordNetworkTxid = async (txid: string) => {
     if (!(await table.recordBroadcastTxid(entry.id, claimedAt, txid))) {
@@ -151,46 +152,34 @@ async function broadcastClaimed(
     networkTxid = txid;
   };
 
-  let result: Awaited<ReturnType<BroadcastService['broadcast']>>;
   try {
     // Skip the database insert since the entry already exists
-    result = await new BroadcastService(combinedPsbt, kind, true, recordNetworkTxid).broadcast();
+    return NextResponse.json(
+      await new BroadcastService(combinedPsbt, kind, true, recordNetworkTxid).broadcast(),
+    );
   } catch (broadcastError) {
-    // Not handed to the network yet: the claim is dead. Otherwise a failed or lost response
-    // doesn't mean the tx didn't reach the network, so check first.
-    const known = networkTxid
-      ? await isTxKnown(networkTxid).catch((lookupError) => {
-          logger.error(`Could not check ${kind} tx after broadcast error`, {
-            txid: networkTxid,
-            lookupError,
-          });
-          return undefined;
-        })
-      : false;
-    if (known) {
-      logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid: networkTxid });
-      await markBroadcast(kind, entry.id);
-      return NextResponse.json({ txid: networkTxid });
-    }
-    // Unknown lookup result: leave the claim; it is reconciled once stale
-    if (known === false) {
+    if (!networkTxid) {
+      // Never handed to the network: the claim is dead and the user can start again
       await table
         .invalidateClaim(entry.id, claimedAt)
         .catch((invalidateError) =>
           logger.error(`Failed to invalidate ${kind} claim`, { id: entry.id, invalidateError }),
         );
+      throw broadcastError;
+    }
+    // Sent: a failed or lost response doesn't mean the tx didn't reach the network. The claim
+    // stays (the monitor settles or gives it up); answer success if the network already has it.
+    const known = await isTxKnown(networkTxid).catch((lookupError) => {
+      logger.error(`Could not check ${kind} tx after broadcast error`, {
+        txid: networkTxid,
+        lookupError,
+      });
+      return false;
+    });
+    if (known) {
+      logger.warn(`${kind} broadcast reported an error but the tx is known`, { txid: networkTxid });
+      return NextResponse.json({ txid: networkTxid });
     }
     throw broadcastError;
   }
-
-  await markBroadcast(kind, entry.id);
-  return NextResponse.json(result);
-}
-
-// The network has the tx: from now on the claim is never released or re-armed. A failed write
-// only loses that protection; the monitor sets it again once it sees the tx.
-async function markBroadcast(kind: Kind, id: number) {
-  await db[kind]
-    .markBroadcast(id)
-    .catch((markError) => logger.error(`Failed to record ${kind} broadcast`, { id, markError }));
 }

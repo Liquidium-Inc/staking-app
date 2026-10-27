@@ -39,7 +39,7 @@ type Summary = {
  * identity, it stays canonical and takes over a broadcast txid. Every other row in the group is
  * superseded: PSBT retired, invalidated, and left out of the monitor and pending lists, so a
  * duplicate can never settle a second time; a withdrawal claim it carries moves to the canonical
- * row. Rows are kept for history.
+ * row (groups with conflicting claimTx values are skipped). Rows are kept for history.
  *
  * Rows with an unreadable PSBT, and groups whose rows carry more than one network txid, are skipped
  * untouched and reported for manual repair. Superseded rows get supersededAt, so txid lookups
@@ -87,7 +87,8 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
     if (options.since) {
       const rows = await db
         .update(t)
-        .set({ psbt: null, claimedAt: staleClaim(options.since) })
+        // The old build may have sent it: treat as attempted, never released on a 404 alone
+        .set({ psbt: null, claimedAt: staleClaim(options.since), broadcastAt: options.since })
         .where(
           and(
             isNull(t.block),
@@ -141,6 +142,26 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
         result.skipped.push(...rows.map((row) => row.id));
         continue;
       }
+      // Withdrawal state of the group: at most one claimTx may exist across its rows
+      const withdrawals =
+        name === 'unstakes'
+          ? await db
+              .select({ claimTx: unstakes.claimTx, claimTxBlock: unstakes.claimTxBlock })
+              .from(unstakes)
+              .where(
+                and(
+                  inArray(unstakes.id, [
+                    ...rows.map((row) => row.id),
+                    ...(holder ? [holder.id] : []),
+                  ]),
+                  isNotNull(unstakes.claimTx),
+                ),
+              )
+          : [];
+      if (new Set(withdrawals.map((w) => w.claimTx)).size > 1) {
+        result.skipped.push(...rows.map((row) => row.id));
+        continue;
+      }
       const broadcast = rows.find((row) => row.txid !== identity);
 
       let superseded = rows;
@@ -168,37 +189,25 @@ export async function backfillSignedPsbtState<TSchema extends Record<string, unk
             prepareTxid: identity,
             claimedAt: staleClaim(canonical.timestamp),
             psbt: null,
-            // A txid that moved off the identity proves the old code broadcast it
-            broadcastAt: canonical === broadcast ? canonical.timestamp : null,
+            // Old code may have sent it (for P2WPKH payers nothing proves either way): treat it as
+            // attempted, so a false 404 can never release or re-arm it
+            broadcastAt: canonical.timestamp,
           })
           .where(eq(t.id, canonical.id));
         result.updated++;
         superseded = rows.filter((row) => row !== canonical);
       }
 
-      // A duplicate may carry the withdrawal; it belongs on the canonical row. Moved before
-      // superseding (no transactions here), so a failed run retries it.
-      if (name === 'unstakes' && superseded.length > 0) {
-        const [withdrawal] = await db
-          .select({ claimTx: unstakes.claimTx, claimTxBlock: unstakes.claimTxBlock })
-          .from(unstakes)
-          .where(
-            and(
-              inArray(
-                unstakes.id,
-                superseded.map((row) => row.id),
-              ),
-              isNotNull(unstakes.claimTx),
-            ),
-          )
-          .orderBy(desc(unstakes.id))
-          .limit(1);
-        if (withdrawal) {
-          await db
-            .update(unstakes)
-            .set(withdrawal)
-            .where(and(eq(unstakes.id, canonicalId), isNull(unstakes.claimTx)));
-        }
+      // The group's withdrawal belongs on the canonical row. Done before superseding (no
+      // transactions here), so a failed run retries it.
+      if (withdrawals.length > 0) {
+        await db
+          .update(unstakes)
+          .set({
+            claimTx: withdrawals[0].claimTx,
+            claimTxBlock: withdrawals.find((w) => w.claimTxBlock !== null)?.claimTxBlock ?? null,
+          })
+          .where(eq(unstakes.id, canonicalId));
       }
 
       for (const row of superseded) {

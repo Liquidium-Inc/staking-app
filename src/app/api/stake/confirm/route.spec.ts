@@ -17,7 +17,6 @@ const mock = vi.hoisted(() => {
       claimSignedPsbt: vi.fn(),
       expireSignedPsbt: vi.fn(),
       invalidateClaim: vi.fn(),
-      markBroadcast: vi.fn(),
     },
   };
 });
@@ -65,7 +64,6 @@ describe('POST', () => {
     Object.values(mock.stake).forEach((fn) => fn.mockReset());
     mock.stake.claimSignedPsbt.mockResolvedValue(new Date());
     mock.stake.invalidateClaim.mockResolvedValue(true);
-    mock.stake.markBroadcast.mockResolvedValue(undefined);
     mock.getTxStatus
       .mockReset()
       .mockRejectedValue(

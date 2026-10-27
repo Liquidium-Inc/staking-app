@@ -365,46 +365,87 @@ describe.each(
     expect(net.posted).toHaveLength(1);
   });
 
-  it('keeps one record when a lagging network makes a broadcast look failed', async () => {
-    // Accepted, but the response is lost and lookups lag: the claim is invalidated
+  it('keeps a send whose response was lost on a lagging network: one record, one broadcast', async () => {
+    // Sent and accepted, but the response is lost and lookups lag: the attempt is kept
     net.loseResponse = true;
     net.lagging = true;
     expect((await confirmRequest()).status).toBe(400);
     const networkTxid = net.posted[0];
-    expect(await row()).toMatchObject({ txid: networkTxid, invalidatedAt: expect.any(Date) });
+    expect(await row()).toMatchObject({
+      txid: networkTxid,
+      broadcastAt: expect.any(Date),
+      invalidatedAt: null,
+    });
 
-    // Rebuilding the same tx reuses the same row; re-broadcasting is refused by the network
+    // Never released or re-armed on 404s alone, even once the claim is stale
     net.loseResponse = false;
-    expect((await prepareRequest()).status).toBe(200);
-    expect(await rowCount()).toBe(1);
-    expect((await confirmRequest()).status).toBe(400);
-    expect(net.posted).toHaveLength(1);
-
-    // The tx confirms (shallowly at first): the row is restored and its signature retired
-    net.lagging = false;
-    net.txs.set(networkTxid, { confirmed: true, block_height: 1000 });
+    at(CANISTER_CLAIM_STALE_MS + 1000);
     await monitor(cronRequest());
-    expect(await row()).toMatchObject({ block: null, psbt: null, invalidatedAt: null });
+    expect(await row()).toMatchObject({ invalidatedAt: null });
+    expect((await prepareRequest()).status).toBe(409);
+    expect((await confirmRequest()).status).toBe(409);
+    expect(await rowCount()).toBe(1);
+
+    // The tx shows up and confirms
+    net.lagging = false;
     confirmOnChain(networkTxid);
     await monitor(cronRequest());
     expect(await row()).toMatchObject({ block: 990, txid: networkTxid });
-    expect(await rowCount()).toBe(1);
+    expect(net.posted).toHaveLength(1);
   });
 
-  it('retires a re-armed signature as soon as the tx is seen on the network', async () => {
+  it('retires a stored signature as soon as the tx is seen on the network', async () => {
+    // e.g. a row re-armed while lookups lagged: the network has the tx, the row still a PSBT
+    const { id } = await row();
+    await table.update([id], { claimedAt: new Date(T0) });
+    net.txs.set(tx.prepareTxid, { confirmed: false });
+
+    await monitor(cronRequest());
+
+    expect(await row()).toMatchObject({ psbt: null, invalidatedAt: null, block: null });
+    expect((await confirmRequest()).status).toBe(409);
+    expect(net.posted).toHaveLength(0);
+  });
+
+  it('gives up on an attempted send the network never shows within 30 days', async () => {
     net.loseResponse = true;
     net.lagging = true;
     expect((await confirmRequest()).status).toBe(400);
-    net.loseResponse = false;
-    expect((await prepareRequest()).status).toBe(200);
-    expect((await row()).psbt).not.toBeNull();
 
-    // Seen in the mempool (not settled): the stored signature is dropped right away
-    net.lagging = false;
+    at(29 * 24 * 60 * 60 * 1000);
     await monitor(cronRequest());
-    expect(await row()).toMatchObject({ psbt: null, invalidatedAt: null, block: null });
-    expect((await confirmRequest()).status).toBe(409);
+    expect(await row()).toMatchObject({ invalidatedAt: null });
+
+    at(31 * 24 * 60 * 60 * 1000);
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({
+      invalidatedAt: expect.any(Date),
+      broadcastAt: expect.any(Date),
+    });
+    // Still never re-armed: the user starts a different tx
+    expect((await prepareRequest()).status).toBe(409);
     expect(net.posted).toHaveLength(1);
+  });
+
+  it('sends nothing and releases the claim when the send attempt cannot be recorded', async () => {
+    vi.spyOn(table, 'recordBroadcastTxid').mockRejectedValueOnce(new Error('db down'));
+
+    expect((await confirmRequest()).status).toBe(500);
+
+    expect(net.posted).toHaveLength(0);
+    expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });
+    expect((await prepareRequest()).status).toBe(200);
+  });
+
+  it('still releases a stale claim that never reached the send step', async () => {
+    // Crash after claiming, before the send attempt was recorded
+    await table.claimSignedPsbt((await row()).id, tx.unsigned, new Date(0));
+    at(CANISTER_CLAIM_STALE_MS + 1000);
+
+    await monitor(cronRequest());
+
+    expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });
+    expect((await prepareRequest()).status).toBe(200);
   });
 
   it('never releases or re-arms an accepted broadcast on a later 404, even past a week', async () => {
@@ -585,6 +626,20 @@ describe.each(kinds)('$kind monitor', ({ kind, monitor }) => {
     }
   });
 
+  it('settles rows at their own blocks in one pass', async () => {
+    await sql.insert(t).values([
+      { ...base, txid: 'at-980', prepareTxid: 'a' },
+      { ...base, txid: 'at-985', prepareTxid: 'b' },
+    ]);
+    net.txs.set('at-980', { confirmed: true, block_height: 980 });
+    net.txs.set('at-985', { confirmed: true, block_height: 985 });
+
+    await monitor(cronRequest());
+
+    expect(await db[kind].getByTxid('at-980')).toMatchObject({ block: 980 });
+    expect(await db[kind].getByTxid('at-985')).toMatchObject({ block: 985 });
+  });
+
   it('skips rows that were never handed to the network', async () => {
     await sql.insert(t).values({ ...base, txid: 'unclaimed', prepareTxid: 'u', claimedAt: null });
     net.txs.set('unclaimed', { confirmed: true, block_height: 990 });
@@ -635,15 +690,26 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     expect(net.posted).toHaveLength(0);
   });
 
-  it('re-arms a legacy row whose tx never reached the network', async () => {
-    const tx = await buildTx(kind, 'p2sh');
+  it('keeps a legacy P2WPKH row uncertain: never released on a 404, never re-armed', async () => {
+    // Nothing proves whether old code sent it (txid equals the unsigned txid)
+    const tx = await buildTx(kind, 'p2wpkh');
     await sql.insert(t).values({ ...legacy, txid: tx.prepareTxid, psbt: tx.unsigned });
     await backfillSignedPsbtState(sql);
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({
+      broadcastAt: expect.any(Date),
+      psbt: null,
+    });
 
-    expect((await prepareRequest(tx.unsigned)).status).toBe(200);
-    expect((await confirm(request({ psbt: tx.signed }))).status).toBe(200);
-    expect(await sql.select().from(t)).toHaveLength(1);
-    expect(net.posted).toHaveLength(1);
+    await monitor(cronRequest());
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({ invalidatedAt: null });
+    expect((await prepareRequest(tx.unsigned)).status).toBe(409);
+    expect((await confirm(request({ psbt: tx.signed }))).status).toBe(409);
+    expect(net.posted).toHaveLength(0);
+
+    // If it was sent after all, it settles
+    net.txs.set(tx.prepareTxid, { confirmed: true, block_height: 990 });
+    await monitor(cronRequest());
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({ block: 990 });
   });
 
   it('keeps one canonical row per identity, never settling a duplicate, and is idempotent', async () => {
@@ -741,6 +807,30 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
     expect((await db.unstake.getWithdrawAfterBlock(0)).map((w) => w.id)).toEqual([canonical!.id]);
   });
 
+  it('merges a missing claimTxBlock and skips groups with different claimTx values', async () => {
+    if (kind !== 'unstake') return;
+    const merged = await buildTx(kind, 'p2wpkh');
+    const conflicted = await buildTx(kind, 'p2sh');
+    await sql.insert(unstakes).values([
+      { ...legacy, txid: merged.prepareTxid, psbt: merged.unsigned, claimTx: 'c', claimTxBlock: 7 },
+      { ...legacy, txid: merged.prepareTxid, psbt: merged.unsigned, claimTx: 'c' },
+      { ...legacy, txid: conflicted.prepareTxid, psbt: conflicted.unsigned, claimTx: 'x' },
+      { ...legacy, txid: conflicted.prepareTxid, psbt: conflicted.unsigned, claimTx: 'y' },
+    ]);
+
+    const summary = await backfillSignedPsbtState(sql);
+
+    expect(await db.unstake.getByPrepareTxid(merged.prepareTxid)).toMatchObject({
+      claimTx: 'c',
+      claimTxBlock: 7,
+    });
+    const conflictRows = (await sql.select().from(unstakes)).filter(
+      (r) => r.txid === conflicted.prepareTxid,
+    );
+    expect(summary.unstakes.skipped.sort()).toEqual(conflictRows.map((r) => r.id).sort());
+    expect(conflictRows.every((r) => r.psbt && !r.prepareTxid && !r.supersededAt)).toBe(true);
+  });
+
   it('skips a group whose rows carry different network txids, for manual repair', async () => {
     const tx = await buildTx(kind, 'p2sh');
     await sql.insert(t).values([
@@ -812,7 +902,13 @@ describe.each(kinds)('$kind legacy rows (backfill)', ({ kind, prepare, confirm, 
       prepareTxid: tx.prepareTxid,
       psbt: null,
       claimedAt: expect.any(Date),
+      broadcastAt: rollbackStart,
     });
+    // A false 404 doesn't release it
+    net.lagging = true;
+    await monitor(cronRequest());
+    expect(await db[kind].getByPrepareTxid(tx.prepareTxid)).toMatchObject({ invalidatedAt: null });
+    net.lagging = false;
     expect((await confirm(request({ psbt: tx.signed }))).status).toBe(409);
     expect((await prepareRequest(tx.unsigned)).status).toBe(409);
     net.txs.set('network-txid', { confirmed: true, block_height: 990 });

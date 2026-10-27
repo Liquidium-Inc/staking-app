@@ -19,6 +19,13 @@ import { stakes, unstakes } from './schema';
 export const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * How long an attempted send that the network never shows is polled. Bitcoin Core drops unconfirmed
+ * txs after 14 days and only this server ever held the fully signed tx, so after 30 days (14 days
+ * plus margin for API outages) it can no longer confirm.
+ */
+export const ATTEMPTED_SEND_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * Lifecycle of the canister-signed PSBT stored on a stake/unstake row. Every transition is a
  * single conditional UPDATE, so concurrent requests can't both win, and none of them touch a row
  * whose tx is confirmed (`block` set).
@@ -58,8 +65,9 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
           notConfirmed,
           isNotNull(t.claimedAt),
           isNull(t.supersededAt),
-          // Valid and broadcast claims are checked until they settle; invalidated ones for a while
-          or(isNull(t.invalidatedAt), isNotNull(t.broadcastAt), gte(t.timestamp, pendingCutoff)),
+          // Valid claims (incl. attempted sends) are checked until they settle or are given up;
+          // invalidated ones only for a while
+          or(isNull(t.invalidatedAt), gte(t.timestamp, pendingCutoff)),
           exclude.length > 0 ? notInArray(t.id, exclude) : undefined,
         ),
       )
@@ -86,11 +94,15 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
     return rows.length > 0 ? claimedAt : null;
   }
 
-  /** Records the finalized tx's txid for the given claim. Must happen before broadcasting. */
+  /**
+   * Records the finalized tx's txid and the send attempt for the given claim. Must happen before
+   * broadcasting, so a crash or lost response afterwards can never release the claim.
+   */
   async function recordBroadcastTxid(id: number, claimedAt: Date, txid: string) {
     const rows = await sql
       .update(t)
-      .set({ txid })
+      // The send is about to happen: from here on the tx may be on the network
+      .set({ txid, broadcastAt: new Date() })
       .where(and(eq(t.id, id), eq(t.claimedAt, claimedAt), notConfirmed))
       .returning({ id: t.id });
     return rows.length > 0;
@@ -156,13 +168,45 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
         ),
       );
   }
+  /**
+   * Stops polling attempted sends among `ids` that the network still doesn't know after
+   * `attemptedBefore`. They stay un-re-armable (broadcastAt is kept).
+   */
+  async function giveUpAttempts(ids: number[], attemptedBefore: Date) {
+    if (ids.length === 0) return [];
+    return await sql
+      .update(t)
+      .set({ invalidatedAt: new Date() })
+      .where(
+        and(
+          inArray(t.id, ids),
+          lt(t.broadcastAt, attemptedBefore),
+          isNull(t.invalidatedAt),
+          notConfirmed,
+        ),
+      )
+      .returning({ id: t.id, txid: t.txid });
+  }
 
-  /** Records that the network accepted (or already knew) the tx of this claim. */
-  async function markBroadcast(id: number) {
+  /** Settles rows at their confirmed blocks in one statement; the stored PSBT is retired. */
+  async function settle(blocks: { id: number; block: number }[]) {
+    if (blocks.length === 0) return;
+    const cases = sqlTag.join(
+      blocks.map(({ id, block }) => sqlTag`when ${id} then ${block}::integer`),
+      sqlTag` `,
+    );
     await sql
       .update(t)
-      .set({ broadcastAt: new Date() })
-      .where(and(eq(t.id, id), notBroadcast));
+      .set({ block: sqlTag`case ${t.id} ${cases} end`, invalidatedAt: null, psbt: null })
+      .where(
+        and(
+          inArray(
+            t.id,
+            blocks.map(({ id }) => id),
+          ),
+          notConfirmed,
+        ),
+      );
   }
 
   /**
@@ -204,7 +248,8 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
     expireSignedPsbt,
     invalidateClaim,
     releaseStaleClaims,
-    markBroadcast,
+    giveUpAttempts,
+    settle,
     refreshSignedPsbt,
   };
 }
