@@ -10,9 +10,12 @@ import { POST } from './route';
 const mock = vi.hoisted(() => {
   return {
     build: vi.fn(),
+    getTxStatus: vi.fn(),
     unstake: {
       insert: vi.fn(),
-      getByTxid: vi.fn(),
+      getByPrepareTxid: vi.fn(),
+      refreshSignedPsbt: vi.fn(),
+      update: vi.fn(),
     },
     canister: {
       unstake: vi.fn(),
@@ -49,6 +52,10 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/providers/canister', () => ({
   canister: mock.canister,
+}));
+
+vi.mock('@/providers/mempool', () => ({
+  mempool: { transactions: { getTxStatus: mock.getTxStatus } },
 }));
 
 vi.mock('@/providers/redis', () => ({
@@ -123,7 +130,7 @@ describe('POST', () => {
     mock.canister.unstake.mockResolvedValue(canisterResult);
 
     // Mock no existing transaction
-    mock.unstake.getByTxid.mockResolvedValue(null);
+    mock.unstake.getByPrepareTxid.mockResolvedValue(null);
 
     const response = await POST(req);
 
@@ -142,6 +149,8 @@ describe('POST', () => {
       feeRate: 1,
     });
     expect(mock.unstake.insert).toHaveBeenCalledWith({
+      timestamp: expect.any(Date),
+      prepareTxid: expect.any(String),
       address: 'addr',
       amount: '1000',
       sAmount: '2000',
@@ -149,6 +158,79 @@ describe('POST', () => {
       psbt: validPsbt,
       block: null,
     });
+  });
+
+  it('stores the fresh canister signature on an existing row for the same tx', async () => {
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: { public: 'pub', address: 'addr' },
+        amount: '1000',
+        sAmount: '2000',
+        feeRate: 1,
+      }),
+    } as unknown as NextRequest;
+    mock.build.mockResolvedValue({ psbt: 'unsigned-psbt-data', toSign: [], feeRate: 1 });
+    const validPsbt = new bitcoin.Psbt().toBase64();
+    mock.canister.unstake.mockResolvedValue({ signed_psbt: validPsbt });
+    mock.canister.getUnstakeUtxos.mockResolvedValue([]);
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
+      id: 7,
+      txid: 'existing-txid',
+      prepareTxid: 'prep-txid',
+      block: null,
+      claimedAt: new Date(),
+      broadcastAt: null,
+      invalidatedAt: new Date(),
+    });
+    mock.getTxStatus.mockRejectedValue(
+      Object.assign(new Error('not found'), { isAxiosError: true, response: { status: 404 } }),
+    );
+    mock.unstake.refreshSignedPsbt.mockResolvedValue(true);
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(200);
+    expect(mock.getTxStatus).toHaveBeenCalledWith({ txid: 'existing-txid' });
+    expect(mock.unstake.insert).not.toHaveBeenCalled();
+    expect(mock.unstake.refreshSignedPsbt).toHaveBeenCalledWith(
+      7,
+      validPsbt,
+      expect.any(Date),
+      expect.any(Date),
+    );
+  });
+
+  it('refuses to re-arm a tx that already reached the network', async () => {
+    const req = {
+      json: vi.fn().mockResolvedValue({
+        sender: { public: 'pub', address: 'addr' },
+        amount: '1000',
+        sAmount: '2000',
+        feeRate: 1,
+      }),
+    } as unknown as NextRequest;
+    mock.build.mockResolvedValue({ psbt: 'unsigned-psbt-data', toSign: [], feeRate: 1 });
+    mock.canister.unstake.mockResolvedValue({ signed_psbt: new bitcoin.Psbt().toBase64() });
+    mock.canister.getUnstakeUtxos.mockResolvedValue([]);
+    mock.unstake.getByPrepareTxid.mockResolvedValue({
+      id: 7,
+      txid: 'existing-txid',
+      prepareTxid: 'prep-txid',
+      block: null,
+      claimedAt: new Date(),
+      broadcastAt: null,
+      invalidatedAt: new Date(),
+    });
+    mock.getTxStatus.mockResolvedValue({ confirmed: false });
+    mock.redis.utxo.free.mockResolvedValue(undefined);
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error_code: 'already_submitted' });
+    expect(mock.unstake.refreshSignedPsbt).not.toHaveBeenCalled();
+    expect(mock.unstake.update).toHaveBeenCalledWith([7], { invalidatedAt: null });
+    expect(mock.redis.utxo.free).toHaveBeenCalled();
   });
 
   it.each(['address', 'retention'] as const)(

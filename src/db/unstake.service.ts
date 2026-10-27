@@ -5,6 +5,7 @@ import { pick } from '@/lib/pick';
 import { sql } from './client';
 import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { unstakes } from './schema';
+import { signedPsbtQueries } from './signed-psbt';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
@@ -17,7 +18,14 @@ async function getPendingsOf(address: string) {
   return await sql
     .select(pick(unstakes, 'txid', 'amount', 'sAmount', 'timestamp', 'claimTx', 'claimTxBlock'))
     .from(unstakes)
-    .where(and(eq(unstakes.address, address), isNull(unstakes.claimTx)))
+    .where(
+      and(
+        eq(unstakes.address, address),
+        isNull(unstakes.claimTx),
+        isNull(unstakes.invalidatedAt),
+        isNull(unstakes.supersededAt),
+      ),
+    )
     .orderBy(desc(unstakes.id))
     .limit(PENDING_RESULT_LIMIT);
 }
@@ -65,24 +73,11 @@ async function getByClaimTx(claimTx: string) {
   return value;
 }
 
-async function getAfterBlock(block: number) {
-  const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
-  const isNotSettled = or(
-    and(isNull(unstakes.block), gte(unstakes.timestamp, pendingCutoff)),
-    gte(unstakes.block, block),
-  );
-  return await sql
-    .select()
-    .from(unstakes)
-    .where(isNotSettled)
-    .orderBy(desc(unstakes.id))
-    .limit(MONITOR_BATCH_LIMIT);
-}
-
 async function getWithdrawAfterBlock(block: number) {
   const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
   const claimIsNotSettled = and(
     isNotNull(unstakes.claimTx),
+    isNull(unstakes.supersededAt),
     or(
       and(isNull(unstakes.claimTxBlock), gte(unstakes.timestamp, pendingCutoff)),
       gte(unstakes.claimTxBlock, block),
@@ -99,6 +94,7 @@ async function getWithdrawAfterBlock(block: number) {
 async function getWithdrawAfterBlockForAddress(block: number, address: string) {
   const claimIsNotSettled = and(
     eq(unstakes.address, address),
+    isNull(unstakes.supersededAt),
     isNotNull(unstakes.claimTx),
     or(isNull(unstakes.claimTxBlock), gte(unstakes.claimTxBlock, block)),
   );
@@ -123,7 +119,12 @@ async function getWithdrawAfterBlockForAddress(block: number, address: string) {
 }
 
 async function getByTxid(txid: string) {
-  const [value] = await sql.select().from(unstakes).where(eq(unstakes.txid, txid)).limit(1);
+  // Backfill-superseded duplicates share the network txid; only the canonical row counts
+  const [value] = await sql
+    .select()
+    .from(unstakes)
+    .where(and(eq(unstakes.txid, txid), isNull(unstakes.supersededAt)))
+    .limit(1);
   return value;
 }
 
@@ -142,9 +143,9 @@ export const unstake = {
   getOwnByTxid,
   getByClaimTx,
   update,
-  getAfterBlock,
   getWithdrawAfterBlock,
   getWithdrawAfterBlockForAddress,
   getByTxid,
   remove,
+  ...signedPsbtQueries(unstakes),
 };

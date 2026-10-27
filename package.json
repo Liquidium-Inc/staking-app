@@ -14,6 +14,7 @@
     "build": "next build --webpack",
     "postbuild": "npm run check:browser-secrets && if [ \"$GENERATE_SOURCEMAPS\" = \"true\" ]; then posthog-cli sourcemap inject --directory .next && if [ -n \"$POSTHOG_CLI_TOKEN\" ] && [ -n \"$POSTHOG_CLI_ENV_ID\" ]; then posthog-cli sourcemap upload --directory .next; else echo 'Skipping PostHog sourcemap upload: POSTHOG_CLI_TOKEN or POSTHOG_CLI_ENV_ID not set'; fi; fi",
     "start": "next start",
+    "db:backfill-signed-psbt": "node --import tsx scripts/backfill-signed-psbt-state.ts",
     "check:lockfile-sources": "node scripts/check-lockfile-sources.mjs",
     "lint": "eslint src",
     "format": "prettier --write .",
@@ -119,6 +120,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@mdx-js/react": "^3.1.1",
     "@next/mdx": "16.4.1",
     "@secretlint/secretlint-rule-aws": "^13.0.5",

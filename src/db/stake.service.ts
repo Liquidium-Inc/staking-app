@@ -1,13 +1,12 @@
-import { and, desc, eq, isNull, inArray, or, gte } from 'drizzle-orm';
+import { and, desc, eq, isNull, inArray } from 'drizzle-orm';
 
 import { pick } from '@/lib/pick';
 
 import { sql } from './client';
-import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { stakes } from './schema';
+import { signedPsbtQueries } from './signed-psbt';
 
 const PENDING_RESULT_LIMIT = 50;
-const MONITOR_BATCH_LIMIT = 100;
 
 async function insert(...values: (typeof stakes.$inferInsert)[]) {
   return await sql.insert(stakes).values(values);
@@ -17,7 +16,14 @@ async function getPendingsOf(address: string) {
   return await sql
     .select(pick(stakes, 'txid', 'amount', 'sAmount', 'timestamp'))
     .from(stakes)
-    .where(and(eq(stakes.address, address), isNull(stakes.block)))
+    .where(
+      and(
+        eq(stakes.address, address),
+        isNull(stakes.block),
+        isNull(stakes.invalidatedAt),
+        isNull(stakes.supersededAt),
+      ),
+    )
     .orderBy(desc(stakes.id))
     .limit(PENDING_RESULT_LIMIT);
 }
@@ -44,26 +50,17 @@ async function getOwnByTxid(address: string, txid: string) {
   return value;
 }
 
-async function getAfterBlock(block: number) {
-  const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
-  const isNotSettled = or(
-    and(isNull(stakes.block), gte(stakes.timestamp, pendingCutoff)),
-    gte(stakes.block, block),
-  );
-  return await sql
-    .select()
-    .from(stakes)
-    .where(isNotSettled)
-    .orderBy(desc(stakes.id))
-    .limit(MONITOR_BATCH_LIMIT);
-}
-
 async function update(ids: number[], payload: Partial<typeof stakes.$inferInsert>) {
   await sql.update(stakes).set(payload).where(inArray(stakes.id, ids));
 }
 
 async function getByTxid(txid: string) {
-  const [value] = await sql.select().from(stakes).where(eq(stakes.txid, txid)).limit(1);
+  // Backfill-superseded duplicates share the network txid; only the canonical row counts
+  const [value] = await sql
+    .select()
+    .from(stakes)
+    .where(and(eq(stakes.txid, txid), isNull(stakes.supersededAt)))
+    .limit(1);
   return value;
 }
 
@@ -77,7 +74,7 @@ export const stake = {
   getRecentOf,
   getOwnByTxid,
   update,
-  getAfterBlock,
   getByTxid,
   remove,
+  ...signedPsbtQueries(stakes),
 };

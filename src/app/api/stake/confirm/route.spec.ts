@@ -1,6 +1,6 @@
 import * as bitcoin from 'bitcoinjs-lib';
 import { NextRequest } from 'next/server';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { BroadcastService } from '@/services/broadcast';
 
@@ -9,10 +9,14 @@ import { POST } from './route';
 const mock = vi.hoisted(() => {
   return {
     broadcast: vi.fn(),
+    getTxStatus: vi.fn(),
     stake: {
-      getByTxid: vi.fn(),
+      getByPrepareTxid: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+      claimSignedPsbt: vi.fn(),
+      expireSignedPsbt: vi.fn(),
+      invalidateClaim: vi.fn(),
     },
   };
 });
@@ -31,6 +35,9 @@ vi.mock('@/db', () => ({
   db: {
     stake: mock.stake,
   },
+}));
+vi.mock('@/providers/mempool', () => ({
+  mempool: { transactions: { getTxStatus: mock.getTxStatus } },
 }));
 vi.mock('@/services/broadcast', async (importOriginal) => {
   const mod = await importOriginal<{ BroadcastService: unknown }>();
@@ -52,6 +59,19 @@ vi.mock('@/server/auth/session', () => ({
 describe('POST', () => {
   const userPsbt = new bitcoin.Psbt().toBase64();
   const canisterPsbt = new bitcoin.Psbt().toBase64();
+
+  beforeEach(() => {
+    Object.values(mock.stake).forEach((fn) => fn.mockReset());
+    mock.stake.claimSignedPsbt.mockResolvedValue(new Date());
+    mock.stake.invalidateClaim.mockResolvedValue(true);
+    mock.getTxStatus
+      .mockReset()
+      .mockRejectedValue(
+        Object.assign(new Error('not found'), { isAxiosError: true, response: { status: 404 } }),
+      );
+    mock.stake.expireSignedPsbt.mockResolvedValue(false);
+    mock.stake.update.mockResolvedValue(undefined);
+  });
 
   afterEach(() => {
     vi.clearAllMocks();
@@ -76,10 +96,14 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
+      txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
+      block: null,
     });
 
     const buildResult = { txid: 'test-txid', fee: '1000', feeRate: 5 };
@@ -89,17 +113,20 @@ describe('POST', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(buildResult);
-    expect(mock.stake.update).toHaveBeenCalledWith([1], { txid: 'test-txid' });
   });
 
   it('should forward the BroadcastService.Error', async () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
+      txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
+      block: null,
     });
 
     mock.broadcast.mockRejectedValue(new BroadcastService.InvalidExchangeRate());
@@ -110,17 +137,22 @@ describe('POST', () => {
     expect(await response.json()).toEqual({
       error: new BroadcastService.InvalidExchangeRate().message,
     });
-    expect(mock.stake.remove).toHaveBeenCalledWith([1]);
+    expect(mock.stake.invalidateClaim).toHaveBeenCalledWith(1, expect.any(Date));
+    expect(mock.stake.remove).not.toHaveBeenCalled();
   });
 
   it('returns 500 for generic errors', async () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock database entry with canister signature
-    mock.stake.getByTxid.mockResolvedValue({
+    mock.stake.getByPrepareTxid.mockResolvedValue({
       id: 1,
       psbt: canisterPsbt,
       address: 'addr',
+      timestamp: new Date(),
+      txid: 'temp-txid',
+      prepareTxid: 'temp-txid',
+      block: null,
     });
 
     mock.broadcast.mockRejectedValueOnce(new Error('fail'));
@@ -133,7 +165,7 @@ describe('POST', () => {
     const req = { json: () => ({ psbt: userPsbt }) } as unknown as NextRequest;
 
     // Mock no database entry found
-    mock.stake.getByTxid.mockResolvedValue(null);
+    mock.stake.getByPrepareTxid.mockResolvedValue(null);
 
     const response = await POST(req);
 

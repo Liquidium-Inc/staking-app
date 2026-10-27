@@ -12,12 +12,14 @@ const mocks = vi.hoisted(() => ({
   orderBy: vi.fn(),
   limit: vi.fn(),
   drizzle: {
-    and: vi.fn((a, b) => ({ type: 'and', conditions: [a, b] })),
+    and: vi.fn((...conditions) => ({ type: 'and', conditions })),
     eq: vi.fn((col, val) => ({ type: 'eq', column: col, value: val })),
     isNull: vi.fn((col) => ({ type: 'isNull', column: col })),
+    isNotNull: vi.fn((col) => ({ type: 'isNotNull', column: col })),
     inArray: vi.fn((col, vals) => ({ type: 'inArray', column: col, values: vals })),
     or: vi.fn((...conditions) => ({ type: 'or', conditions })),
     gte: vi.fn((col, val) => ({ type: 'gte', column: col, value: val })),
+    lt: vi.fn((col, val) => ({ type: 'lt', column: col, value: val })),
     desc: vi.fn((col) => ({ type: 'desc', column: col })),
     sql: Object.assign(
       (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
@@ -33,9 +35,11 @@ vi.mock('drizzle-orm', () => ({
   and: mocks.drizzle.and,
   eq: mocks.drizzle.eq,
   isNull: mocks.drizzle.isNull,
+  isNotNull: mocks.drizzle.isNotNull,
   inArray: mocks.drizzle.inArray,
   or: mocks.drizzle.or,
   gte: mocks.drizzle.gte,
+  lt: mocks.drizzle.lt,
   desc: mocks.drizzle.desc,
   sql: mocks.drizzle.sql,
 }));
@@ -108,50 +112,12 @@ describe('stake service', () => {
         conditions: [
           { type: 'eq', column: stakes.address, value: address },
           { type: 'isNull', column: stakes.block },
+          { type: 'isNull', column: stakes.invalidatedAt },
+          { type: 'isNull', column: stakes.supersededAt },
         ],
       });
       expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
       expect(mocks.limit).toHaveBeenCalledWith(50);
-    });
-  });
-
-  describe('getAfterBlock', () => {
-    test('should get stakes after specified block', async () => {
-      const blockNumber = 1000;
-      const mockStakes = [
-        {
-          id: 1,
-          address: 'test-address',
-          txid: 'test-txid',
-          amount: '1000',
-          sAmount: '5000',
-          timestamp: new Date(),
-          block: 1001,
-        },
-      ];
-
-      mocks.limit.mockResolvedValue(mockStakes);
-
-      const result = await stake.getAfterBlock(blockNumber);
-
-      expect(result).toEqual(mockStakes);
-      expect(sql.select).toHaveBeenCalled();
-      expect(mocks.from).toHaveBeenCalledWith(stakes);
-      expect(mocks.where).toHaveBeenCalledWith({
-        type: 'or',
-        conditions: [
-          {
-            type: 'and',
-            conditions: [
-              { type: 'isNull', column: stakes.block },
-              { type: 'gte', column: stakes.timestamp, value: expect.any(Date) },
-            ],
-          },
-          { type: 'gte', column: stakes.block, value: blockNumber },
-        ],
-      });
-      expect(mocks.orderBy).toHaveBeenCalledWith({ type: 'desc', column: stakes.id });
-      expect(mocks.limit).toHaveBeenCalledWith(100);
     });
   });
 

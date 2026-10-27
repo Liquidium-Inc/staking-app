@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const TransactionErrorCode = {
   MixedRuneUtxo: 'mixed_rune_utxo',
   WalletIdentityMismatch: 'wallet_identity_mismatch',
+  SignatureExpired: 'signature_expired',
+  AlreadySubmitted: 'already_submitted',
 } as const;
 
 export const TransactionStage = {
@@ -32,6 +34,28 @@ export const WALLET_IDENTITY_MISMATCH_ERROR_MESSAGE =
 
 export const INSUFFICIENT_WITHDRAWAL_FEE_BALANCE_ERROR_MESSAGE =
   'Not enough BTC for the network fee. Add BTC to your Bitcoin payment address, then try withdrawing again.';
+
+export const SIGNATURE_EXPIRED_ERROR_MESSAGE =
+  'This transaction request has expired. Please start again to create a new transaction.';
+
+export const ALREADY_SUBMITTED_ERROR_MESSAGE =
+  'This exact transaction was already submitted and cannot be sent again. Check your pending transactions, or change the amount or fee to create a new one.';
+
+export const alreadySubmittedErrorResponseSchema = z.object({
+  error: z.literal(ALREADY_SUBMITTED_ERROR_MESSAGE),
+  error_code: z.literal(TransactionErrorCode.AlreadySubmitted),
+});
+
+/** Error codes whose message already tells the user what to do, so no generic retry hint. */
+export const NO_RETRY_HINT_ERROR_CODES: readonly string[] = [
+  TransactionErrorCode.SignatureExpired,
+  TransactionErrorCode.AlreadySubmitted,
+];
+
+export const signatureExpiredErrorResponseSchema = z.object({
+  error: z.literal(SIGNATURE_EXPIRED_ERROR_MESSAGE),
+  error_code: z.literal(TransactionErrorCode.SignatureExpired),
+});
 
 export const PROTOCOL_FEE_PAYER_ERROR_MESSAGE = 'Protocol wallets cannot pay transaction fees';
 

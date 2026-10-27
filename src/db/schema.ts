@@ -47,6 +47,20 @@ export const stakes = pgTable('stakes', {
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   psbt: text(),
+  // Unsigned txid of the prepared tx: the request identity, never changes. `txid` is the network
+  // txid, which differs once a P2SH payer input is finalized.
+  prepareTxid: varchar({ length: 255 }).unique(),
+  // Set when a confirm request takes the stored canister signature to broadcast it
+  claimedAt: timestamp(),
+  // Set when the tx is handed to the network (right before sending) or seen on it. From then on the
+  // outcome may be on-chain, so the row is never released or re-armed; only settled or given up
+  broadcastAt: timestamp(),
+  // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
+  invalidatedAt: timestamp(),
+  // When the monitor last looked this tx up; it checks the least recently checked rows first
+  lastCheckedAt: timestamp(),
+  // Set by the backfill on a duplicate of another row's tx; such rows are history only
+  supersededAt: timestamp(),
   //canisterOutpoints: text().array(),
 });
 
@@ -64,6 +78,20 @@ export const unstakes = pgTable('unstakes', {
   claimTx: varchar({ length: 255 }),
   claimTxBlock: integer(),
   psbt: text(),
+  // Unsigned txid of the prepared tx: the request identity, never changes. `txid` is the network
+  // txid, which differs once a P2SH payer input is finalized.
+  prepareTxid: varchar({ length: 255 }).unique(),
+  // Set when a confirm request takes the stored canister signature to broadcast it
+  claimedAt: timestamp(),
+  // Set when the tx is handed to the network (right before sending) or seen on it. From then on the
+  // outcome may be on-chain, so the row is never released or re-armed; only settled or given up
+  broadcastAt: timestamp(),
+  // Set when the stored canister signature expired or its broadcast failed; never broadcast by us
+  invalidatedAt: timestamp(),
+  // When the monitor last looked this tx up; it checks the least recently checked rows first
+  lastCheckedAt: timestamp(),
+  // Set by the backfill on a duplicate of another row's tx; such rows are history only
+  supersededAt: timestamp(),
 });
 
 export const emailSubscriptions = pgTable(

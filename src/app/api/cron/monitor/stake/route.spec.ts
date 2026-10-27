@@ -2,29 +2,17 @@ import { NextRequest } from 'next/server';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { config } from '@/config/config';
-import { config as publicConfig } from '@/config/public';
 
 import { GET } from './route';
 
-const mock = vi.hoisted(() => ({
-  mempool: {
-    blocks: { getBlocksTipHeight: vi.fn() },
-    transactions: { getTxStatus: vi.fn() },
-  },
-  db: {
-    stake: { getAfterBlock: vi.fn(), update: vi.fn() },
-  },
-}));
-vi.mock('@/providers/mempool', () => ({ mempool: mock.mempool }));
-vi.mock('@/db', () => ({ db: mock.db }));
+const monitorSignedTxs = vi.hoisted(() => vi.fn());
 
-function createRequest(token: string | undefined) {
-  const request = new NextRequest('http://localhost/api/cron/monitor/stake');
-  if (token) request.headers.set('authorization', `Bearer ${token}`);
-  return request;
-}
+vi.mock('@/server/transactions/monitor', () => ({ monitorSignedTxs }));
 
-const expectedConfirmations = publicConfig.protocol.expectedConfirmations;
+const createRequest = (secret?: string) =>
+  new NextRequest('http://localhost/api/cron/monitor/stake', {
+    headers: secret ? { authorization: `Bearer ${secret}` } : {},
+  });
 
 describe('GET', () => {
   beforeEach(() => {
@@ -32,71 +20,19 @@ describe('GET', () => {
   });
 
   it('returns 401 if authorization header is missing', async () => {
-    const req = createRequest(undefined);
-    const res = await GET(req);
-    expect(res.status).toBe(401);
+    expect((await GET(createRequest())).status).toBe(401);
+    expect(monitorSignedTxs).not.toHaveBeenCalled();
   });
 
   it('returns 401 if authorization header is invalid', async () => {
-    const req = createRequest('wrong-secret');
-    const res = await GET(req);
-    expect(res.status).toBe(401);
+    expect((await GET(createRequest('wrong-secret'))).status).toBe(401);
+    expect(monitorSignedTxs).not.toHaveBeenCalled();
   });
 
-  it('returns success and updates stakes as expected', async () => {
-    mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
-    mock.mempool.transactions.getTxStatus
-      .mockResolvedValueOnce({ confirmed: true, block_height: 90 })
-      .mockResolvedValueOnce({ confirmed: true, block_height: 90 });
-    mock.db.stake.getAfterBlock.mockResolvedValue([
-      { id: 1, txid: 'tx1' },
-      { id: 2, txid: 'tx2' },
-    ]);
+  it('runs the stake monitor', async () => {
+    const res = await GET(createRequest(config.secrets.cron));
 
-    const req = createRequest(config.secrets.cron);
-    const res = await GET(req);
-
-    expect(res).toBeDefined();
-    const json = await res.json();
-    expect(json).toEqual({ success: true });
-
-    expect(mock.mempool.blocks.getBlocksTipHeight).toHaveBeenCalled();
-    expect(mock.db.stake.getAfterBlock).toHaveBeenCalledWith(100 - expectedConfirmations);
-    expect(mock.mempool.transactions.getTxStatus).toHaveBeenCalledTimes(2);
-    expect(mock.db.stake.update).toHaveBeenCalledWith([1, 2], { block: 90 });
-  });
-
-  it('does not update if confirmations are not enough', async () => {
-    mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(95);
-    mock.db.stake.getAfterBlock.mockResolvedValue([{ id: 1, txid: 'tx1' }]);
-    mock.mempool.transactions.getTxStatus.mockResolvedValueOnce({
-      confirmed: true,
-      block_height: 94,
-    });
-
-    const req = createRequest(config.secrets.cron);
-    const res = await GET(req);
-
-    expect(mock.db.stake.update).not.toHaveBeenCalled();
-    const json = await res.json();
-    expect(json).toEqual({ success: true });
-  });
-
-  it('filters out unconfirmed transactions', async () => {
-    mock.mempool.blocks.getBlocksTipHeight.mockResolvedValue(100);
-    mock.db.stake.getAfterBlock.mockResolvedValue([
-      { id: 1, txid: 'tx1' },
-      { id: 2, txid: 'tx2' },
-    ]);
-    mock.mempool.transactions.getTxStatus
-      .mockResolvedValueOnce({ confirmed: false, block_height: 90 })
-      .mockResolvedValueOnce({ confirmed: true, block_height: 90 });
-
-    const req = createRequest(config.secrets.cron);
-    const res = await GET(req);
-
-    expect(mock.db.stake.update).toHaveBeenCalledWith([2], { block: 90 });
-    const json = await res.json();
-    expect(json).toEqual({ success: true });
+    expect(await res.json()).toEqual({ success: true });
+    expect(monitorSignedTxs).toHaveBeenCalledWith('stake');
   });
 });

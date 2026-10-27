@@ -11,6 +11,7 @@ import { captureServerException } from '@/lib/posthog-server-capture';
 import { TelemetryScope } from '@/lib/telemetry';
 import { canister } from '@/providers/canister';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { broadcastWithStoredSignature } from '@/server/transactions/stored-signature';
 import { BroadcastService } from '@/services/broadcast';
 
 export const maxDuration = 120;
@@ -35,8 +36,8 @@ export async function POST(req: NextRequest) {
     ).tx.getId();
 
     // Find the unstake entry with the saved canister signature
-    const unstakeEntry = await db.unstake.getByTxid(tempTxid);
-    if (!unstakeEntry || !unstakeEntry.psbt) {
+    const unstakeEntry = await db.unstake.getByPrepareTxid(tempTxid);
+    if (!unstakeEntry) {
       return NextResponse.json(
         { error: 'Unstake entry not found or missing canister signature' },
         { status: 404 },
@@ -47,27 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Load the canister-signed PSBT and combine with user signatures
-    const canisterSignedPsbt = bitcoin.Psbt.fromBase64(unstakeEntry.psbt, {
-      network: canister.network,
-    });
-    const combinedPsbt = canisterSignedPsbt.combine(userSignedPsbt);
-
-    // Use BroadcastService to handle the combined PSBT (skip database insert since we already have the entry)
-    const broadcastService = new BroadcastService(combinedPsbt, 'unstake', true);
-
-    try {
-      const result = await broadcastService.broadcast();
-
-      // Update the database with the actual transaction ID
-      await db.unstake.update([unstakeEntry.id], { txid: result.txid });
-
-      return NextResponse.json(result);
-    } catch (broadcastError) {
-      // Clean up database entry on broadcast failure
-      await db.unstake.remove([unstakeEntry.id]);
-      throw broadcastError;
-    }
+    return await broadcastWithStoredSignature('unstake', unstakeEntry, userSignedPsbt);
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

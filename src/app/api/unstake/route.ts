@@ -20,9 +20,13 @@ import {
 import { canister } from '@/providers/canister';
 import { redis } from '@/providers/redis';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
+import { reuseExistingEntry } from '@/server/transactions/stored-signature';
 import { PSBTService } from '@/services/psbt';
 
 bitcoin.initEccLib(ecc);
+
+// Explicit so the deploy drain has a known bound (canister calls can retry for ~30s)
+export const maxDuration = 120;
 
 const body = z.object({
   sender: z.object({
@@ -108,9 +112,22 @@ export const POST = async (req: NextRequest) => {
     ).tx.getId();
 
     // Check if transaction already exists to prevent duplicates
-    const existingUnstake = await db.unstake.getByTxid(tempTxid);
+    const existingUnstake = await db.unstake.getByPrepareTxid(tempTxid);
     if (existingUnstake) {
       logger.debug('Unstake transaction already exists', { tempTxid });
+      const refused = await reuseExistingEntry(
+        'unstake',
+        existingUnstake,
+        canisterResponse.signed_psbt,
+        () =>
+          redis.utxo
+            .free(
+              getPsbtInputOutpointsForAddress(psbt, canister.address, canister.network),
+              sender.address,
+            )
+            .catch((unlockError) => logger.warn('Failed to unlock UTXOs', { error: unlockError })),
+      );
+      if (refused) return refused;
       return NextResponse.json({
         psbt: unsignedPsbt,
         toSign,
@@ -119,7 +136,10 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Save canister-signed PSBT to database (psbt column stores the canister signature)
+    // Signing time, written by the app clock like the confirm deadline cutoff
     await db.unstake.insert({
+      timestamp: new Date(),
+      prepareTxid: tempTxid,
       address: sender.address,
       amount: amount.toString(),
       sAmount: sAmount.toString(),

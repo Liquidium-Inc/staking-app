@@ -8,6 +8,13 @@
       "when": 1760378207359,
       "tag": "0000_boring_next_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793055771963,
+      "tag": "0001_signed_psbt_state",
+      "breakpoints": true
     }
   ]
 }
