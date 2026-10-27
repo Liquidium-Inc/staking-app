@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import CookiePreferencesButton from '@/components/privacy/cookie-preferences-button';
+import { ContactSupportButton } from '@/components/support/contact-support-button';
 import { useProtocol } from '@/hooks/api/useProtocol';
 import { formatCurrency } from '@/lib/formatCurrency';
 
@@ -46,6 +47,8 @@ const footerLinks = [
   },
 ];
 
+const FOOTER_LINK_CLASS_NAME = 'text-sm text-white/70 transition-colors hover:text-white';
+
 export default function Footer() {
   const { data } = useProtocol();
   const { rune, btc } = data;
@@ -85,6 +88,7 @@ export default function Footer() {
               {link.label}
             </Link>
           ))}
+          <ContactSupportButton className={FOOTER_LINK_CLASS_NAME} />
           <CookiePreferencesButton />
         </div>
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
@@ -119,6 +123,7 @@ export default function Footer() {
             {link.label}
           </Link>
         ))}
+        <ContactSupportButton className={`text-left ${FOOTER_LINK_CLASS_NAME}`} />
         <CookiePreferencesButton />
       </div>
     </footer>

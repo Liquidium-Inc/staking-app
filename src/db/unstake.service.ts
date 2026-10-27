@@ -3,8 +3,9 @@ import { and, desc, eq, isNull, inArray, or, gte, isNotNull } from 'drizzle-orm'
 import { pick } from '@/lib/pick';
 
 import { sql } from './client';
+import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { unstakes } from './schema';
-import { MONITOR_PENDING_MAX_AGE_MS, signedPsbtQueries } from './signed-psbt';
+import { signedPsbtQueries } from './signed-psbt';
 
 const PENDING_RESULT_LIMIT = 50;
 const MONITOR_BATCH_LIMIT = 100;
@@ -27,6 +28,49 @@ async function getPendingsOf(address: string) {
     )
     .orderBy(desc(unstakes.id))
     .limit(PENDING_RESULT_LIMIT);
+}
+
+const SUPPORT_UNSTAKE_COLUMNS = [
+  'id',
+  'address',
+  'txid',
+  'amount',
+  'sAmount',
+  'timestamp',
+  'block',
+  'claimTx',
+  'claimTxBlock',
+] as const;
+
+async function getRecentOf(address: string, limit: number) {
+  return await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(eq(unstakes.address, address))
+    .orderBy(desc(unstakes.id))
+    .limit(limit);
+}
+
+/** The address's own unstake with this txid or claim txid. */
+async function getOwnByTxid(address: string, txid: string) {
+  const [value] = await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(
+      and(eq(unstakes.address, address), or(eq(unstakes.txid, txid), eq(unstakes.claimTx, txid))),
+    )
+    .orderBy(desc(unstakes.id))
+    .limit(1);
+  return value;
+}
+
+async function getByClaimTx(claimTx: string) {
+  const [value] = await sql
+    .select(pick(unstakes, ...SUPPORT_UNSTAKE_COLUMNS))
+    .from(unstakes)
+    .where(eq(unstakes.claimTx, claimTx))
+    .limit(1);
+  return value;
 }
 
 async function getWithdrawAfterBlock(block: number) {
@@ -95,6 +139,9 @@ async function remove(ids: number[]) {
 export const unstake = {
   insert,
   getPendingsOf,
+  getRecentOf,
+  getOwnByTxid,
+  getByClaimTx,
   update,
   getWithdrawAfterBlock,
   getWithdrawAfterBlockForAddress,

@@ -13,10 +13,9 @@ import {
 } from 'drizzle-orm';
 
 import { sql } from './client';
+// How long rows that may never have reached the network are polled.
+import { MONITOR_PENDING_MAX_AGE_MS } from './constants';
 import { stakes, unstakes } from './schema';
-
-/** How long rows that may never have reached the network are polled. */
-export const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Attempted sends are never given up: they may still confirm. Once the network hasn't shown one for

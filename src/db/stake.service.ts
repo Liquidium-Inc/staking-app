@@ -28,6 +28,28 @@ async function getPendingsOf(address: string) {
     .limit(PENDING_RESULT_LIMIT);
 }
 
+const SUPPORT_STAKE_COLUMNS = ['id', 'txid', 'amount', 'sAmount', 'timestamp', 'block'] as const;
+
+async function getRecentOf(address: string, limit: number) {
+  return await sql
+    .select(pick(stakes, ...SUPPORT_STAKE_COLUMNS))
+    .from(stakes)
+    .where(eq(stakes.address, address))
+    .orderBy(desc(stakes.id))
+    .limit(limit);
+}
+
+/** The address's own stake with this txid. */
+async function getOwnByTxid(address: string, txid: string) {
+  const [value] = await sql
+    .select(pick(stakes, ...SUPPORT_STAKE_COLUMNS))
+    .from(stakes)
+    .where(and(eq(stakes.address, address), eq(stakes.txid, txid)))
+    .orderBy(desc(stakes.id))
+    .limit(1);
+  return value;
+}
+
 async function update(ids: number[], payload: Partial<typeof stakes.$inferInsert>) {
   await sql.update(stakes).set(payload).where(inArray(stakes.id, ids));
 }
@@ -49,6 +71,8 @@ async function remove(ids: number[]) {
 export const stake = {
   insert,
   getPendingsOf,
+  getRecentOf,
+  getOwnByTxid,
   update,
   getByTxid,
   remove,
