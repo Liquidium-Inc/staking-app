@@ -45,6 +45,7 @@ const net = vi.hoisted(() => ({
   loseResponse: false,
   // Lookups for these txids never answer
   slow: new Set<string>(),
+  lookups: [] as string[],
   // The node refuses the next broadcast with this message (HTTP 400)
   reject: undefined as string | undefined,
   tipHangs: false,
@@ -75,6 +76,7 @@ vi.mock('@/providers/mempool', async () => {
       },
       transactions: {
         getTxStatus: async ({ txid }: { txid: string }) => {
+          net.lookups.push(txid);
           if (net.lookupFails) throw axiosError(502, 'bad gateway');
           if (net.slow.has(txid)) await new Promise(() => {});
           const status = net.txs.get(txid);
@@ -242,6 +244,7 @@ beforeEach(async () => {
   await sql.execute('TRUNCATE stakes, unstakes');
   net.txs.clear();
   net.posted = [];
+  net.lookups = [];
   net.slow.clear();
   net.fullTxs.clear();
   net.tipHangs = false;
@@ -411,24 +414,37 @@ describe.each(
     expect(net.posted).toHaveLength(0);
   });
 
-  it('gives up on an attempted send the network never shows within 30 days', async () => {
+  it('never gives up an attempted send, but checks it only daily after 30 days unseen', async () => {
     net.loseResponse = true;
     net.lagging = true;
     expect((await confirmRequest()).status).toBe(400);
-
-    at(29 * 24 * 60 * 60 * 1000);
-    await monitor(cronRequest());
-    expect(await row()).toMatchObject({ invalidatedAt: null });
+    net.loseResponse = false;
+    const lookups = () => net.lookups.filter((txid) => txid === net.posted[0]).length;
 
     at(31 * 24 * 60 * 60 * 1000);
     await monitor(cronRequest());
-    expect(await row()).toMatchObject({
-      invalidatedAt: expect.any(Date),
-      broadcastAt: expect.any(Date),
-    });
-    // Still never re-armed: the user starts a different tx
-    expect((await prepareRequest()).status).toBe(409);
+    const afterFirst = lookups();
+    expect(afterFirst).toBeGreaterThan(0);
+    // Same day: skipped
+    at(31 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000);
+    await monitor(cronRequest());
+    expect(lookups()).toBe(afterFirst);
+    expect(await row()).toMatchObject({ invalidatedAt: null, block: null });
+
+    // A day later it is checked again; it confirmed after all and settles
+    at(32 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000);
+    net.lagging = false;
+    confirmOnChain(net.posted[0]);
+    await monitor(cronRequest());
+    expect(await row()).toMatchObject({ block: 990, invalidatedAt: null });
     expect(net.posted).toHaveLength(1);
+    // Still listed for the user (the unstake's withdrawal card), found by its network txid
+    if (kind === 'unstake') {
+      expect((await db.unstake.getPendingsOf(userRuneAddress)).map((p) => p.txid)).toContain(
+        net.posted[0],
+      );
+    }
+    expect(await table.getByTxid(net.posted[0])).toMatchObject({ id: (await row()).id });
   });
 
   it('sends nothing and releases the claim when the send attempt cannot be recorded', async () => {
@@ -441,22 +457,14 @@ describe.each(
     expect((await prepareRequest()).status).toBe(200);
   });
 
-  it('releases a send the node refused outright, so the same tx can be retried', async () => {
+  it('keeps the attempt even when the node answers with an error', async () => {
+    // mempool.space also wraps transport and conflict errors in 400s, so no refusal is proof
     net.reject = 'min relay fee not met, 100 < 200';
     expect((await confirmRequest()).status).toBe(400);
-    expect(await row()).toMatchObject({ broadcastAt: null, invalidatedAt: expect.any(Date) });
-
-    net.reject = undefined;
-    expect((await prepareRequest()).status).toBe(200);
-    expect((await confirmRequest()).status).toBe(200);
-    expect(net.posted).toHaveLength(1);
-  });
-
-  it('keeps the attempt when a refusal may mean the tx is already on the network', async () => {
-    net.reject = 'bad-txns-inputs-missingorspent';
-    expect((await confirmRequest()).status).toBe(400);
     expect(await row()).toMatchObject({ broadcastAt: expect.any(Date), invalidatedAt: null });
+    net.reject = undefined;
     expect((await prepareRequest()).status).toBe(409);
+    expect(net.posted).toHaveLength(0);
   });
 
   it('still releases a stale claim that never reached the send step', async () => {

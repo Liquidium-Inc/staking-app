@@ -19,11 +19,11 @@ import { stakes, unstakes } from './schema';
 export const MONITOR_PENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * How long an attempted send that the network never shows is polled. Bitcoin Core drops unconfirmed
- * txs after 14 days and only this server ever held the fully signed tx, so after 30 days (14 days
- * plus margin for API outages) it can no longer confirm.
+ * Attempted sends are never given up: they may still confirm. Once the network hasn't shown one for
+ * 30 days (Bitcoin Core drops unconfirmed txs after 14), it is only checked once a day.
  */
-export const ATTEMPTED_SEND_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const ATTEMPTED_SEND_SLOW_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const ATTEMPTED_SEND_SLOW_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Lifecycle of the canister-signed PSBT stored on a stake/unstake row. Every transition is a
@@ -56,7 +56,10 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
    * `exclude` holds ids already checked in the current monitor run.
    */
   async function getMonitorBatch(exclude: number[], limit: number) {
-    const pendingCutoff = new Date(Date.now() - MONITOR_PENDING_MAX_AGE_MS);
+    const now = Date.now();
+    const pendingCutoff = new Date(now - MONITOR_PENDING_MAX_AGE_MS);
+    const slowAfter = new Date(now - ATTEMPTED_SEND_SLOW_AFTER_MS);
+    const slowCheckedBefore = new Date(now - ATTEMPTED_SEND_SLOW_INTERVAL_MS);
     return await sql
       .select()
       .from(t)
@@ -65,9 +68,21 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
           notConfirmed,
           isNotNull(t.claimedAt),
           isNull(t.supersededAt),
-          // Valid claims (incl. attempted sends) are checked until they settle or are given up;
-          // invalidated ones only for a while
-          or(isNull(t.invalidatedAt), gte(t.timestamp, pendingCutoff)),
+          or(
+            // Valid claims, including attempted sends, are checked until they settle. Attempts the
+            // network hasn't shown for a long time are checked at most once a day.
+            and(
+              isNull(t.invalidatedAt),
+              or(
+                isNull(t.broadcastAt),
+                gte(t.broadcastAt, slowAfter),
+                isNull(t.lastCheckedAt),
+                lt(t.lastCheckedAt, slowCheckedBefore),
+              ),
+            ),
+            // Invalidated rows were never sent; they are only checked for a while
+            and(isNotNull(t.invalidatedAt), gte(t.timestamp, pendingCutoff)),
+          ),
           exclude.length > 0 ? notInArray(t.id, exclude) : undefined,
         ),
       )
@@ -149,25 +164,6 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
   }
 
   /**
-   * Releases a claim whose send the node explicitly refused (and the network doesn't know): the
-   * attempt is cleared, so the user can start again with the same tx.
-   */
-  async function releaseRejectedSend(id: number, claimedAt: Date) {
-    await sql
-      .update(t)
-      .set({ invalidatedAt: new Date(), broadcastAt: null })
-      .where(
-        and(
-          eq(t.id, id),
-          eq(t.claimedAt, claimedAt),
-          isNull(t.psbt),
-          isNull(t.invalidatedAt),
-          notConfirmed,
-        ),
-      );
-  }
-
-  /**
    * Releases claims among `ids` made before `claimStaleBefore` whose tx the network doesn't know.
    * One statement per monitor page; broadcast or newer claims are never touched.
    */
@@ -187,26 +183,6 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
         ),
       );
   }
-  /**
-   * Stops polling attempted sends among `ids` that the network still doesn't know after
-   * `attemptedBefore`. They stay un-re-armable (broadcastAt is kept).
-   */
-  async function giveUpAttempts(ids: number[], attemptedBefore: Date) {
-    if (ids.length === 0) return [];
-    return await sql
-      .update(t)
-      .set({ invalidatedAt: new Date() })
-      .where(
-        and(
-          inArray(t.id, ids),
-          lt(t.broadcastAt, attemptedBefore),
-          isNull(t.invalidatedAt),
-          notConfirmed,
-        ),
-      )
-      .returning({ id: t.id, txid: t.txid });
-  }
-
   /** Settles rows at their confirmed blocks in one statement; the stored PSBT is retired. */
   async function settle(blocks: { id: number; block: number }[]) {
     if (blocks.length === 0) return;
@@ -267,8 +243,6 @@ export function signedPsbtQueries(table: typeof stakes | typeof unstakes) {
     expireSignedPsbt,
     invalidateClaim,
     releaseStaleClaims,
-    releaseRejectedSend,
-    giveUpAttempts,
     settle,
     refreshSignedPsbt,
   };

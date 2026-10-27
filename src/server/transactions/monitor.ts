@@ -2,7 +2,6 @@ import axios from 'axios';
 
 import { config as publicConfig } from '@/config/public';
 import { db } from '@/db';
-import { ATTEMPTED_SEND_MAX_AGE_MS } from '@/db/signed-psbt';
 import { mapWithConcurrencyLimit } from '@/lib/async';
 import { canisterClaimStaleBefore } from '@/lib/canister-signature';
 import { logger } from '@/lib/logger';
@@ -98,18 +97,11 @@ export async function monitorSignedTxs(kind: 'stake' | 'unstake') {
     // Unknown to the network:
     // - a stale claim with no send attempt was never broadcast: release it like confirm does
     //   (invalidated rows are still polled for a week, so a lagging tx recovers)
-    // - an attempted send is never released on a 404; it is given up after 30 days
-    const unknownIds = unknown.map((entry) => entry.id);
-    await table.releaseStaleClaims(unknownIds, canisterClaimStaleBefore());
-    const givenUp = await table.giveUpAttempts(
-      unknownIds,
-      new Date(Date.now() - ATTEMPTED_SEND_MAX_AGE_MS),
+    // - an attempted send is never released on a 404; it is checked until it settles
+    await table.releaseStaleClaims(
+      unknown.map((entry) => entry.id),
+      canisterClaimStaleBefore(),
     );
-    if (givenUp.length > 0) {
-      logger.warn(`Gave up on ${givenUp.length} ${kind}s the network never showed in 30 days`, {
-        txids: givenUp.map((row) => row.txid),
-      });
-    }
 
     // The network knows these txs: retire any stored signature so it can never be broadcast again,
     // un-hide rows whose broadcast looked failed, and record the send

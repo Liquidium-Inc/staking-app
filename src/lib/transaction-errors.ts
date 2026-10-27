@@ -39,7 +39,7 @@ export const SIGNATURE_EXPIRED_ERROR_MESSAGE =
   'This transaction request has expired. Please start again to create a new transaction.';
 
 export const ALREADY_SUBMITTED_ERROR_MESSAGE =
-  'This transaction was already submitted. Check your pending transactions before trying again.';
+  'This exact transaction was already submitted and cannot be sent again. Check your pending transactions, or change the amount or fee to create a new one.';
 
 export const alreadySubmittedErrorResponseSchema = z.object({
   error: z.literal(ALREADY_SUBMITTED_ERROR_MESSAGE),

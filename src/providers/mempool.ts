@@ -21,7 +21,7 @@ export const mempool = {
       CHF: number;
       AUD: number;
       JPY: number;
-    }>(`https://${host}/api/v1/prices`);
+    }>(`https://${host}/api/v1/prices`, { timeout: 20_000 });
     return data;
   },
 };
