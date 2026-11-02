@@ -101,6 +101,8 @@ export class PSBTService {
     });
 
     const targetOutpoints = targetUTXOs
+      // Each pool output holds one of the two runes, so a UTXO with both can't be spent cleanly
+      .filter((x) => !x.rune_ids?.includes(this.source.rune_id))
       .map((x) => mapToPsbtInput(x))
       .filter(
         (x) =>

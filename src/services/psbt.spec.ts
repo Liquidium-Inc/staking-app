@@ -1,6 +1,7 @@
 import { afterEach } from 'node:test';
 
 import * as ecc from '@bitcoinerlab/secp256k1';
+import { isRunestone, tryDecodeRunestone } from '@magiceden-oss/runestone-lib';
 import * as bitcoin from 'bitcoinjs-lib';
 import { toXOnly } from 'bitcoinjs-lib/src/psbt/bip371';
 import { ECPairFactory } from 'ecpair';
@@ -179,19 +180,28 @@ describe('PSBTService', () => {
       expect(psbt.data.outputs.length).toBeGreaterThan(0);
     });
 
-    describe('pool UTXOs holding more sats than the dust amount', () => {
+    describe('pool UTXO selection', () => {
       const runeId = publicConfig.rune.id;
       const stakedId = publicConfig.sRune.id;
+      const thirdRuneId = '1:3';
 
-      const mockOutputs = (poolOutputs: { txid: string; balance: string; value: number }[]) => {
+      const mockOutputs = (
+        poolOutputs: {
+          txid: string;
+          balance: string;
+          value: number;
+          extraRunes?: Record<string, string>;
+        }[],
+        { sourceRune = runeId, targetRune = stakedId } = {},
+      ) => {
         mocks.runeOutputs.mockImplementation(async (address) => ({
           data:
             address === canister.address
-              ? poolOutputs.map(({ txid, balance, value }) => ({
+              ? poolOutputs.map(({ txid, balance, value, extraRunes = {} }) => ({
                   wallet_addr: canister.address,
                   output: `${txid}:0`,
-                  rune_ids: [stakedId],
-                  balances: [balance],
+                  rune_ids: [targetRune, ...Object.keys(extraRunes)],
+                  balances: [balance, ...Object.values(extraRunes)],
                   confirmations: 99,
                   value,
                 }))
@@ -199,7 +209,7 @@ describe('PSBTService', () => {
                   {
                     wallet_addr: user.address,
                     output: `${randomHex(64)}:0`,
-                    rune_ids: [runeId],
+                    rune_ids: [sourceRune],
                     balances: ['1000'],
                     confirmations: 99,
                     value: 546,
@@ -213,14 +223,77 @@ describe('PSBTService', () => {
         });
       };
 
-      const buildService = () =>
+      const buildService = ({ sourceRune = runeId, targetRune = stakedId } = {}) =>
         new PSBTService(
-          { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
-          { address: canister.address, amount: 500n, rune_id: stakedId },
+          { address: user.address, public: user.publicKey, amount: 1000n, rune_id: sourceRune },
+          { address: canister.address, amount: 500n, rune_id: targetRune },
           { address: user.address, public: user.publicKey },
           canister.network,
           1,
         );
+
+      const inputTxidsOf = (psbt: string) =>
+        bitcoin.Psbt.fromBase64(psbt).txInputs.map((input) =>
+          Buffer.from(input.hash).reverse().toString('hex'),
+        );
+
+      describe.each([
+        { flow: 'stake', sourceRune: runeId, targetRune: stakedId },
+        { flow: 'unstake', sourceRune: stakedId, targetRune: runeId },
+      ])('UTXOs holding both runes during $flow', ({ sourceRune, targetRune }) => {
+        const runes = { sourceRune, targetRune };
+
+        test('selects a single-rune UTXO even when a mixed one fits the amount better', async () => {
+          const mixedTxid = randomHex(64);
+          const cleanTxid = randomHex(64);
+          mockOutputs(
+            [
+              { txid: mixedTxid, balance: '500', value: 546, extraRunes: { [sourceRune]: '10' } },
+              { txid: cleanTxid, balance: '900', value: 546 },
+            ],
+            runes,
+          );
+
+          const inputTxids = inputTxidsOf((await buildService(runes).build()).psbt);
+
+          expect(inputTxids).toContain(cleanTxid);
+          expect(inputTxids).not.toContain(mixedTxid);
+        });
+
+        test('reports missing liquidity without locking when only mixed UTXOs cover the amount', async () => {
+          const mixedTxid = randomHex(64);
+          mockOutputs(
+            [{ txid: mixedTxid, balance: '500', value: 546, extraRunes: { [sourceRune]: '10' } }],
+            runes,
+          );
+
+          await expect(buildService(runes).build()).rejects.toThrow(
+            PSBTService.NotEnoughLiquidityError,
+          );
+          expect(redis.utxo.lock).not.toHaveBeenCalledWith(`${mixedTxid}:0`, user.address, 180);
+        });
+      });
+
+      test('still selects a UTXO holding an unrelated rune and keeps that rune in the pool', async () => {
+        const txid = randomHex(64);
+        mockOutputs([{ txid, balance: '500', value: 546, extraRunes: { [thirdRuneId]: '10' } }]);
+
+        const { psbt } = await buildService().build();
+
+        expect(inputTxidsOf(psbt)).toContain(txid);
+        const { txOutputs } = bitcoin.Psbt.fromBase64(psbt, { network: canister.network });
+        const runestone = tryDecodeRunestone({
+          vout: txOutputs.map(({ script }) => ({
+            scriptPubKey: { hex: Buffer.from(script).toString('hex') },
+          })),
+        });
+        if (!runestone || !isRunestone(runestone)) throw new Error('Expected a runestone');
+
+        expect(runestone.edicts?.map((edict) => `${edict.id.block}:${edict.id.tx}`)).not.toContain(
+          thirdRuneId,
+        );
+        expect(txOutputs[runestone.pointer!].address).toBe(canister.address);
+      });
 
       test('selects a dust UTXO even when a larger one fits the amount better', async () => {
         const largeTxid = randomHex(64);
