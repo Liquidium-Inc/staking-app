@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 // Effective date of the updated Terms of Use and Privacy Policy (e.g. "1 November 2026").
-// The banner is hidden while this is empty. TODO: set before merge.
-export const TERMS_UPDATE_EFFECTIVE_DATE = '';
+// The banner is hidden while this is empty.
+export const TERMS_UPDATE_EFFECTIVE_DATE = '19 November 2026';
 
 const STORAGE_KEY = `liquidium_terms_update_dismissed:${TERMS_UPDATE_EFFECTIVE_DATE}`;
 
