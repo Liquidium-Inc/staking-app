@@ -179,6 +179,76 @@ describe('PSBTService', () => {
       expect(psbt.data.outputs.length).toBeGreaterThan(0);
     });
 
+    describe('pool UTXOs holding more sats than the dust amount', () => {
+      const runeId = publicConfig.rune.id;
+      const stakedId = publicConfig.sRune.id;
+
+      const mockOutputs = (poolOutputs: { txid: string; balance: string; value: number }[]) => {
+        mocks.runeOutputs.mockImplementation(async (address) => ({
+          data:
+            address === canister.address
+              ? poolOutputs.map(({ txid, balance, value }) => ({
+                  wallet_addr: canister.address,
+                  output: `${txid}:0`,
+                  rune_ids: [stakedId],
+                  balances: [balance],
+                  confirmations: 99,
+                  value,
+                }))
+              : [
+                  {
+                    wallet_addr: user.address,
+                    output: `${randomHex(64)}:0`,
+                    rune_ids: [runeId],
+                    balances: ['1000'],
+                    confirmations: 99,
+                    value: 546,
+                  },
+                ],
+          block_height: 100,
+        }));
+        mocks.paymentOutputs.mockResolvedValue({
+          data: [{ output: `${randomHex(64)}:0`, value: 10000000, confirmations: 99 }],
+          block_height: 100,
+        });
+      };
+
+      const buildService = () =>
+        new PSBTService(
+          { address: user.address, public: user.publicKey, amount: 1000n, rune_id: runeId },
+          { address: canister.address, amount: 500n, rune_id: stakedId },
+          { address: user.address, public: user.publicKey },
+          canister.network,
+          1,
+        );
+
+      test('selects a dust UTXO even when a larger one fits the amount better', async () => {
+        const largeTxid = randomHex(64);
+        const dustTxid = randomHex(64);
+        mockOutputs([
+          { txid: largeTxid, balance: '500', value: 547 },
+          { txid: dustTxid, balance: '900', value: 546 },
+        ]);
+
+        const response = await buildService().build();
+
+        const inputTxids = bitcoin.Psbt.fromBase64(response.psbt).txInputs.map((input) =>
+          Buffer.from(input.hash).reverse().toString('hex'),
+        );
+        expect(inputTxids).toContain(dustTxid);
+        expect(inputTxids).not.toContain(largeTxid);
+        expect(redis.utxo.lock).not.toHaveBeenCalledWith(`${largeTxid}:0`, user.address, 180);
+      });
+
+      test('reports missing liquidity without locking when only larger UTXOs cover the amount', async () => {
+        const largeTxid = randomHex(64);
+        mockOutputs([{ txid: largeTxid, balance: '500', value: 5000 }]);
+
+        await expect(buildService().build()).rejects.toThrow(PSBTService.NotEnoughLiquidityError);
+        expect(redis.utxo.lock).not.toHaveBeenCalledWith(`${largeTxid}:0`, user.address, 180);
+      });
+    });
+
     test('identifies when sufficient source balance is only available in mixed-Rune UTXOs', async () => {
       const runeId = publicConfig.rune.id;
       const stakedId = publicConfig.sRune.id;

@@ -107,6 +107,8 @@ export class PSBTService {
           !this.target.allowedUtxos || this.target.allowedUtxos?.includes(`${x.hash}:${x.index}`),
       )
       .filter((x) => x.runes[this.target.rune_id])
+      // Pool outputs are built at the dust amount, so any sats above it would end up in payer change
+      .filter((x) => x.value <= RunePSBT.dustAmount)
       .sort(PSBTService.sortingCriteria.bind(null, (e) => e.runes[this.target.rune_id]));
 
     const sourceOutpoints = sourceUTXOs

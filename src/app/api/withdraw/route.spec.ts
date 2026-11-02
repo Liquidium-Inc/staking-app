@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   },
   BIS: { mempool: { cardinalUTXOs: vi.fn().mockResolvedValue({ data: [] }) } },
   RunePSBT: {
+    addOutput: vi.fn().mockReturnThis(),
     build: vi.fn(),
   },
   db: {
@@ -37,15 +38,18 @@ const requireSessionMock = vi.hoisted(() =>
 );
 
 vi.mock('@/lib/psbt', () => ({
-  RunePSBT: vi.fn(function RunePSBTMock() {
-    return {
-      setPayer: vi.fn().mockReturnThis(),
-      addInput: vi.fn().mockReturnThis(),
-      addOutput: vi.fn().mockReturnThis(),
-      build: mocks.RunePSBT.build,
-      inputs: [],
-    };
-  }),
+  RunePSBT: Object.assign(
+    vi.fn(function RunePSBTMock() {
+      return {
+        setPayer: vi.fn().mockReturnThis(),
+        addInput: vi.fn().mockReturnThis(),
+        addOutput: mocks.RunePSBT.addOutput,
+        build: mocks.RunePSBT.build,
+        inputs: [],
+      };
+    }),
+    { dustAmount: 546n },
+  ),
 }));
 vi.mock('@/providers/bestinslot', () => ({
   BIS: mocks.BIS,
@@ -257,6 +261,45 @@ describe('POST /api/withdraw', () => {
       180,
     );
   });
+
+  it.each([
+    { utxoSats: 330, outputSats: 546 },
+    { utxoSats: 546, outputSats: 546 },
+    { utxoSats: 2000, outputSats: 2000 },
+  ])(
+    'gives the owner a $outputSats sat output for a $utxoSats sat UTXO',
+    async ({ utxoSats, outputSats }) => {
+      mocks.mempool.transactions.getTx.mockResolvedValue({
+        vout: [
+          { scriptpubkey_address: user.address, value: 1000, index: 0 },
+          { scriptpubkey_address: canister.retention, value: utxoSats, index: 1 },
+        ],
+      });
+      mocks.RunePSBT.build.mockResolvedValueOnce(
+        new bitcoin.Psbt()
+          .addInput({
+            hash: Buffer.alloc(32, 1),
+            index: 1,
+            witnessUtxo: { script: Buffer.from([0x51]), value: 10_000n },
+          })
+          .addOutput({ script: Buffer.from([0x51]), value: 8_000n }),
+      );
+
+      const res = await POST({
+        json: vi.fn().mockResolvedValue({
+          txid: 'txid1',
+          sender: { address: user.address, public: user.publicKey },
+          payer: { address: user.paymentAddress, public: user.paymentPublicKey },
+          feeRate: 5,
+        }),
+      } as unknown as NextRequest);
+
+      expect(res.status).toBe(200);
+      expect(mocks.RunePSBT.addOutput).toHaveBeenCalledWith(
+        expect.objectContaining({ address: user.address, value: BigInt(outputSats) }),
+      );
+    },
+  );
 
   it('accepts swapped sender/payer keys (Xverse mobile) and normalizes them', async () => {
     mocks.mempool.transactions.getTx.mockResolvedValue({

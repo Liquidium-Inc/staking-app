@@ -6,7 +6,7 @@ const initializeConfig = () => {
   const protocol = z.object({
     desiredUtxos: z.coerce.number().min(0).default(0),
     mempoolBalance: z.coerce.boolean().default(false),
-    dustAmount: z.coerce.number().min(0).default(546),
+    dustAmount: z.coerce.number().min(546).default(546),
   });
 
   const secrets = z.object({

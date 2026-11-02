@@ -209,10 +209,14 @@ export const POST = async (req: NextRequest) => {
       }),
     );
 
-    // Add output with explicit rune amounts for edicts
+    const withdrawnSats = utxos.reduce((sum, x) => sum + BigInt(x.value), BigInt(0));
+
+    // Add output with explicit rune amounts for edicts. It keeps the sats of the withdrawn UTXOs,
+    // so they go to their owner and not to the fee payer's change.
     runePsbt.addOutput({
       isPointer: true,
       address: sender.address,
+      value: withdrawnSats > RunePSBT.dustAmount ? withdrawnSats : RunePSBT.dustAmount,
       runes: withdrawnRunes,
     });
 
