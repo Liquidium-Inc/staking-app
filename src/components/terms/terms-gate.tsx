@@ -1,5 +1,6 @@
 'use client';
 
+import { useLaserEyes } from '@omnisat/lasereyes-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -7,6 +8,7 @@ import { toast } from 'sonner';
 
 import {
   AlertDialog,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -16,47 +18,46 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useWalletAuth } from '@/components/wallet/wallet-auth-provider';
+import { addressesMatch } from '@/lib/address';
 
-async function fetchPendingVersion(): Promise<string | null> {
-  const response = await fetch('/api/terms', { credentials: 'include' });
+const queryKeyFor = (address: string) => ['terms', address];
+
+async function fetchPendingVersion(address: string): Promise<string | null> {
+  const response = await fetch(`/api/terms?address=${encodeURIComponent(address)}`, {
+    credentials: 'include',
+  });
   if (!response.ok) throw new Error('Failed to load terms status');
   const { pendingVersion } = (await response.json()) as { pendingVersion: string | null };
   return pendingVersion;
 }
 
-async function acceptVersion(version: string) {
+async function acceptVersion({ address, version }: { address: string; version: string }) {
   const response = await fetch('/api/terms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ version }),
+    body: JSON.stringify({ address, version }),
     credentials: 'include',
   });
   if (!response.ok) throw new Error('Failed to save terms acceptance');
 }
 
-export function TermsGate() {
-  const { status, address } = useWalletAuth();
+function TermsPrompt({
+  address,
+  version,
+  onPostpone,
+}: {
+  address: string;
+  version: string;
+  onPostpone: () => void;
+}) {
   const queryClient = useQueryClient();
-  const queryKey = ['terms', address];
   const [agreed, setAgreed] = useState(false);
-  // Not blocking: someone who doesn't agree can still unstake and withdraw.
-  const [postponedFor, setPostponedFor] = useState<string>();
-
-  const { data: pendingVersion } = useQuery({
-    queryKey,
-    queryFn: fetchPendingVersion,
-    enabled: status === 'authenticated',
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
-  });
 
   const accept = useMutation({
     mutationFn: acceptVersion,
-    onSuccess: () => queryClient.setQueryData(queryKey, null),
+    onSuccess: (_, variables) => queryClient.setQueryData(queryKeyFor(variables.address), null),
     onError: () => toast.error('Could not save your agreement. Please try again.'),
   });
-
-  if (status !== 'authenticated' || !pendingVersion || postponedFor === address) return null;
 
   return (
     <AlertDialog open>
@@ -72,7 +73,8 @@ export function TermsGate() {
             <Link href="/privacy" target="_blank" className="text-foreground underline">
               Privacy Policy
             </Link>{' '}
-            take effect on 23 November 2026.
+            take effect on 23 November 2026. If you don&apos;t agree, you can still unstake and
+            withdraw.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <label className="flex cursor-pointer items-start gap-3 text-sm">
@@ -81,24 +83,55 @@ export function TermsGate() {
             checked={agreed}
             onCheckedChange={(checked) => setAgreed(checked === true)}
           />
-          <span>I agree to the updated Terms of Use and Privacy Policy (v{pendingVersion}).</span>
+          <span>I agree to the updated Terms of Use and Privacy Policy (v{version}).</span>
         </label>
         <AlertDialogFooter>
-          <Button
-            variant="outline"
-            disabled={accept.isPending}
-            onClick={() => setPostponedFor(address)}
-          >
+          <AlertDialogCancel disabled={accept.isPending} onClick={onPostpone}>
             Not now
-          </Button>
+          </AlertDialogCancel>
           <Button
             disabled={!agreed || accept.isPending}
-            onClick={() => accept.mutate(pendingVersion)}
+            onClick={() => accept.mutate({ address, version })}
           >
             Agree &amp; continue
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+export function TermsGate() {
+  const { status, address: authAddress } = useWalletAuth();
+  const { connected, address: walletAddress } = useLaserEyes((state) => ({
+    connected: state.connected,
+    address: state.address,
+  }));
+  const [postponedFor, setPostponedFor] = useState<string>();
+
+  const address =
+    status === 'authenticated' && connected && addressesMatch(authAddress, walletAddress)
+      ? walletAddress
+      : undefined;
+
+  // No long-lived cache: a wallet's answer can change between connections.
+  const { data: pendingVersion } = useQuery({
+    queryKey: queryKeyFor(address ?? ''),
+    queryFn: () => fetchPendingVersion(address as string),
+    enabled: !!address,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  if (!address || !pendingVersion || postponedFor === address) return null;
+
+  return (
+    <TermsPrompt
+      key={`${address}:${pendingVersion}`}
+      address={address}
+      version={pendingVersion}
+      onPostpone={() => setPostponedFor(address)}
+    />
   );
 }

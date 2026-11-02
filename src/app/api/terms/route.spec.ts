@@ -25,10 +25,13 @@ vi.mock('@/server/auth/session', () => ({
   requireSession: mock.requireSession,
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
+vi.mock('@/lib/address', () => ({
+  addressesMatch: (a?: string | null, b?: string | null) => a === b,
+}));
 
-const url = 'http://localhost/api/terms';
-const post = (version: string) =>
-  new NextRequest(url, { method: 'POST', body: JSON.stringify({ version }) });
+const url = 'http://localhost/api/terms?address=bc1pwallet';
+const post = (version: string, address = 'bc1pwallet') =>
+  new NextRequest(url, { method: 'POST', body: JSON.stringify({ address, version }) });
 
 describe('/api/terms', () => {
   beforeEach(() => {
@@ -68,6 +71,15 @@ describe('/api/terms', () => {
 
     expect(response.status).toBe(204);
     expect(mock.accept).toHaveBeenCalledWith('bc1pwallet', TERMS_VERSION);
+  });
+
+  it('refuses a wallet other than the signed-in one', async () => {
+    const lookup = await GET(new NextRequest('http://localhost/api/terms?address=bc1pother'));
+    const response = await POST(post(TERMS_VERSION, 'bc1pother'));
+
+    expect(lookup.status).toBe(403);
+    expect(response.status).toBe(403);
+    expect(mock.accept).not.toHaveBeenCalled();
   });
 
   it('rejects an out-of-date version', async () => {

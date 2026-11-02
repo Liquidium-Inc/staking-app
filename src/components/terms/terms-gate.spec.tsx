@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TermsGate } from './terms-gate';
 
-const mock = vi.hoisted(() => ({ useWalletAuth: vi.fn() }));
+const mock = vi.hoisted(() => ({ useWalletAuth: vi.fn(), useLaserEyes: vi.fn() }));
 
 vi.mock('@/components/wallet/wallet-auth-provider', () => ({
   useWalletAuth: mock.useWalletAuth,
+}));
+vi.mock('@omnisat/lasereyes-react', () => ({
+  useLaserEyes: (select: (state: unknown) => unknown) => select(mock.useLaserEyes()),
+}));
+vi.mock('@/lib/address', () => ({
+  addressesMatch: (a?: string | null, b?: string | null) => !!a && a === b,
 }));
 
 const renderGate = () =>
@@ -24,6 +30,15 @@ describe('TermsGate', () => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     mock.useWalletAuth.mockReturnValue({ status: 'authenticated', address: 'bc1pwallet' });
+    mock.useLaserEyes.mockReturnValue({ connected: true, address: 'bc1pwallet' });
+  });
+
+  it('does not look anything up after the wallet disconnects', () => {
+    mock.useLaserEyes.mockReturnValue({ connected: false, address: '' });
+
+    renderGate();
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('does not look anything up before the wallet is connected', () => {
@@ -58,7 +73,31 @@ describe('TermsGate', () => {
     await waitFor(() => expect(screen.queryByText('Updates to our Terms of Use')).toBeNull());
     expect(fetchMock).toHaveBeenLastCalledWith(
       '/api/terms',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ version: '2.0' }) }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ address: 'bc1pwallet', version: '2.0' }),
+      }),
+    );
+  });
+
+  it('starts unchecked for each wallet', async () => {
+    fetchMock.mockImplementation(async () => Response.json({ pendingVersion: '2.0' }));
+
+    const view = renderGate();
+
+    fireEvent.click(await screen.findByRole('checkbox'));
+    expect(screen.getByRole('checkbox')).toHaveProperty('ariaChecked', 'true');
+
+    mock.useWalletAuth.mockReturnValue({ status: 'authenticated', address: 'bc1pother' });
+    mock.useLaserEyes.mockReturnValue({ connected: true, address: 'bc1pother' });
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <TermsGate />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false'),
     );
   });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
+import { addressesMatch } from '@/lib/address';
 import { logger } from '@/lib/logger';
 import { TERMS_EFFECTIVE_AT, TERMS_VERSION } from '@/lib/terms';
 import { requireSession, UnauthorizedError } from '@/server/auth/session';
@@ -9,7 +10,9 @@ import { requireSession, UnauthorizedError } from '@/server/auth/session';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const acceptSchema = z.object({ version: z.literal(TERMS_VERSION) });
+const acceptSchema = z.object({ address: z.string().min(1), version: z.literal(TERMS_VERSION) });
+
+const wrongWallet = () => NextResponse.json({ error: 'Wallet mismatch' }, { status: 403 });
 
 function errorResponse(error: unknown, message: string) {
   if (error instanceof UnauthorizedError) {
@@ -22,6 +25,9 @@ function errorResponse(error: unknown, message: string) {
 export async function GET(req: NextRequest) {
   try {
     const { address } = await requireSession(req);
+    if (!addressesMatch(address, new URL(req.url).searchParams.get('address')))
+      return wrongWallet();
+
     const pending =
       (await db.terms.usedAppBefore(address, TERMS_EFFECTIVE_AT)) &&
       !(await db.terms.hasAccepted(address, TERMS_VERSION));
@@ -38,6 +44,8 @@ export async function POST(req: NextRequest) {
     if (!body.success) {
       return NextResponse.json({ error: 'Terms version is out of date' }, { status: 400 });
     }
+    if (!addressesMatch(address, body.data.address)) return wrongWallet();
+
     await db.terms.accept(address, body.data.version);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
