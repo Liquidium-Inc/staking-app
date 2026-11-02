@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
+import { TermsGate } from '@/components/terms/terms-gate';
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
 import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
@@ -42,6 +43,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           <WalletAuthProvider>
             <UnisatAddressGuard />
             <OnboardingTrigger />
+            <TermsGate />
             {children}
             <CookieConsentBanner />
           </WalletAuthProvider>

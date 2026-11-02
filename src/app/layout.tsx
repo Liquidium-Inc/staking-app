@@ -9,7 +9,6 @@ import { Toaster } from '@/components/ui/sonner';
 import Footer from '../components/layout/footer';
 import Header from '../components/layout/header';
 import { RewardsPauseBanner } from '../components/layout/rewards-pause-banner';
-import { TermsUpdateBanner } from '../components/layout/terms-update-banner';
 
 import { ttCommonsPro } from './fonts';
 import Providers from './providers';
@@ -35,7 +34,6 @@ export default function RootLayout({
         <Providers>
           <div className="flex w-full flex-1 flex-col">
             <RewardsPauseBanner />
-            <TermsUpdateBanner />
             <div className="flex flex-1 flex-col items-center px-2">
               <Header />
               <main className="flex w-full flex-1 flex-col items-center px-1">
