@@ -15,13 +15,21 @@ export function TermsUpdateBanner() {
 
   useEffect(() => {
     if (!TERMS_UPDATE_EFFECTIVE_DATE) return;
-    setIsVisible(!localStorage.getItem(STORAGE_KEY));
+    try {
+      setIsVisible(!localStorage.getItem(STORAGE_KEY));
+    } catch {
+      setIsVisible(true);
+    }
   }, []);
 
   if (!isVisible) return null;
 
   const dismiss = () => {
-    localStorage.setItem(STORAGE_KEY, 'true');
+    try {
+      localStorage.setItem(STORAGE_KEY, 'true');
+    } catch {
+      // Storage is blocked: the notice just comes back on the next visit.
+    }
     setIsVisible(false);
   };
 
