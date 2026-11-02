@@ -64,7 +64,7 @@ export interface RuneProvider {
     ): Promise<{ data: WalletBalance[]; block_height: number }>;
     walletActivity(
       params: WalletActivityQuery,
-    ): Promise<{ data: WalletActivity[]; block_height: number }>;
+    ): Promise<{ data: WalletActivity[]; block_height: number; complete?: boolean }>;
   };
   mempool: {
     runicUTXOs(params: {
@@ -105,6 +105,8 @@ class CentralizedRuneProvider implements RuneProvider {
       const newerThan = params.newerThan?.valueOf();
       const collected: WalletActivity[] = [];
       let page = 1;
+      // True only when the address's whole history was read and nothing was cut by offset/count.
+      let complete = false;
 
       while (collected.length < offset + count && page <= MAX_WALLET_ACTIVITY_PAGES) {
         const { data: transactions } = await ordiscan.rune.walletActivity(params.address, {
@@ -112,9 +114,13 @@ class CentralizedRuneProvider implements RuneProvider {
           sort,
         });
 
-        if (transactions.length === 0) break;
+        if (transactions.length === 0) {
+          complete = true;
+          break;
+        }
 
         let reachedOlderTransactions = false;
+        let stoppedEarly = false;
 
         for (const transaction of transactions) {
           const transactionTime = new Date(transaction.timestamp).valueOf();
@@ -137,16 +143,23 @@ class CentralizedRuneProvider implements RuneProvider {
             ),
           );
 
-          if (collected.length >= offset + count) break;
+          if (collected.length >= offset + count) {
+            stoppedEarly = true;
+            break;
+          }
         }
 
-        if (transactions.length < 100 || reachedOlderTransactions) break;
+        if (transactions.length < 100 || reachedOlderTransactions) {
+          complete = !stoppedEarly;
+          break;
+        }
         page += 1;
       }
 
       return {
         data: collected.slice(offset, offset + count),
         block_height: 0,
+        complete: complete && collected.length <= offset + count,
       };
     },
   };

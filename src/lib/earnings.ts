@@ -98,21 +98,16 @@ export const computeEarnings = (
   }
 
   const rate = rates[rates.length - 1].value;
-  const accumulated = [...slots].reduce(
-    (acc, slot) => ({
-      unrealized: acc.unrealized.plus(slot.value.times(rate.minus(slot.rate))),
-      totalValue: acc.totalValue.plus(slot.value),
-    }),
-    { unrealized: zero, totalValue: zero },
+  const unrealized = [...slots].reduce(
+    (acc, slot) => acc.plus(slot.value.times(rate.minus(slot.rate))),
+    zero,
   );
-
-  const unrealized = accumulated.unrealized;
   const total = realized.plus(unrealized);
-  const totalValue = accumulated.totalValue;
-  const percentage = totalValue.gt(0)
+  // Earned LIQ relative to the LIQ cost basis of everything staked.
+  const percentage = invested.gt(0)
     ? total
         .times(100)
-        .div(totalValue)
+        .div(invested)
         .round(EARNINGS_PERCENTAGE_DECIMALS, EARNINGS_PERCENTAGE_ROUNDING_MODE)
     : zero;
 

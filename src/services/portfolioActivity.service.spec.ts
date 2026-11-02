@@ -93,6 +93,7 @@ describe('getPortfolioActivity', () => {
         },
       ],
       truncated: false,
+      complete: false,
       originalFetchCount: 4,
       deduplicatedCount: 2,
     });
