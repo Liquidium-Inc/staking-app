@@ -10,6 +10,7 @@ import { requireSession, UnauthorizedError } from '@/server/auth/session';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const querySchema = z.object({ address: z.string().min(1) });
 const acceptSchema = z.object({ address: z.string().min(1), version: z.literal(TERMS_VERSION) });
 
 const wrongWallet = () => NextResponse.json({ error: 'Wallet mismatch' }, { status: 403 });
@@ -25,8 +26,11 @@ function errorResponse(error: unknown, message: string) {
 export async function GET(req: NextRequest) {
   try {
     const { address } = await requireSession(req);
-    if (!addressesMatch(address, new URL(req.url).searchParams.get('address')))
-      return wrongWallet();
+    const query = querySchema.safeParse({
+      address: new URL(req.url).searchParams.get('address'),
+    });
+    if (!query.success) return NextResponse.json({ error: 'Invalid address' }, { status: 400 });
+    if (!addressesMatch(address, query.data.address)) return wrongWallet();
 
     const pending =
       (await db.terms.usedAppBefore(address, TERMS_EFFECTIVE_AT)) &&
