@@ -64,6 +64,17 @@ describe('POST /api/support/verify', () => {
     expect(await response.json()).not.toHaveProperty('verifiedEmail');
   });
 
+  it('still verifies the token when the email lookup fails', async () => {
+    mock.getByAddress.mockRejectedValue(new Error('database down'));
+
+    const response = await verify(issueSupportToken(ADDRESS, TOKEN_SECRET).token);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.subject).toBe(ADDRESS);
+    expect(body).not.toHaveProperty('verifiedEmail');
+  });
+
   it('does not read the database for a bad token', async () => {
     const response = await verify('nope');
 
