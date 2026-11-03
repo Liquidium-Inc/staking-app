@@ -85,7 +85,7 @@ function TermsPrompt({
           />
           <span>I agree to the updated Terms of Use and Privacy Policy (v{version}).</span>
         </label>
-        <AlertDialogFooter className="flex-row gap-3">
+        <AlertDialogFooter className="gap-3 min-[360px]:flex-row">
           <AlertDialogCancel
             disabled={accept.isPending}
             onClick={onPostpone}
