@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   pgTable,
+  primaryKey,
   serial,
   timestamp,
   varchar,
@@ -162,5 +163,19 @@ export const walletSessions = pgTable(
   (table) => ({
     addressUnique: uniqueIndex('wallet_sessions_address_unique').on(table.address),
     expiresAtIdx: index('wallet_sessions_expires_at_idx').on(table.expiresAt),
+  }),
+);
+
+export const termsAcceptances = pgTable(
+  'terms_acceptances',
+  {
+    address: varchar({ length: 255 }).notNull(),
+    version: varchar({ length: 32 }).notNull(),
+    acceptedAt: timestamp('accepted_at')
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.address, table.version] }),
   }),
 );

@@ -16,6 +16,7 @@ import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 import { AnalyticsConsentProvider } from '@/components/privacy/analytics-consent-provider';
 import CookieConsentBanner from '@/components/privacy/cookie-consent-banner';
 import { SupportWidget } from '@/components/support/support-widget';
+import { TermsGate } from '@/components/terms/terms-gate';
 import { WalletAuthProvider } from '@/components/wallet/wallet-auth-provider';
 import { config, PublicEnvironment } from '@/config/public';
 import { isSupportWidgetEnabled } from '@/lib/support';
@@ -44,6 +45,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           <WalletAuthProvider>
             <UnisatAddressGuard />
             <OnboardingTrigger />
+            <TermsGate />
             {isSupportWidgetEnabled && <SupportWidget />}
             {children}
             <CookieConsentBanner />

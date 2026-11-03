@@ -1,5 +1,5 @@
 {
-  "id": "be561e96-22d2-4cf7-a40d-2b7bb2911be9",
+  "id": "04891196-ac8e-4aa2-82c5-e1da27432979",
   "prevId": "78350128-5a6b-47c1-8640-9c976a38a01d",
   "version": "7",
   "dialect": "postgresql",
@@ -64,7 +64,9 @@
         "email_subscriptions_address_unique": {
           "name": "email_subscriptions_address_unique",
           "nullsNotDistinct": false,
-          "columns": ["address"]
+          "columns": [
+            "address"
+          ]
         }
       },
       "policies": {},
@@ -172,7 +174,9 @@
         "email_verifications_token_unique": {
           "name": "email_verifications_token_unique",
           "nullsNotDistinct": false,
-          "columns": ["token"]
+          "columns": [
+            "token"
+          ]
         }
       },
       "policies": {},
@@ -222,7 +226,9 @@
         "pool_balances_block_unique": {
           "name": "pool_balances_block_unique",
           "nullsNotDistinct": false,
-          "columns": ["block"]
+          "columns": [
+            "block"
+          ]
         }
       },
       "policies": {},
@@ -288,42 +294,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "prepareTxid": {
-          "name": "prepareTxid",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimedAt": {
-          "name": "claimedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "broadcastAt": {
-          "name": "broadcastAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invalidatedAt": {
-          "name": "invalidatedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lastCheckedAt": {
-          "name": "lastCheckedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "supersededAt": {
-          "name": "supersededAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -333,14 +303,51 @@
         "stakes_uuid_unique": {
           "name": "stakes_uuid_unique",
           "nullsNotDistinct": false,
-          "columns": ["uuid"]
-        },
-        "stakes_prepareTxid_unique": {
-          "name": "stakes_prepareTxid_unique",
-          "nullsNotDistinct": false,
-          "columns": ["prepareTxid"]
+          "columns": [
+            "uuid"
+          ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.terms_acceptances": {
+      "name": "terms_acceptances",
+      "schema": "",
+      "columns": {
+        "address": {
+          "name": "address",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "terms_acceptances_address_version_pk": {
+          "name": "terms_acceptances_address_version_pk",
+          "columns": [
+            "address",
+            "version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -466,42 +473,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "prepareTxid": {
-          "name": "prepareTxid",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimedAt": {
-          "name": "claimedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "broadcastAt": {
-          "name": "broadcastAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invalidatedAt": {
-          "name": "invalidatedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lastCheckedAt": {
-          "name": "lastCheckedAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "supersededAt": {
-          "name": "supersededAt",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -511,12 +482,9 @@
         "unstakes_uuid_unique": {
           "name": "unstakes_uuid_unique",
           "nullsNotDistinct": false,
-          "columns": ["uuid"]
-        },
-        "unstakes_prepareTxid_unique": {
-          "name": "unstakes_prepareTxid_unique",
-          "nullsNotDistinct": false,
-          "columns": ["prepareTxid"]
+          "columns": [
+            "uuid"
+          ]
         }
       },
       "policies": {},
@@ -588,7 +556,9 @@
         "wallet_auth_nonces_nonce_unique": {
           "name": "wallet_auth_nonces_nonce_unique",
           "nullsNotDistinct": false,
-          "columns": ["nonce"]
+          "columns": [
+            "nonce"
+          ]
         }
       },
       "policies": {},
@@ -675,7 +645,9 @@
         "wallet_sessions_token_hash_unique": {
           "name": "wallet_sessions_token_hash_unique",
           "nullsNotDistinct": false,
-          "columns": ["token_hash"]
+          "columns": [
+            "token_hash"
+          ]
         }
       },
       "policies": {},
