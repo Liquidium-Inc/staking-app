@@ -61,8 +61,8 @@ function TermsPrompt({
 
   return (
     <AlertDialog open>
-      <AlertDialogContent>
-        <AlertDialogHeader>
+      <AlertDialogContent className="bg-card z-[60] gap-5 rounded-[24px] border-white/10 p-6 outline-none sm:max-w-md">
+        <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Updates to our Terms of Use</AlertDialogTitle>
           <AlertDialogDescription>
             Liquidium Inc. (Panama) now operates this site. Revised{' '}
@@ -77,19 +77,25 @@ function TermsPrompt({
             withdraw.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <label className="flex cursor-pointer items-start gap-3 text-sm">
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 text-sm">
           <Checkbox
-            className="mt-0.5"
+            className="mt-0.5 rounded-[5px] border-white/30 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-black"
             checked={agreed}
             onCheckedChange={(checked) => setAgreed(checked === true)}
           />
           <span>I agree to the updated Terms of Use and Privacy Policy (v{version}).</span>
         </label>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={accept.isPending} onClick={onPostpone}>
+        <AlertDialogFooter className="flex-row gap-3">
+          <AlertDialogCancel
+            disabled={accept.isPending}
+            onClick={onPostpone}
+            className="flex-1 rounded-full border-white/20 bg-transparent font-semibold shadow-none hover:bg-white/10 focus-visible:ring-white/30"
+          >
             Not now
           </AlertDialogCancel>
           <Button
+            variant="secondary"
+            className="flex-1 hover:bg-white/90 focus-visible:ring-white/30"
             disabled={!agreed || accept.isPending}
             onClick={() => accept.mutate({ address, version })}
           >
