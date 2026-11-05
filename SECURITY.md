@@ -5,7 +5,6 @@ We take the security of the Liquidium Staking application seriously and apprecia
 ## Reporting a Vulnerability
 
 - **Email**: Send a detailed report to `security@liquidium.org`.
-- **GitHub Security Advisory**: Alternatively, open a private security advisory via the repository's **Security ➝ Advisories ➝ Report a vulnerability** workflow.
 
 Please include:
 
@@ -24,7 +23,7 @@ We prefer encrypted communication; request PGP details in your initial email if 
 
 ## Scope
 
-This policy covers the open-source code in this repository. Hosted production incidents for Liquidium infrastructure should also be reported through the channels above.
+This repository is archived and out of date, so its code is out of scope. Please report issues in the live Liquidium staking product by email to `security@liquidium.org`.
 
 ## Known Temporary Dependency Risk
 
